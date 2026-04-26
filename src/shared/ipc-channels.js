@@ -20,7 +20,10 @@ export const IPC = {
     size: 'db:size',
     test: 'db:test',
     create: 'db:create',
-    drop: 'db:drop'
+    drop: 'db:drop',
+    restore: 'db:restore',
+    isRestoring: 'db:isRestoring',
+    restoreEvent: 'db:restore-event'
   },
   fs: {
     findDump: 'fs:findDump',

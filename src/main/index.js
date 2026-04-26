@@ -2,6 +2,7 @@ import { app, BrowserWindow, shell } from 'electron'
 import { join } from 'node:path'
 import { registerAllIpc } from './ipc/index.js'
 import { killAll as killAllProcesses } from './services/process-manager.js'
+import { killAllRestores } from './services/db-service.js'
 
 const isDev = !app.isPackaged
 
@@ -54,8 +55,10 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
-// Гасим все запущенные dotnet-процессы при выходе из приложения,
-// иначе они переживают наш Electron и продолжают слушать порты.
+// Гасим все запущенные dotnet-процессы и mysql-restore'ы при выходе.
+// Иначе они переживают наш Electron — dotnet продолжает слушать
+// порты, mysql может оставить недовосстановленную БД.
 app.on('before-quit', () => {
   killAllProcesses()
+  killAllRestores()
 })

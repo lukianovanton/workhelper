@@ -26,7 +26,19 @@ const api = {
     size: (name) => ipcRenderer.invoke('db:size', name),
     testConnection: () => ipcRenderer.invoke('db:test'),
     create: (name) => ipcRenderer.invoke('db:create', name),
-    drop: (name) => ipcRenderer.invoke('db:drop', name)
+    drop: (name) => ipcRenderer.invoke('db:drop', name),
+    restore: (slug, dumpPath) =>
+      ipcRenderer.invoke('db:restore', { slug, dumpPath }),
+    isRestoring: (slug) => ipcRenderer.invoke('db:isRestoring', slug),
+    /**
+     * Подписка на db:restore-event.
+     * Возвращает unsubscribe.
+     */
+    onRestore: (callback) => {
+      const handler = (_e, payload) => callback(payload)
+      ipcRenderer.on('db:restore-event', handler)
+      return () => ipcRenderer.removeListener('db:restore-event', handler)
+    }
   },
   fs: {
     findDump: (slug) => ipcRenderer.invoke('fs:findDump', slug),

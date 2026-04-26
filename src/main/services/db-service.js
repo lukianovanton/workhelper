@@ -13,6 +13,12 @@
  */
 
 import mysql from 'mysql2/promise'
+import { spawn } from 'node:child_process'
+import { createReadStream } from 'node:fs'
+import { stat } from 'node:fs/promises'
+import path from 'node:path'
+import zlib from 'node:zlib'
+import { Transform } from 'node:stream'
 import { getConfig } from './config-store.js'
 import { getSecret } from './secrets.js'
 
@@ -140,6 +146,227 @@ export async function dropDatabase(name) {
       )
     }
   })
+}
+
+/**
+ * Путь к mysql CLI: явный из Settings или fallback 'mysql' (PATH).
+ */
+export function mysqlExecutablePath() {
+  const exec = getConfig().database.mysqlExecutable
+  if (exec && exec.trim()) return exec.trim()
+  return 'mysql'
+}
+
+/**
+ * In-memory карта активных restore'ов: slug → { child, bytesRead, totalBytes, startedAt }.
+ * Используется для kill-on-quit и для блокировки повторного restore того же slug.
+ */
+const restoreJobs = new Map()
+
+/**
+ * Восстановление БД из .sql или .sql.gz дампа.
+ *
+ *  - Валидирует имя (тот же regex), проверяет, что БД существует
+ *  - Spawn'ит mysql CLI с stdin pipe; контент дампа течёт
+ *    file → progress-tap → [gunzip?] → mysql.stdin
+ *  - bytesRead считаем ДО декомпрессии (по байтам файла), totalBytes
+ *    = stat(dumpPath).size — даёт честный 0..100% по I/O
+ *  - onProgress зовётся в throttled-режиме (≥200мс между вызовами +
+ *    финальный «100%» в конце)
+ *  - Stderr mysql собираем в кольцо до 5к; на non-zero exit отдаём
+ *    первые 500 символов в Error
+ *
+ * @param {string} name      имя БД
+ * @param {string} dumpPath
+ * @param {string} jobKey    обычно slug — ключ для restoreJobs/cancel
+ * @param {(p:{bytesRead:number,totalBytes:number})=>void} [onProgress]
+ */
+export async function restoreDatabase(name, dumpPath, jobKey, onProgress) {
+  assertDbName(name)
+
+  if (!dumpPath || typeof dumpPath !== 'string') {
+    throw new Error('Dump path is required')
+  }
+  if (restoreJobs.has(jobKey)) {
+    throw new Error(`Restore already in progress for ${jobKey}`)
+  }
+
+  const stats = await stat(dumpPath).catch(() => null)
+  if (!stats || !stats.isFile()) {
+    throw new Error(`Dump file not found: ${dumpPath}`)
+  }
+  if (stats.size === 0) {
+    throw new Error(`Dump file is empty: ${dumpPath}`)
+  }
+
+  const lower = dumpPath.toLowerCase()
+  const isGz = lower.endsWith('.sql.gz') || lower.endsWith('.gz')
+  const isSql = lower.endsWith('.sql')
+  if (!isGz && !isSql) {
+    throw new Error('Only .sql or .sql.gz dumps are supported')
+  }
+
+  // БД должна уже существовать — Setup & Run (ч10) сам сделает Create
+  // перед Restore; standalone Restore требует наличия БД
+  const existing = await listDatabases()
+  if (!existing.has(name)) {
+    throw new Error(
+      `Database '${name}' does not exist. Create it first.`
+    )
+  }
+
+  const config = getConfig()
+  const password = getSecret('dbPassword') || ''
+  const args = [
+    '-h', config.database.host,
+    '-P', String(config.database.port || 3306),
+    '-u', config.database.user,
+    `--password=${password}`,
+    '--default-character-set=utf8mb4',
+    name
+  ]
+
+  const mysqlBin = mysqlExecutablePath()
+
+  const child = spawn(mysqlBin, args, {
+    stdio: ['pipe', 'pipe', 'pipe'],
+    windowsHide: true,
+    shell: false
+  })
+
+  // Дождаться spawn / error — даёт сразу человеческое ENOENT
+  await new Promise((resolve, reject) => {
+    const onSpawn = () => {
+      child.removeListener('error', onError)
+      resolve()
+    }
+    const onError = (err) => {
+      child.removeListener('spawn', onSpawn)
+      if (err && err.code === 'ENOENT') {
+        reject(
+          new Error(
+            'mysql executable not found. Set path in Settings → Database → mysql executable.'
+          )
+        )
+      } else {
+        reject(new Error(`Failed to start mysql: ${err.message}`))
+      }
+    }
+    child.once('spawn', onSpawn)
+    child.once('error', onError)
+  })
+
+  const handle = {
+    child,
+    bytesRead: 0,
+    totalBytes: stats.size,
+    startedAt: Date.now()
+  }
+  restoreJobs.set(jobKey, handle)
+
+  // Прогресс-tap считает байты, throttle ≥200мс
+  let lastEmit = 0
+  const tap = new Transform({
+    transform(chunk, _enc, cb) {
+      handle.bytesRead += chunk.length
+      const now = Date.now()
+      if (now - lastEmit >= 200) {
+        lastEmit = now
+        onProgress?.({
+          bytesRead: handle.bytesRead,
+          totalBytes: handle.totalBytes
+        })
+      }
+      cb(null, chunk)
+    }
+  })
+
+  let stderrBuf = ''
+  child.stderr.on('data', (d) => {
+    stderrBuf += d.toString()
+    // Ограничим, чтобы не съесть память на гигантском дампе
+    if (stderrBuf.length > 10_000) stderrBuf = stderrBuf.slice(-5000)
+  })
+
+  const fileStream = createReadStream(dumpPath)
+  if (isGz) {
+    fileStream.pipe(tap).pipe(zlib.createGunzip()).pipe(child.stdin)
+  } else {
+    fileStream.pipe(tap).pipe(child.stdin)
+  }
+
+  // Ждём mysql exit; ошибки file-stream форсируют kill
+  let exitCode = -1
+  let exitSignal = null
+  let fileError = null
+  try {
+    exitCode = await new Promise((resolve, reject) => {
+      child.once('exit', (code, signal) => {
+        exitSignal = signal
+        resolve(code)
+      })
+      child.once('error', reject)
+      fileStream.once('error', (err) => {
+        fileError = err
+        try {
+          child.kill()
+        } catch {
+          // ignore
+        }
+        reject(err)
+      })
+    })
+  } finally {
+    restoreJobs.delete(jobKey)
+  }
+
+  if (fileError) {
+    throw new Error(`Failed to read dump: ${fileError.message}`)
+  }
+  if (exitSignal) {
+    throw new Error(`mysql was terminated (${exitSignal})`)
+  }
+  if (exitCode !== 0) {
+    let safeStderr = stderrBuf.slice(0, 500)
+    if (password) safeStderr = safeStderr.split(password).join('<PWD>')
+    throw new Error(
+      `mysql exited with code ${exitCode}: ${safeStderr.trim() || '<no stderr>'}`
+    )
+  }
+
+  // Финальный 100% — на случай если последний tap-тик был throttled
+  onProgress?.({
+    bytesRead: handle.totalBytes,
+    totalBytes: handle.totalBytes
+  })
+
+  return {
+    bytesRead: handle.totalBytes,
+    totalBytes: handle.totalBytes,
+    durationMs: Date.now() - handle.startedAt,
+    dumpFile: path.basename(dumpPath)
+  }
+}
+
+/**
+ * @returns {boolean}
+ */
+export function isRestoring(jobKey) {
+  return restoreJobs.has(jobKey)
+}
+
+/**
+ * Гасит все живые mysql-процессы restore'а — вызывается из before-quit.
+ */
+export function killAllRestores() {
+  for (const [, h] of restoreJobs) {
+    try {
+      h.child.kill('SIGTERM')
+    } catch {
+      // ignore
+    }
+  }
+  restoreJobs.clear()
 }
 
 /**

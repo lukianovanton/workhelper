@@ -57,5 +57,17 @@ export function useProjectActions(slug) {
     }
   })
 
-  return { clone, pull, run, stop, dbCreate, dbDrop }
+  /**
+   * Restore из дампа. Прогресс приходит через db:restore-event и
+   * обновляет zustand restore store; здесь — только запуск/успех/ошибка.
+   * onSuccess уже инвалидируется глобальным подписчиком в App, не дублируем.
+   *
+   * Replace-flow (drop + create + restore) для непустой БД делается
+   * на уровне drawer'а — здесь только базовый restore.
+   */
+  const dbRestore = useMutation({
+    mutationFn: ({ dumpPath }) => api.db.restore(slug, dumpPath)
+  })
+
+  return { clone, pull, run, stop, dbCreate, dbDrop, dbRestore }
 }

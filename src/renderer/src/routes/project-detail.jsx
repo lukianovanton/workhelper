@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   X,
@@ -14,13 +14,16 @@ import {
   GitCommit,
   Download,
   Plus,
-  Trash2
+  Trash2,
+  DatabaseBackup,
+  FolderOpen
 } from 'lucide-react'
 import { useProjects } from '@/hooks/use-projects'
 import { useLastCommit } from '@/hooks/use-last-commit'
 import { useRunningProcesses } from '@/hooks/use-running-processes'
 import { useGitStatus } from '@/hooks/use-git-status'
 import { useProjectActions } from '@/hooks/use-project-actions'
+import { useRestoreStore } from '@/store/restore.store.js'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import {
@@ -104,9 +107,13 @@ function Drawer({ project, dbAvailable, onClose }) {
   const isRunning = !!runtime
 
   const gitStatus = useGitStatus(project.slug, cloned)
-  const { clone, pull, run, stop, dbCreate, dbDrop } =
+  const { clone, pull, run, stop, dbCreate, dbDrop, dbRestore } =
     useProjectActions(project.slug)
+  const restoreState = useRestoreStore((s) => s.bySlug[project.slug])
+  const clearRestore = useRestoreStore((s) => s.clear)
   const [dropDialogOpen, setDropDialogOpen] = useState(false)
+  const [replaceDialogOpen, setReplaceDialogOpen] = useState(false)
+  const [pendingDumpPath, setPendingDumpPath] = useState(null)
 
   const [actionStatus, setActionStatus] = useState(null)
   const flashTimerRef = useRef(null)
@@ -202,6 +209,55 @@ function Drawer({ project, dbAvailable, onClose }) {
     try {
       await dbDrop.mutateAsync()
       flash(`Dropped database ${project.db.name}`, 'ok')
+    } catch (e) {
+      flash(e?.message || String(e), 'error')
+    }
+  }
+
+  const startRestore = async (dumpPath) => {
+    try {
+      await dbRestore.mutateAsync({ dumpPath })
+      // 'done' broadcasted from main и invalidate происходит в App.jsx,
+      // здесь только UI feedback. flash через 100мс чтобы restore-store
+      // успел очиститься у пользователя на глазах.
+    } catch (e) {
+      flash(e?.message || String(e), 'error')
+    }
+  }
+
+  const replaceAndRestore = async (dumpPath) => {
+    try {
+      await dbDrop.mutateAsync()
+      await dbCreate.mutateAsync()
+      await startRestore(dumpPath)
+    } catch (e) {
+      flash(e?.message || String(e), 'error')
+    }
+  }
+
+  const onRestoreFromDump = async (dumpPath) => {
+    if (!dumpPath) return
+    // Если БД пустая — restore без confirm
+    if (!project.db.exists || !project.db.sizeBytes) {
+      await startRestore(dumpPath)
+      return
+    }
+    // Иначе — подтверждение замены
+    setPendingDumpPath(dumpPath)
+    setReplaceDialogOpen(true)
+  }
+
+  const onConfirmReplace = async () => {
+    setReplaceDialogOpen(false)
+    const dumpPath = pendingDumpPath
+    setPendingDumpPath(null)
+    if (dumpPath) await replaceAndRestore(dumpPath)
+  }
+
+  const onPickDump = async () => {
+    try {
+      const dumpPath = await api.fs.pickDump()
+      if (dumpPath) await onRestoreFromDump(dumpPath)
     } catch (e) {
       flash(e?.message || String(e), 'error')
     }
@@ -363,31 +419,18 @@ function Drawer({ project, dbAvailable, onClose }) {
           }
           right={<GitInline status={gitStatus.data} loading={gitStatus.isLoading} cloned={cloned} />}
         />
-        <ChecklistRow
-          state={project.db.exists ? 'on' : 'off'}
-          title={
-            project.db.exists
-              ? `DB ${project.db.name} exists`
-              : `DB ${project.db.name} not found`
-          }
-          subtitle={
-            project.db.exists
-              ? `Size: ${formatBytes(project.db.sizeBytes)}`
-              : project.db.dumpPath
-              ? `Dump available: ${project.db.dumpPath}`
-              : 'No dump auto-detected'
-          }
-          right={
-            <DbAction
-              dbExists={project.db.exists}
-              dbAvailable={dbAvailable}
-              isRunning={isRunning}
-              creating={dbCreate.isPending}
-              dropping={dbDrop.isPending}
-              onCreate={onCreateDb}
-              onRequestDrop={() => setDropDialogOpen(true)}
-            />
-          }
+        <DbSection
+          project={project}
+          dbAvailable={dbAvailable}
+          isRunning={isRunning}
+          creating={dbCreate.isPending}
+          dropping={dbDrop.isPending}
+          restoreState={restoreState}
+          onCreate={onCreateDb}
+          onRequestDrop={() => setDropDialogOpen(true)}
+          onRestoreAuto={() => onRestoreFromDump(project.db.dumpPath)}
+          onPickDump={onPickDump}
+          onClearRestoreState={() => clearRestore(project.slug)}
         />
         <ChecklistRow
           state={isRunning ? 'running' : 'idle'}
@@ -458,75 +501,278 @@ function Drawer({ project, dbAvailable, onClose }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <AlertDialog
+        open={replaceDialogOpen}
+        onOpenChange={(open) => {
+          setReplaceDialogOpen(open)
+          if (!open) setPendingDumpPath(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Replace database <code className="font-mono">{project.db.name}</code>?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Database currently has{' '}
+              <strong>{formatBytes(project.db.sizeBytes)}</strong> of data.
+              Restoring will <strong>DROP and recreate</strong> it from{' '}
+              <code className="font-mono">
+                {pendingDumpPath
+                  ? pendingDumpPath.split(/[\\/]/).pop()
+                  : ''}
+              </code>
+              . Existing data will be permanently lost.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={onConfirmReplace}
+              className={cn(
+                'bg-destructive text-destructive-foreground hover:bg-destructive/90'
+              )}
+            >
+              Replace and restore
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
 
-function DbAction({
-  dbExists,
+function DbSection({
+  project,
   dbAvailable,
   isRunning,
   creating,
   dropping,
+  restoreState,
   onCreate,
-  onRequestDrop
+  onRequestDrop,
+  onRestoreAuto,
+  onPickDump,
+  onClearRestoreState
 }) {
-  if (!dbAvailable) {
+  const dbExists = project.db.exists
+  const isRestoring = restoreState && restoreState.status === 'running'
+  const isFinishing =
+    restoreState &&
+    (restoreState.status === 'done' || restoreState.status === 'error')
+
+  // Активно идёт restore — показываем прогресс-блок вместо кнопок
+  if (isRestoring || isFinishing) {
     return (
-      <Button
-        variant="outline"
-        size="sm"
-        disabled
-        title="Configure database connection in Settings"
-      >
-        {dbExists ? 'Drop' : 'Create'}
-      </Button>
+      <RestoreProgress
+        slug={project.slug}
+        state={restoreState}
+        onClearError={onClearRestoreState}
+      />
     )
   }
 
-  if (!dbExists) {
-    return (
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={onCreate}
-        disabled={creating}
-      >
-        {creating ? <Loader2 className="animate-spin" /> : <Plus />}
-        Create database
-      </Button>
-    )
-  }
-
-  // Exists — show Drop. Block if a process is running.
-  if (isRunning) {
-    return (
-      <Button
-        variant="outline"
-        size="sm"
-        disabled
-        title="Stop the running process before dropping the database"
-        className="text-destructive/60"
-      >
-        <Trash2 />
-        Drop database
-      </Button>
-    )
-  }
+  const dumpFilename = project.db.dumpPath
+    ? project.db.dumpPath.split(/[\\/]/).pop()
+    : null
+  const dumpsRoot = project.db.dumpPath
+    ? project.db.dumpPath.slice(
+        0,
+        project.db.dumpPath.length - dumpFilename.length - 1
+      )
+    : null
 
   return (
-    <Button
-      variant="outline"
-      size="sm"
-      onClick={onRequestDrop}
-      disabled={dropping}
-      className="text-destructive border-destructive/40 hover:bg-destructive/10 hover:text-destructive"
-    >
-      {dropping ? <Loader2 className="animate-spin" /> : <Trash2 />}
-      Drop database
-    </Button>
+    <div className="flex items-start gap-3">
+      <StateIcon state={dbExists ? 'on' : 'off'} />
+      <div className="flex-1 min-w-0 space-y-2">
+        <div>
+          <div className="text-sm font-medium">
+            {dbExists
+              ? `DB ${project.db.name} exists`
+              : `DB ${project.db.name} not found`}
+          </div>
+          <div className="text-xs text-muted-foreground mt-0.5">
+            {dbExists
+              ? `Size: ${formatBytes(project.db.sizeBytes)}`
+              : project.db.dumpPath
+              ? `Dump available: ${dumpFilename}`
+              : 'No dump auto-detected'}
+          </div>
+        </div>
+
+        {!dbAvailable ? (
+          <div className="text-xs text-amber-500">
+            Configure database connection in Settings to enable DB actions.
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {!dbExists ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onCreate}
+                disabled={creating}
+              >
+                {creating ? <Loader2 className="animate-spin" /> : <Plus />}
+                Create database
+              </Button>
+            ) : (
+              <>
+                {project.db.dumpPath && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={onRestoreAuto}
+                    disabled={dropping || creating}
+                    title={`Restore from ${project.db.dumpPath}`}
+                  >
+                    <DatabaseBackup />
+                    Restore from {dumpFilename}
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onPickDump}
+                  disabled={dropping || creating}
+                >
+                  <FolderOpen />
+                  Restore from file…
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onRequestDrop}
+                  disabled={dropping || isRunning}
+                  title={
+                    isRunning
+                      ? 'Stop the running process before dropping the database'
+                      : undefined
+                  }
+                  className={
+                    isRunning
+                      ? 'text-destructive/60'
+                      : 'text-destructive border-destructive/40 hover:bg-destructive/10 hover:text-destructive'
+                  }
+                >
+                  {dropping ? (
+                    <Loader2 className="animate-spin" />
+                  ) : (
+                    <Trash2 />
+                  )}
+                  Drop database
+                </Button>
+              </>
+            )}
+          </div>
+        )}
+
+        {dbExists && project.db.dumpPath && dumpsRoot && (
+          <div className="text-[11px] text-muted-foreground/70">
+            Found in <code className="text-[11px]">{dumpsRoot}</code>
+          </div>
+        )}
+      </div>
+    </div>
   )
 }
+
+function RestoreProgress({ slug, state, onClearError }) {
+  // Локальный таймер для актуального speed/ETA — без него UI обновляется
+  // только на тиках main, и speed визуально дрожит
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 250)
+    return () => clearInterval(id)
+  }, [])
+
+  const status = state.status
+  const total = state.totalBytes || 0
+  const read = state.bytesRead || 0
+  const percent =
+    total > 0 ? Math.min(100, Math.floor((read / total) * 100)) : 0
+  const elapsedMs = Math.max(1, now - state.startedAt)
+  const speed = read / (elapsedMs / 1000)
+  const remainingBytes = Math.max(0, total - read)
+  const etaSec =
+    speed > 1024 ? Math.round(remainingBytes / speed) : null
+
+  return (
+    <div className="flex items-start gap-3">
+      <StateIcon
+        state={
+          status === 'done'
+            ? 'on'
+            : status === 'error'
+            ? 'off'
+            : 'running'
+        }
+      />
+      <div className="flex-1 min-w-0 space-y-2">
+        <div className="text-sm font-medium">
+          {status === 'running' && `Restoring database ${slug.toLowerCase()}…`}
+          {status === 'done' && `Restored ${slug.toLowerCase()}`}
+          {status === 'error' && `Restore failed`}
+        </div>
+
+        {status !== 'error' && (
+          <>
+            <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+              <div
+                className={cn(
+                  'h-full transition-[width] duration-200 rounded-full',
+                  status === 'done' ? 'bg-emerald-500' : 'bg-sky-500'
+                )}
+                style={{ width: `${percent}%` }}
+              />
+            </div>
+            <div className="text-xs text-muted-foreground tabular-nums flex flex-wrap gap-x-3">
+              <span>{percent}%</span>
+              <span>
+                {formatBytes(read)} / {formatBytes(total)}
+              </span>
+              {status === 'running' && speed > 0 && (
+                <>
+                  <span>{formatBytes(speed)}/s</span>
+                  {etaSec != null && <span>ETA {formatDuration(etaSec)}</span>}
+                </>
+              )}
+              {status === 'done' && state.dumpFile && (
+                <span>from {state.dumpFile}</span>
+              )}
+            </div>
+          </>
+        )}
+
+        {status === 'error' && (
+          <div className="flex items-start gap-2 text-xs text-destructive border border-destructive/30 bg-destructive/5 rounded-md px-2 py-1.5">
+            <XCircle size={14} className="mt-0.5 shrink-0" />
+            <div className="flex-1 break-words">
+              {state.message || 'Unknown error'}
+            </div>
+            <button
+              onClick={onClearError}
+              className="shrink-0 -m-0.5 p-0.5 opacity-60 hover:opacity-100"
+              title="Dismiss"
+            >
+              <X size={12} />
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function formatDuration(seconds) {
+  if (seconds < 60) return `${seconds}s`
+  const m = Math.floor(seconds / 60)
+  const s = seconds % 60
+  return `${m}m ${String(s).padStart(2, '0')}s`
+}
+
 
 function GitInline({ status, loading, cloned }) {
   if (!cloned) return null
