@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import electronUpdater from 'electron-updater'
 import { join } from 'node:path'
+import Store from 'electron-store'
 import { registerAllIpc } from './ipc/index.js'
 import { killAll as killAllProcesses } from './services/process-manager.js'
 import { killAllRestores } from './services/db-service.js'
@@ -10,10 +11,32 @@ const FOUR_HOURS = 4 * 60 * 60 * 1000
 
 const isDev = !app.isPackaged
 
+const windowStateStore = new Store({
+  name: 'window-state',
+  clearInvalidConfig: true
+})
+
+// Только один экземпляр приложения. Повторный запуск ярлыка/exe должен
+// просто фокусировать существующее окно вместо открытия второго.
+const singleInstance = app.requestSingleInstanceLock()
+if (!singleInstance) {
+  app.quit()
+}
+
+app.on('second-instance', () => {
+  const win = BrowserWindow.getAllWindows()[0]
+  if (!win) return
+  if (win.isMinimized()) win.restore()
+  win.focus()
+})
+
 function createWindow() {
+  const saved = windowStateStore.get('bounds') || {}
   const mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 800,
+    width: saved.width || 1280,
+    height: saved.height || 800,
+    x: typeof saved.x === 'number' ? saved.x : undefined,
+    y: typeof saved.y === 'number' ? saved.y : undefined,
     show: false,
     autoHideMenuBar: true,
     backgroundColor: '#0a0a0a',
@@ -25,6 +48,18 @@ function createWindow() {
       nodeIntegration: false
     }
   })
+
+  if (saved.maximized) mainWindow.maximize()
+
+  // Сохраняем bounds на close. На resize/move дёргать каждый раз
+  // не нужно — close ловится один раз при выходе.
+  const persistBounds = () => {
+    if (mainWindow.isDestroyed()) return
+    const isMax = mainWindow.isMaximized()
+    const bounds = isMax ? mainWindow.getNormalBounds() : mainWindow.getBounds()
+    windowStateStore.set('bounds', { ...bounds, maximized: isMax })
+  }
+  mainWindow.on('close', persistBounds)
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
