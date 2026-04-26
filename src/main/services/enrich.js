@@ -66,7 +66,7 @@ export async function enrichProjects(projects) {
         ? await fsService.resolveRunnableSubpath(localPath, slugLower, overrides)
         : null
 
-      const dumpPath = await fsService.findDump(dumpsRoot, p.slug)
+      const dump = await fsService.findDump(dumpsRoot, p.slug)
 
       return {
         ...p,
@@ -81,7 +81,9 @@ export async function enrichProjects(projects) {
           name: slugLower,
           exists: dbNames.has(slugLower),
           sizeBytes: dbSizes.get(slugLower) ?? null,
-          dumpPath
+          dumpPath: dump?.path ?? null,
+          dumpFilename: dump?.filename ?? null,
+          dumpMtime: dump?.mtime ?? null
         }
       }
     })

@@ -33,31 +33,61 @@ export function projectExists(projectsRoot, slug) {
 }
 
 /**
- * Поиск дампа по разделу 9.4: `{dumpsRoot}/{slugLower}.sql`,
- * `.sql.gz`, или `{slugUpper}.sql`. Первый существующий — возвращаем.
+ * Поиск дампа в dumpsRoot. Имена файлов в реальности нерегулярные:
+ *  - `{slug}.sql` / `{slug}.sql.gz` (теоретический идеал спеки)
+ *  - `dump-{SLUG}-{timestamp}` (как у пользователя — без расширения)
+ *  - смесь форматов
+ *
+ * Стратегия: читаем папку, фильтруем case-insensitive по двум
+ * паттернам: имя начинается со slug, либо начинается с `dump-{slug}`.
+ * Из подходящих берём свежайший по mtime — если в папке накопились
+ * бэкапы за разные даты, подхватываем последний.
+ *
+ * Расширение игнорируем: формат gzip определяется по содержимому
+ * в restoreDatabase (магические байты 0x1f 0x8b).
  *
  * @param {string} dumpsRoot
  * @param {string} slug
- * @returns {Promise<string|null>}
+ * @returns {Promise<{path: string, filename: string, mtime: number}|null>}
  */
 export async function findDump(dumpsRoot, slug) {
   if (!dumpsRoot) return null
-  const slugLower = slug.toLowerCase()
-  const slugUpper = slug.toUpperCase()
-  const candidates = [
-    path.join(dumpsRoot, `${slugLower}.sql`),
-    path.join(dumpsRoot, `${slugLower}.sql.gz`),
-    path.join(dumpsRoot, `${slugUpper}.sql`)
-  ]
-  for (const c of candidates) {
-    try {
-      const stat = await fsp.stat(c)
-      if (stat.isFile()) return c
-    } catch {
-      // not found — try next
-    }
+
+  let entries
+  try {
+    entries = await fsp.readdir(dumpsRoot, { withFileTypes: true })
+  } catch {
+    return null
   }
-  return null
+
+  const slugLower = slug.toLowerCase()
+  const dumpPrefix = `dump-${slugLower}`
+
+  const matches = entries.filter((e) => {
+    if (!e.isFile()) return false
+    const lower = e.name.toLowerCase()
+    return lower.startsWith(slugLower) || lower.startsWith(dumpPrefix)
+  })
+
+  if (matches.length === 0) return null
+
+  const stats = await Promise.all(
+    matches.map(async (e) => {
+      const full = path.join(dumpsRoot, e.name)
+      try {
+        const s = await fsp.stat(full)
+        return { path: full, filename: e.name, mtime: s.mtimeMs }
+      } catch {
+        return null
+      }
+    })
+  )
+
+  const valid = stats
+    .filter((x) => x != null)
+    .sort((a, b) => b.mtime - a.mtime)
+
+  return valid[0] || null
 }
 
 /**

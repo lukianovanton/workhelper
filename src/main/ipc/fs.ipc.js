@@ -3,10 +3,11 @@ import os from 'node:os'
 import { getConfig } from '../services/config-store.js'
 
 /**
- * fs:pickDump — нативный диалог выбора SQL-дампа.
+ * fs:pickDump — нативный диалог выбора файла дампа.
  * Дефолтная папка — config.paths.dumpsRoot если задана, иначе домашняя.
- * Filters принимают .sql и .gz; реальная валидация (.sql / .sql.gz)
- * идёт в db-service.restoreDatabase.
+ * Без фильтров по расширению: дампы у пользователя приходят с
+ * нерегулярными именами (`dump-P0070-2026-04-01` и т.п.). Формат
+ * (gzip vs plain) определяется content-based в restoreDatabase.
  */
 export function registerFsIpc() {
   ipcMain.handle('fs:pickDump', async (event) => {
@@ -14,13 +15,9 @@ export function registerFsIpc() {
     const defaultPath = getConfig().paths.dumpsRoot || os.homedir()
 
     const result = await dialog.showOpenDialog(win, {
-      title: 'Select SQL dump',
+      title: 'Select dump file',
       defaultPath,
-      properties: ['openFile'],
-      filters: [
-        { name: 'SQL dumps', extensions: ['sql', 'gz'] },
-        { name: 'All files', extensions: ['*'] }
-      ]
+      properties: ['openFile']
     })
 
     if (result.canceled) return null

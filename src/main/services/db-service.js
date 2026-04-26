@@ -15,7 +15,7 @@
 import mysql from 'mysql2/promise'
 import { spawn } from 'node:child_process'
 import { createReadStream } from 'node:fs'
-import { stat } from 'node:fs/promises'
+import { open, stat } from 'node:fs/promises'
 import path from 'node:path'
 import zlib from 'node:zlib'
 import { Transform } from 'node:stream'
@@ -158,6 +158,25 @@ export function mysqlExecutablePath() {
 }
 
 /**
+ * Проверка gzip-формата по магическим байтам (0x1f 0x8b).
+ * Читает первые 2 байта; для пустых/коротких файлов возвращает false.
+ */
+async function isGzipFile(filePath) {
+  let fd
+  try {
+    fd = await open(filePath, 'r')
+    const buf = Buffer.alloc(2)
+    const { bytesRead } = await fd.read(buf, 0, 2, 0)
+    if (bytesRead < 2) return false
+    return buf[0] === 0x1f && buf[1] === 0x8b
+  } catch {
+    return false
+  } finally {
+    if (fd) await fd.close().catch(() => {})
+  }
+}
+
+/**
  * In-memory карта активных restore'ов: slug → { child, bytesRead, totalBytes, startedAt }.
  * Используется для kill-on-quit и для блокировки повторного restore того же slug.
  */
@@ -199,12 +218,10 @@ export async function restoreDatabase(name, dumpPath, jobKey, onProgress) {
     throw new Error(`Dump file is empty: ${dumpPath}`)
   }
 
-  const lower = dumpPath.toLowerCase()
-  const isGz = lower.endsWith('.sql.gz') || lower.endsWith('.gz')
-  const isSql = lower.endsWith('.sql')
-  if (!isGz && !isSql) {
-    throw new Error('Only .sql or .sql.gz dumps are supported')
-  }
+  // Формат определяется по содержимому, а не по расширению — у нас
+  // ходят файлы вида `dump-P0070-2026-04-01` без расширения. Gzip
+  // имеет фиксированный magic-prefix 0x1f 0x8b.
+  const isGz = await isGzipFile(dumpPath)
 
   // БД должна уже существовать — Setup & Run (ч10) сам сделает Create
   // перед Restore; standalone Restore требует наличия БД

@@ -573,14 +573,16 @@ function DbSection({
     )
   }
 
-  const dumpFilename = project.db.dumpPath
-    ? project.db.dumpPath.split(/[\\/]/).pop()
-    : null
-  const dumpsRoot = project.db.dumpPath
-    ? project.db.dumpPath.slice(
-        0,
-        project.db.dumpPath.length - dumpFilename.length - 1
-      )
+  const dumpFilename = project.db.dumpFilename
+  const dumpsRoot =
+    project.db.dumpPath && dumpFilename
+      ? project.db.dumpPath.slice(
+          0,
+          project.db.dumpPath.length - dumpFilename.length - 1
+        )
+      : null
+  const dumpAge = project.db.dumpMtime
+    ? formatRelative(new Date(project.db.dumpMtime).toISOString())
     : null
 
   return (
@@ -596,7 +598,7 @@ function DbSection({
           <div className="text-xs text-muted-foreground mt-0.5">
             {dbExists
               ? `Size: ${formatBytes(project.db.sizeBytes)}`
-              : project.db.dumpPath
+              : dumpFilename
               ? `Dump available: ${dumpFilename}`
               : 'No dump auto-detected'}
           </div>
@@ -672,6 +674,7 @@ function DbSection({
         {dbExists && project.db.dumpPath && dumpsRoot && (
           <div className="text-[11px] text-muted-foreground/70">
             Found in <code className="text-[11px]">{dumpsRoot}</code>
+            {dumpAge && <> · {dumpAge}</>}
           </div>
         )}
       </div>

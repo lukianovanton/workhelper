@@ -55,7 +55,10 @@
  * @property {string} name                    slug.toLowerCase() — всегда
  * @property {boolean} exists
  * @property {number|null} sizeBytes
- * @property {string|null} dumpPath           путь к дампу если найден
+ * @property {string|null} dumpPath           абс. путь к дампу если найден
+ * @property {string|null} dumpFilename       basename, как в файловой системе
+ * @property {number|null} dumpMtime          mtime в ms — для «3h ago»-отметки
+ *                                            свежести найденного дампа
  */
 
 /**
