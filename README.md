@@ -151,36 +151,66 @@ npm run dev
 
 ### Публикация релиза
 
-1. **Получи GitHub Personal Access Token** со scope `public_repo`:
-   github.com → Settings → Developer settings → Personal access
-   tokens → Tokens (classic) → Generate new token (classic)
+#### Однократная подготовка машины
 
-2. **Установи в окружение перед сборкой** (PowerShell):
+- **Включи Windows Developer Mode**: Settings → Privacy & security
+  → For developers → Developer Mode = ON. Без этого
+  `electron-builder` падает на распаковке `winCodeSign` (в архиве
+  внутри лежат macOS-симлинки, для создания которых обычному юзеру
+  нужны права; альтернатива — разово запускать терминал «As
+  Administrator»).
+- **Получи GitHub Personal Access Token**: github.com → Settings →
+  Developer settings → Personal access tokens → Tokens (classic) →
+  Generate new token (classic). Scope: `public_repo` (или `repo`
+  если репозиторий приватный). Срок — 90 дней или 1 год.
 
-   ```
-   $env:GH_TOKEN = "ghp_xxxxxxxxxxxx"
-   ```
+#### Перед каждым релизом
 
-   Этот токен — секрет. Не коммить, не показывай, не сохраняй в
-   проекте. Если случайно куда-то выложил — немедленно удали в
-   GitHub settings и создай новый.
+1. **Подними версию** в `package.json` (`0.1.0` → `0.1.1`).
+   electron-builder сравнивает с уже существующими тегами на
+   GitHub — пытаться выложить ту же версию второй раз бессмысленно.
 
-3. **Подними версию** в `package.json` (`0.1.0` → `0.1.1`).
+2. **Открой свежий PowerShell в папке проекта** и выполни:
 
-4. **Запусти**:
-
-   ```
+   ```powershell
+   $env:GH_TOKEN = "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
    npm run release
    ```
 
-   electron-builder соберёт `.exe`, создаст GitHub Release как draft
-   и зальёт артефакты.
+   Альтернативы для других шеллов:
 
-5. На GitHub зайди в Releases → найди draft → допиши release notes →
-   **Publish release**.
+   ```bash
+   # git-bash — токен живёт только для одной команды
+   GH_TOKEN="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" npm run release
+   ```
 
-6. Установленные у пользователей приложения подхватят обновление
+   ```cmd
+   :: cmd.exe
+   set GH_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+   npm run release
+   ```
+
+   Токен — секрет. Не коммить, не вставляй в чат, не сохраняй в
+   `.env`. Переменная окружения умирает с закрытием окна шелла —
+   так и должно быть. GitHub автоматически отзывает токены,
+   попавшие в публичный код.
+
+3. `electron-vite build` соберёт бандлы, `electron-builder` создаст
+   `dist\WorkHelper Setup X.X.X.exe`, `latest.yml`, `.blockmap` и
+   зальёт их в **draft release** на github.com.
+
+4. Открой
+   [github.com/lukianovanton/workhelper/releases](https://github.com/lukianovanton/workhelper/releases) →
+   найди draft → допиши release notes → **Publish release**. Без
+   этого шага auto-updater у пользователей обновление не увидит.
+
+5. Установленные у пользователей приложения подхватят обновление
    при следующем запуске и применят при перезапуске.
+
+6. Закрой окно PowerShell — `GH_TOKEN` исчезнет из памяти. Если
+   случайно протёк (вставил в чат, закоммитил, отправил коллеге) —
+   немедленно `Settings → Personal access tokens → Revoke` и создай
+   новый.
 
 ### Структура проекта
 
