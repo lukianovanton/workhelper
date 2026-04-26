@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   X,
@@ -87,9 +87,31 @@ function Drawer({ project, onClose }) {
   const { clone, pull, run, stop } = useProjectActions(project.slug)
 
   const [actionStatus, setActionStatus] = useState(null)
+  const flashTimerRef = useRef(null)
+
+  const clearFlashTimer = () => {
+    if (flashTimerRef.current) {
+      clearTimeout(flashTimerRef.current)
+      flashTimerRef.current = null
+    }
+  }
+
+  // Ошибки висят до явного закрытия (× или следующее действие);
+  // ok/info авто-исчезают через 4с.
   const flash = (msg, kind = 'info') => {
+    clearFlashTimer()
     setActionStatus({ msg, kind })
-    setTimeout(() => setActionStatus(null), 4000)
+    if (kind !== 'error') {
+      flashTimerRef.current = setTimeout(() => {
+        setActionStatus(null)
+        flashTimerRef.current = null
+      }, 4000)
+    }
+  }
+
+  const dismissStatus = () => {
+    clearFlashTimer()
+    setActionStatus(null)
   }
 
   const onClone = async () => {
@@ -261,12 +283,12 @@ function Drawer({ project, onClose }) {
         {actionStatus && (
           <div
             className={
-              'text-xs flex items-start gap-2 ' +
+              'text-xs flex items-start gap-2 rounded-md px-2 py-1.5 border ' +
               (actionStatus.kind === 'error'
-                ? 'text-destructive'
+                ? 'text-destructive border-destructive/30 bg-destructive/5'
                 : actionStatus.kind === 'ok'
-                ? 'text-emerald-500'
-                : 'text-muted-foreground')
+                ? 'text-emerald-500 border-emerald-500/30 bg-emerald-500/5'
+                : 'text-muted-foreground border-border')
             }
           >
             {actionStatus.kind === 'error' && (
@@ -275,7 +297,14 @@ function Drawer({ project, onClose }) {
             {actionStatus.kind === 'ok' && (
               <CheckCircle2 size={14} className="mt-0.5 shrink-0" />
             )}
-            <div className="break-words">{actionStatus.msg}</div>
+            <div className="flex-1 break-words">{actionStatus.msg}</div>
+            <button
+              onClick={dismissStatus}
+              className="shrink-0 -m-0.5 p-0.5 opacity-60 hover:opacity-100"
+              title="Dismiss"
+            >
+              <X size={12} />
+            </button>
           </div>
         )}
       </header>
