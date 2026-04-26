@@ -61,16 +61,33 @@ export async function openInVSCode(slug, projectPath) {
     // если readdir упал, всё равно попробуем открыть саму папку
   }
 
-  const child = spawn(abs, [target], {
-    detached: true,
-    stdio: 'ignore',
-    windowsHide: true
-  })
-  child.on('error', (err) => {
-    // Логируем, но не пробрасываем — child уже unref'нут
-    console.error('[editor] spawn error:', err)
-  })
-  child.unref()
+  // Гонка spawn-vs-error: если 'error' прилетит первым (ENOENT,
+  // EACCES и т.п.) — пробрасываем в renderer, не глотаем. На 'spawn'
+  // unref'аем и репортим успех. Раньше child.on('error') писал в
+  // console.error main-процесса, который в packaged-сборке никто
+  // не видит — пользователь думал, что Open молча не работает.
+  return await new Promise((resolve, reject) => {
+    const child = spawn(abs, [target], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true
+    })
 
-  return { opened: target }
+    let settled = false
+    child.once('spawn', () => {
+      if (settled) return
+      settled = true
+      child.unref()
+      resolve({ opened: target })
+    })
+    child.once('error', (err) => {
+      if (settled) return
+      settled = true
+      reject(
+        new Error(
+          `Failed to launch VS Code (${abs}): ${err?.message || err}`
+        )
+      )
+    })
+  })
 }
