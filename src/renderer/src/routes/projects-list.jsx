@@ -13,7 +13,9 @@ import {
   Star,
   Square,
   Package,
-  FileCode2
+  FileCode2,
+  GitPullRequest,
+  XSquare
 } from 'lucide-react'
 import { useProjects } from '@/hooks/use-projects'
 import { useRunningProcesses } from '@/hooks/use-running-processes'
@@ -22,6 +24,8 @@ import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { useProjectsMetaStore } from '@/store/projects-meta.store.js'
 import { usePrefsStore } from '@/store/prefs.store.js'
+import { toast } from '@/store/toast.store.js'
+import { Checkbox } from '@/components/ui/checkbox'
 import { api } from '@/api'
 
 const SORT_STORAGE_KEY = 'projects-sort'
@@ -118,6 +122,17 @@ export default function ProjectsList() {
   const isFilterActive = (id) =>
     activeFilters.has(id) || (id === 'all' && activeFilters.size === 0)
   const [search, setSearch] = useState('')
+  const [selected, setSelected] = useState(() => new Set())
+  const [bulkBusy, setBulkBusy] = useState(false)
+  const toggleSelected = (slug) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(slug)) next.delete(slug)
+      else next.add(slug)
+      return next
+    })
+  }
+  const clearSelected = () => setSelected(new Set())
   const [refreshing, setRefreshing] = useState(false)
   const [sort, setSort] = useState(loadSort)
   const navigate = useNavigate()
@@ -188,6 +203,57 @@ export default function ProjectsList() {
     } finally {
       setRefreshing(false)
     }
+  }
+
+  // Bulk-операции. Параллельно через allSettled — не падаем
+  // на первой ошибке. Один тост-summary в конце.
+  const runBulk = async (action, slugs, label, fn) => {
+    if (slugs.length === 0) return
+    setBulkBusy(true)
+    const id = toast.info(`${label} ${slugs.length} project(s)…`, {
+      durationMs: 0
+    })
+    try {
+      const results = await Promise.allSettled(slugs.map(fn))
+      const ok = results.filter((r) => r.status === 'fulfilled').length
+      const fail = results.length - ok
+      toast.dismiss(id)
+      if (fail === 0) {
+        toast.ok(`${label}: ${ok}/${results.length} succeeded`)
+      } else {
+        const firstErr =
+          results.find((r) => r.status === 'rejected')?.reason?.message ||
+          'unknown'
+        toast.error(
+          `${label}: ${ok}/${results.length} succeeded, ${fail} failed (e.g. ${firstErr})`
+        )
+      }
+      await refresh()
+    } finally {
+      setBulkBusy(false)
+    }
+  }
+
+  const onBulkPull = () => {
+    if (!projects) return
+    const slugs = [...selected].filter((s) => {
+      const p = projects.find((x) => x.slug === s)
+      return p?.local.cloned && !runningBySlug.has(s)
+    })
+    runBulk('Pull', slugs, 'Pull', (slug) => api.git.pull(slug))
+  }
+
+  const onBulkStop = () => {
+    const slugs = [...selected].filter((s) => runningBySlug.has(s))
+    runBulk('Stop', slugs, 'Stop', (slug) => api.process.stop(slug))
+  }
+
+  const onPullAllInstalled = () => {
+    if (!projects) return
+    const slugs = projects
+      .filter((p) => p.local.cloned && !runningBySlug.has(p.slug))
+      .map((p) => p.slug)
+    runBulk('Pull all', slugs, 'Pull', (slug) => api.git.pull(slug))
   }
 
   return (
@@ -282,6 +348,16 @@ export default function ProjectsList() {
           <Button
             variant="outline"
             size="sm"
+            onClick={onPullAllInstalled}
+            disabled={bulkBusy || isLoading || !projects}
+            title="Pull on every installed project that isn't running"
+          >
+            {bulkBusy ? <Loader2 className="animate-spin" /> : <GitPullRequest />}
+            Pull all
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
             onClick={handleRefresh}
             disabled={refreshing || isLoading}
           >
@@ -293,6 +369,36 @@ export default function ProjectsList() {
             Refresh
           </Button>
         </header>
+
+        {selected.size > 0 && (
+          <div className="px-6 py-2 border-b border-amber-500/30 bg-amber-500/10 text-amber-300 text-xs flex items-center gap-3">
+            <span>{selected.size} selected</span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onBulkPull}
+              disabled={bulkBusy}
+            >
+              <GitPullRequest /> Pull
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onBulkStop}
+              disabled={bulkBusy}
+            >
+              <Square /> Stop
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={clearSelected}
+              className="ml-auto"
+            >
+              <XSquare /> Clear
+            </Button>
+          </div>
+        )}
 
         {warnings.length > 0 && <WarningBanner warnings={warnings} />}
 
@@ -323,6 +429,8 @@ export default function ProjectsList() {
               toggleFavorite={toggleFavorite}
               density={density}
               search={searchHighlight ? search.trim() : ''}
+              selected={selected}
+              toggleSelected={toggleSelected}
               onOpen={(slug) => navigate(`/projects/${slug}`)}
             />
           )}
@@ -345,6 +453,8 @@ function ProjectsTable({
   toggleFavorite,
   density,
   search,
+  selected,
+  toggleSelected,
   onOpen
 }) {
   const compact = density === 'compact'
@@ -370,6 +480,7 @@ function ProjectsTable({
     <table className="w-full text-sm">
       <thead className="sticky top-0 bg-background border-b border-border z-10">
         <tr className="text-left text-xs text-muted-foreground">
+          <th className={cn('font-normal w-8', cellPad)}></th>
           <th className={cn('font-normal w-8', cellPad)}></th>
           <th className={cn('font-normal w-20', cellPad)}>Status</th>
           <SortHeader id="slug" sort={sort} onSort={onSort} className={cn('w-32', cellPad)}>
@@ -410,6 +521,13 @@ function ProjectsTable({
                 openSlug === p.slug && 'bg-accent/60'
               )}
             >
+              <td className={cn(cellPad, 'text-center')}>
+                <Checkbox
+                  checked={selected.has(p.slug)}
+                  onCheckedChange={() => toggleSelected(p.slug)}
+                  onClick={(e) => e.stopPropagation()}
+                />
+              </td>
               <td className={cn(cellPad, 'text-center')}>
                 <button
                   onClick={(e) => {
