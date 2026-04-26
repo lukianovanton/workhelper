@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Check, X, Loader2 } from 'lucide-react'
+import { ArrowLeft, Check, X, Loader2, CheckCircle2, XCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -27,6 +27,8 @@ export default function Settings() {
   const [mysqlDetected, setMysqlDetected] = useState(null)
   const [saving, setSaving] = useState(false)
   const [saveStatus, setSaveStatus] = useState(null)
+  const [testingBitbucket, setTestingBitbucket] = useState(false)
+  const [bitbucketTestResult, setBitbucketTestResult] = useState(null)
 
   const loadAll = useCallback(async () => {
     const [c, s] = await Promise.all([
@@ -66,6 +68,24 @@ export default function Settings() {
       ...prev,
       [section]: { ...prev[section], [key]: value }
     }))
+    if (section === 'bitbucket') setBitbucketTestResult(null)
+  }
+
+  const onTestBitbucket = async () => {
+    setTestingBitbucket(true)
+    setBitbucketTestResult(null)
+    try {
+      const result = await api.bitbucket.testConnection()
+      setBitbucketTestResult(result)
+    } catch (e) {
+      setBitbucketTestResult({
+        ok: false,
+        stage: 'error',
+        message: e?.message || String(e)
+      })
+    } finally {
+      setTestingBitbucket(false)
+    }
   }
 
   const onSave = async () => {
@@ -161,12 +181,26 @@ export default function Settings() {
               status={secretsStatus.bitbucketApiToken}
               value={bitbucketApiToken}
               onChange={setBitbucketApiToken}
-              onClear={() => onClearSecret('bitbucketApiToken')}
+              onClear={() => {
+                onClearSecret('bitbucketApiToken')
+                setBitbucketTestResult(null)
+              }}
             />
-            <div className="pt-2">
-              <Button variant="outline" size="sm" disabled title="Coming next checkpoint">
+            <div className="pt-2 space-y-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onTestBitbucket}
+                disabled={testingBitbucket}
+              >
+                {testingBitbucket && <Loader2 className="animate-spin" />}
                 Test connection
               </Button>
+              <BitbucketTestResult result={bitbucketTestResult} />
+              <p className="text-xs text-muted-foreground">
+                Test reads stored credentials — Save first if you've changed
+                fields above.
+              </p>
             </div>
           </CardContent>
         </Card>
@@ -332,6 +366,38 @@ export default function Settings() {
           Secrets encrypted via Electron safeStorage in{' '}
           <code>secrets.json</code>.
         </p>
+      </div>
+    </div>
+  )
+}
+
+function BitbucketTestResult({ result }) {
+  if (!result) return null
+  if (result.ok) {
+    return (
+      <div className="flex items-start gap-2 text-xs text-emerald-500">
+        <CheckCircle2 size={14} className="mt-0.5 shrink-0" />
+        <div>
+          <div>
+            Authenticated as <strong>{result.user.displayName}</strong>
+          </div>
+          <div className="text-muted-foreground mt-0.5">
+            Workspace <strong>{result.workspace.name}</strong> ({result.workspace.slug}) accessible.
+          </div>
+        </div>
+      </div>
+    )
+  }
+  const stageColor =
+    result.stage === 'config' ? 'text-amber-500' : 'text-destructive'
+  return (
+    <div className={`flex items-start gap-2 text-xs ${stageColor}`}>
+      <XCircle size={14} className="mt-0.5 shrink-0" />
+      <div>
+        <div>{result.message}</div>
+        {result.detail && (
+          <div className="text-muted-foreground mt-0.5">{result.detail}</div>
+        )}
       </div>
     </div>
   )

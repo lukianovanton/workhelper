@@ -1,53 +1,288 @@
-import { Link, Outlet } from 'react-router-dom'
+import { useMemo, useState } from 'react'
+import { Link, Outlet, useNavigate, useParams } from 'react-router-dom'
+import {
+  Loader2,
+  RefreshCw,
+  Settings as SettingsIcon,
+  AlertCircle,
+  Search
+} from 'lucide-react'
+import { useProjects } from '@/hooks/use-projects'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { cn } from '@/lib/utils'
+
+const FILTERS = /** @type {const} */ ([
+  { id: 'all', label: 'All' },
+  { id: 'projects', label: 'Projects' },
+  { id: 'templates', label: 'Templates' }
+])
 
 export default function ProjectsList() {
+  const { projects, isLoading, isFetching, error, refresh } = useProjects()
+  const [filter, setFilter] = useState('all')
+  const [search, setSearch] = useState('')
+  const [refreshing, setRefreshing] = useState(false)
+  const navigate = useNavigate()
+  const { slug: openSlug } = useParams()
+
+  const filtered = useMemo(() => {
+    if (!projects) return []
+    const q = search.trim().toLowerCase()
+    return projects.filter((p) => {
+      if (filter === 'projects' && p.kind !== 'project') return false
+      if (filter === 'templates' && p.kind !== 'template') return false
+      if (q) {
+        const hay = `${p.slug} ${p.name} ${p.description || ''}`.toLowerCase()
+        if (!hay.includes(q)) return false
+      }
+      return true
+    })
+  }, [projects, filter, search])
+
+  const counts = useMemo(() => {
+    if (!projects) return { all: 0, projects: 0, templates: 0 }
+    return {
+      all: projects.length,
+      projects: projects.filter((p) => p.kind === 'project').length,
+      templates: projects.filter((p) => p.kind === 'template').length
+    }
+  }, [projects])
+
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    try {
+      await refresh()
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
   return (
     <div className="flex h-screen w-screen">
       <aside className="w-60 border-r border-border bg-card flex flex-col">
         <div className="p-4 border-b border-border">
           <h1 className="text-lg font-semibold">Project Hub</h1>
+          {projects && (
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {projects.length} repos in workspace
+            </p>
+          )}
         </div>
         <nav className="flex-1 p-3 space-y-1 text-sm">
-          <button className="w-full text-left px-3 py-2 rounded-md hover:bg-accent">
-            All
-          </button>
-          <button className="w-full text-left px-3 py-2 rounded-md hover:bg-accent">
-            Installed
-          </button>
-          <button className="w-full text-left px-3 py-2 rounded-md hover:bg-accent">
-            Not installed
-          </button>
-          <button className="w-full text-left px-3 py-2 rounded-md hover:bg-accent">
-            Templates
-          </button>
-          <button className="w-full text-left px-3 py-2 rounded-md hover:bg-accent">
-            Running
-          </button>
+          {FILTERS.map((f) => (
+            <button
+              key={f.id}
+              onClick={() => setFilter(f.id)}
+              className={cn(
+                'w-full text-left px-3 py-2 rounded-md flex items-center justify-between',
+                filter === f.id
+                  ? 'bg-accent text-accent-foreground'
+                  : 'hover:bg-accent/60'
+              )}
+            >
+              <span>{f.label}</span>
+              <span className="text-xs text-muted-foreground">
+                {counts[f.id]}
+              </span>
+            </button>
+          ))}
         </nav>
         <div className="p-3 border-t border-border">
           <Link
             to="/settings"
-            className="block px-3 py-2 rounded-md hover:bg-accent text-sm"
+            className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-accent text-sm"
           >
-            ⚙ Settings
+            <SettingsIcon size={14} />
+            Settings
           </Link>
         </div>
       </aside>
 
       <main className="flex-1 flex flex-col overflow-hidden">
-        <header className="px-6 py-4 border-b border-border flex items-center justify-between">
-          <h2 className="text-base font-medium">Projects</h2>
-          <button className="text-sm px-3 py-1.5 rounded-md hover:bg-accent">
-            ⟳ Refresh
-          </button>
+        <header className="px-6 py-4 border-b border-border flex items-center justify-between gap-4">
+          <div className="flex-1 max-w-md relative">
+            <Search
+              size={14}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+            />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by slug, name, description…"
+              className="pl-9"
+            />
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRefresh}
+            disabled={refreshing || isLoading}
+          >
+            {refreshing || isFetching ? (
+              <Loader2 className="animate-spin" />
+            ) : (
+              <RefreshCw />
+            )}
+            Refresh
+          </Button>
         </header>
 
-        <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
-          MVP-1 scaffold — Bitbucket client coming next checkpoint
+        <div className="flex-1 overflow-auto">
+          {isLoading && <ListLoading />}
+          {error && <ListError error={error} />}
+          {!isLoading && !error && projects && (
+            <ProjectsTable
+              projects={filtered}
+              total={projects.length}
+              openSlug={openSlug}
+              onOpen={(slug) => navigate(`/projects/${slug}`)}
+            />
+          )}
         </div>
       </main>
 
       <Outlet />
     </div>
   )
+}
+
+function ProjectsTable({ projects, total, openSlug, onOpen }) {
+  if (total === 0) {
+    return (
+      <EmptyState
+        title="No repositories"
+        message="Bitbucket workspace returned an empty list."
+      />
+    )
+  }
+  if (projects.length === 0) {
+    return (
+      <EmptyState
+        title="No matches"
+        message="Adjust filter or search to see results."
+      />
+    )
+  }
+
+  return (
+    <table className="w-full text-sm">
+      <thead className="sticky top-0 bg-background border-b border-border">
+        <tr className="text-left text-xs text-muted-foreground">
+          <th className="font-normal px-6 py-2 w-32">Slug</th>
+          <th className="font-normal px-6 py-2">Name</th>
+          <th className="font-normal px-6 py-2 w-24">Kind</th>
+          <th className="font-normal px-6 py-2 w-32">Updated</th>
+        </tr>
+      </thead>
+      <tbody>
+        {projects.map((p) => (
+          <tr
+            key={p.slug}
+            onClick={() => onOpen(p.slug)}
+            className={cn(
+              'border-b border-border/60 cursor-pointer hover:bg-accent/40',
+              openSlug === p.slug && 'bg-accent/60'
+            )}
+          >
+            <td className="px-6 py-2 font-mono text-xs">{p.slug}</td>
+            <td className="px-6 py-2">
+              <div className="font-medium">{p.name}</div>
+              {p.description && (
+                <div className="text-xs text-muted-foreground line-clamp-1">
+                  {p.description}
+                </div>
+              )}
+            </td>
+            <td className="px-6 py-2">
+              <KindBadge kind={p.kind} projectKey={p.bitbucket.projectKey} />
+            </td>
+            <td className="px-6 py-2 text-xs text-muted-foreground">
+              {formatRelative(p.bitbucket.updatedOn)}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
+function KindBadge({ kind, projectKey }) {
+  const tone =
+    kind === 'template'
+      ? 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+      : 'bg-sky-500/15 text-sky-400 border-sky-500/30'
+  return (
+    <span
+      title={projectKey ? `project.key = ${projectKey}` : ''}
+      className={cn(
+        'inline-flex items-center px-2 py-0.5 rounded-md text-xs border',
+        tone
+      )}
+    >
+      {kind}
+    </span>
+  )
+}
+
+function ListLoading() {
+  return (
+    <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
+      <Loader2 className="animate-spin mr-2" />
+      Loading projects…
+    </div>
+  )
+}
+
+function ListError({ error }) {
+  const message = error?.message || String(error)
+  const isConfig =
+    /credentials/i.test(message) || /workspace not set/i.test(message)
+  return (
+    <div className="h-full flex items-center justify-center p-8">
+      <div className="max-w-md text-center space-y-3">
+        <AlertCircle className="mx-auto text-destructive" size={32} />
+        <h3 className="font-medium">Couldn't load projects</h3>
+        <p className="text-sm text-muted-foreground">{message}</p>
+        {isConfig && (
+          <Link
+            to="/settings"
+            className="inline-flex items-center gap-2 text-sm text-primary underline-offset-4 hover:underline"
+          >
+            <SettingsIcon size={14} />
+            Open Settings
+          </Link>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function EmptyState({ title, message }) {
+  return (
+    <div className="h-full flex items-center justify-center text-center p-8">
+      <div>
+        <h3 className="font-medium">{title}</h3>
+        <p className="text-sm text-muted-foreground mt-1">{message}</p>
+      </div>
+    </div>
+  )
+}
+
+function formatRelative(iso) {
+  if (!iso) return '—'
+  const then = new Date(iso).getTime()
+  if (Number.isNaN(then)) return '—'
+  const diff = Date.now() - then
+  const minutes = Math.floor(diff / 60_000)
+  if (minutes < 1) return 'just now'
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  if (days < 30) return `${days}d ago`
+  const months = Math.floor(days / 30)
+  if (months < 12) return `${months}mo ago`
+  const years = Math.floor(days / 365)
+  return `${years}y ago`
 }

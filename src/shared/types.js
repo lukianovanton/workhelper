@@ -27,6 +27,12 @@
  * @typedef {Object} BitbucketInfo
  * @property {string} url             https://bitbucket.org/techgurusit/p0070
  * @property {string} cloneUrl        HTTPS clone URL
+ * @property {string|null} updatedOn  ISO timestamp из /repositories list —
+ *                                     достаточно для сортировки/превью.
+ *                                     Полный last commit грузится лениво
+ *                                     (только при открытии Detail drawer).
+ * @property {string} projectKey      repo.project.key из Bitbucket API,
+ *                                     используется для классификации kind.
  * @property {BitbucketCommit} [lastCommit]
  */
 
