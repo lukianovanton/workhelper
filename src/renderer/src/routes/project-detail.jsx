@@ -6,6 +6,7 @@ import {
   Code2,
   GitPullRequest,
   Play,
+  Square,
   Loader2,
   CheckCircle2,
   XCircle,
@@ -14,6 +15,9 @@ import {
 } from 'lucide-react'
 import { useProjects } from '@/hooks/use-projects'
 import { useLastCommit } from '@/hooks/use-last-commit'
+import { useRunningProcesses } from '@/hooks/use-running-processes'
+import { useGitStatus } from '@/hooks/use-git-status'
+import { useProjectActions } from '@/hooks/use-project-actions'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { api } from '@/api'
@@ -24,12 +28,14 @@ export default function ProjectDetail() {
   const { projects, isLoading: projectsLoading } = useProjects()
   const project = projects?.find((p) => p.slug === slug) || null
 
-  if (projectsLoading) return <DrawerShell onClose={() => navigate('/projects')} loading />
-  if (!project) return <DrawerNotFound slug={slug} onClose={() => navigate('/projects')} />
+  if (projectsLoading)
+    return <DrawerShell onClose={() => navigate('/projects')} loading />
+  if (!project)
+    return (
+      <DrawerNotFound slug={slug} onClose={() => navigate('/projects')} />
+    )
 
-  return (
-    <Drawer project={project} onClose={() => navigate('/projects')} />
-  )
+  return <Drawer project={project} onClose={() => navigate('/projects')} />
 }
 
 function DrawerShell({ children, onClose, loading }) {
@@ -72,11 +78,17 @@ function DrawerNotFound({ slug, onClose }) {
 
 function Drawer({ project, onClose }) {
   const cloned = project.local.cloned
-  const [actionStatus, setActionStatus] = useState(null)
+  const { bySlug } = useRunningProcesses()
+  const runtime = bySlug.get(project.slug) || null
+  const isRunning = !!runtime
 
+  const gitStatus = useGitStatus(project.slug, cloned)
+  const { pull, run, stop } = useProjectActions(project.slug)
+
+  const [actionStatus, setActionStatus] = useState(null)
   const flash = (msg, kind = 'info') => {
     setActionStatus({ msg, kind })
-    setTimeout(() => setActionStatus(null), 3500)
+    setTimeout(() => setActionStatus(null), 4000)
   }
 
   const onOpenVSCode = async () => {
@@ -88,12 +100,40 @@ function Drawer({ project, onClose }) {
     }
   }
 
-  const onPull = () => {
-    flash('Pull is wired in the next checkpoint (simple-git).', 'info')
+  const onPull = async () => {
+    try {
+      const res = await pull.mutateAsync()
+      const summary = res?.summary || ''
+      const ok = res?.updated
+        ? `Pulled ${project.slug}: ${summary}`
+        : `${project.slug} ${summary.toLowerCase()}`
+      flash(ok, 'ok')
+    } catch (e) {
+      flash(e?.message || String(e), 'error')
+    }
   }
 
-  const onRun = () => {
-    flash('Run is wired in the next checkpoint (process-manager).', 'info')
+  const onRun = async () => {
+    try {
+      const res = await run.mutateAsync()
+      flash(
+        `Started ${project.slug} (PID ${res?.pid}). Waiting for port…`,
+        'ok'
+      )
+    } catch (e) {
+      flash(e?.message || String(e), 'error')
+    }
+  }
+
+  const onStop = async () => {
+    const port = runtime?.port ?? '?'
+    if (!window.confirm(`Stop ${project.slug} on :${port}?`)) return
+    try {
+      await stop.mutateAsync()
+      flash(`Stopped ${project.slug}`, 'ok')
+    } catch (e) {
+      flash(e?.message || String(e), 'error')
+    }
   }
 
   return (
@@ -105,21 +145,17 @@ function Drawer({ project, onClose }) {
               <h2 className="text-base font-semibold font-mono">
                 {project.slug}
               </h2>
-              <a
-                href={project.bitbucket.url}
-                onClick={(e) => {
-                  e.preventDefault()
-                  // Внешние ссылки уже обработаны в main (setWindowOpenHandler);
-                  // создаём временное окно, которое сразу деинит-открывает наружу.
+              <button
+                onClick={() =>
                   window.open(project.bitbucket.url, '_blank')
-                }}
+                }
                 className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
                 title={project.bitbucket.url}
               >
                 {project.bitbucket.projectKey || 'workspace'}/
                 {project.slug}
                 <ExternalLink size={11} />
-              </a>
+              </button>
             </div>
             {project.name !== project.slug && (
               <div className="text-sm mt-0.5">{project.name}</div>
@@ -143,19 +179,35 @@ function Drawer({ project, onClose }) {
             label="Open in VS Code"
           />
           <ActionButton
-            icon={<GitPullRequest />}
+            icon={pull.isPending ? <Loader2 className="animate-spin" /> : <GitPullRequest />}
             onClick={onPull}
-            disabled={!cloned}
-            disabledTooltip="Project is not cloned locally"
+            disabled={!cloned || pull.isPending || isRunning}
+            disabledTooltip={
+              !cloned
+                ? 'Project is not cloned locally'
+                : isRunning
+                ? 'Stop the running process before pulling'
+                : ''
+            }
             label="Pull"
           />
-          <ActionButton
-            icon={<Play />}
-            onClick={onRun}
-            disabled={!cloned}
-            disabledTooltip="Project is not cloned locally"
-            label="Run"
-          />
+          {isRunning ? (
+            <ActionButton
+              icon={stop.isPending ? <Loader2 className="animate-spin" /> : <Square />}
+              onClick={onStop}
+              disabled={stop.isPending}
+              label={`Stop${runtime?.port ? ` (:${runtime.port})` : ''}`}
+              destructive
+            />
+          ) : (
+            <ActionButton
+              icon={run.isPending ? <Loader2 className="animate-spin" /> : <Play />}
+              onClick={onRun}
+              disabled={!cloned || run.isPending}
+              disabledTooltip="Project is not cloned locally"
+              label="Run"
+            />
+          )}
         </div>
         {actionStatus && (
           <div
@@ -174,7 +226,7 @@ function Drawer({ project, onClose }) {
             {actionStatus.kind === 'ok' && (
               <CheckCircle2 size={14} className="mt-0.5 shrink-0" />
             )}
-            <div>{actionStatus.msg}</div>
+            <div className="break-words">{actionStatus.msg}</div>
           </div>
         )}
       </header>
@@ -182,11 +234,7 @@ function Drawer({ project, onClose }) {
       <div className="flex-1 overflow-auto p-6 space-y-4">
         <ChecklistRow
           state={project.local.cloned ? 'on' : 'off'}
-          title={
-            project.local.cloned
-              ? 'Cloned'
-              : 'Not cloned'
-          }
+          title={project.local.cloned ? 'Cloned' : 'Not cloned'}
           subtitle={
             project.local.cloned ? (
               <code className="text-xs">{project.local.path}</code>
@@ -194,13 +242,7 @@ function Drawer({ project, onClose }) {
               `Will live at ${project.local.path || '<projectsRoot>/' + project.slug.toLowerCase()}`
             )
           }
-          right={
-            project.local.cloned && (
-              <span className="text-xs text-muted-foreground">
-                Last pull: —
-              </span>
-            )
-          }
+          right={<GitInline status={gitStatus.data} loading={gitStatus.isLoading} cloned={cloned} />}
         />
         <ChecklistRow
           state={project.db.exists ? 'on' : 'off'}
@@ -218,17 +260,22 @@ function Drawer({ project, onClose }) {
           }
         />
         <ChecklistRow
-          state={project.runtime.running ? 'running' : 'idle'}
+          state={isRunning ? 'running' : 'idle'}
           title={
-            project.runtime.running
-              ? `Running on :${project.runtime.port ?? '?'}`
+            isRunning
+              ? `Running on :${runtime?.port ?? '?'}`
               : 'Not running'
           }
           subtitle={
-            project.runtime.running ? (
+            isRunning ? (
               <>
-                PID {project.runtime.pid} · Started{' '}
-                {formatRelative(project.runtime.startedAt)}
+                PID {runtime?.pid} · Started{' '}
+                {formatRelative(runtime?.startedAt)}
+                {runtime?.port == null && (
+                  <span className="text-muted-foreground/70">
+                    {' '}· detecting port…
+                  </span>
+                )}
               </>
             ) : (
               '—'
@@ -236,22 +283,21 @@ function Drawer({ project, onClose }) {
           }
         />
 
-        {project.local.runnableSubpath !== undefined &&
-          project.local.cloned && (
-            <div className="text-xs text-muted-foreground pl-7">
-              {project.local.runnableSubpath ? (
-                <>
-                  Runnable subpath:{' '}
-                  <code>{project.local.runnableSubpath}</code>
-                </>
-              ) : (
-                <span className="text-amber-500">
-                  ⚠️ Cannot detect runnable project. Set
-                  workingDirSubpath override in Settings.
-                </span>
-              )}
-            </div>
-          )}
+        {project.local.cloned && (
+          <div className="text-xs text-muted-foreground pl-7">
+            {project.local.runnableSubpath ? (
+              <>
+                Runnable subpath:{' '}
+                <code>{project.local.runnableSubpath}</code>
+              </>
+            ) : (
+              <span className="text-amber-500">
+                ⚠️ Cannot detect runnable project. Set
+                workingDirSubpath override in Settings.
+              </span>
+            )}
+          </div>
+        )}
 
         <Separator />
 
@@ -261,14 +307,42 @@ function Drawer({ project, onClose }) {
   )
 }
 
-function ActionButton({ icon, onClick, disabled, disabledTooltip, label }) {
+function GitInline({ status, loading, cloned }) {
+  if (!cloned) return null
+  if (loading) {
+    return (
+      <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
+        <Loader2 size={12} className="animate-spin" /> status…
+      </span>
+    )
+  }
+  if (!status) return null
+  const branch = status.branch || '?'
+  return (
+    <span className="text-xs text-muted-foreground inline-flex items-center gap-2">
+      <code className="text-[11px]">{branch}</code>
+      {status.dirty && <span className="text-amber-500">dirty</span>}
+      {status.ahead > 0 && <span>↑{status.ahead}</span>}
+      {status.behind > 0 && <span>↓{status.behind}</span>}
+    </span>
+  )
+}
+
+function ActionButton({
+  icon,
+  onClick,
+  disabled,
+  disabledTooltip,
+  label,
+  destructive
+}) {
   return (
     <Button
-      variant="outline"
+      variant={destructive ? 'destructive' : 'outline'}
       size="sm"
       onClick={onClick}
       disabled={disabled}
-      title={disabled ? disabledTooltip : undefined}
+      title={disabled && disabledTooltip ? disabledTooltip : undefined}
     >
       {icon}
       {label}
@@ -301,10 +375,17 @@ function StateIcon({ state }) {
     case 'running':
       return <CheckCircle2 size={16} className={cls + ' text-sky-500'} />
     case 'off':
-      return <CircleDashed size={16} className={cls + ' text-muted-foreground'} />
+      return (
+        <CircleDashed size={16} className={cls + ' text-muted-foreground'} />
+      )
     case 'idle':
     default:
-      return <CircleDashed size={16} className={cls + ' text-muted-foreground/60'} />
+      return (
+        <CircleDashed
+          size={16}
+          className={cls + ' text-muted-foreground/60'}
+        />
+      )
   }
 }
 

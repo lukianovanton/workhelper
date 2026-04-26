@@ -33,7 +33,21 @@ const api = {
   process: {
     run: (slug) => ipcRenderer.invoke('process:run', slug),
     stop: (slug) => ipcRenderer.invoke('process:stop', slug),
-    isRunning: (slug) => ipcRenderer.invoke('process:isRunning', slug)
+    isRunning: (slug) => ipcRenderer.invoke('process:isRunning', slug),
+    list: () => ipcRenderer.invoke('process:list'),
+    logs: (slug) => ipcRenderer.invoke('process:logs', slug),
+    /**
+     * Подписка на process:log/port/exit.
+     * Возвращает unsubscribe.
+     * @param {'log'|'port'|'exit'} event
+     * @param {(payload:any)=>void} callback
+     */
+    on: (event, callback) => {
+      const channel = `process:${event}`
+      const handler = (_e, payload) => callback(payload)
+      ipcRenderer.on(channel, handler)
+      return () => ipcRenderer.removeListener(channel, handler)
+    }
   },
   editor: {
     openInVSCode: (slug) => ipcRenderer.invoke('editor:openInVSCode', slug)

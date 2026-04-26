@@ -27,7 +27,12 @@ export const IPC = {
   process: {
     run: 'process:run',
     stop: 'process:stop',
-    isRunning: 'process:isRunning'
+    isRunning: 'process:isRunning',
+    list: 'process:list',
+    logs: 'process:logs',
+    log: 'process:log',
+    port: 'process:port',
+    exit: 'process:exit'
   },
   editor: {
     openInVSCode: 'editor:openInVSCode'

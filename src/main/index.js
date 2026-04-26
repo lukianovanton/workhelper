@@ -1,6 +1,7 @@
 import { app, BrowserWindow, shell } from 'electron'
 import { join } from 'node:path'
 import { registerAllIpc } from './ipc/index.js'
+import { killAll as killAllProcesses } from './services/process-manager.js'
 
 const isDev = !app.isPackaged
 
@@ -51,4 +52,10 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
+})
+
+// Гасим все запущенные dotnet-процессы при выходе из приложения,
+// иначе они переживают наш Electron и продолжают слушать порты.
+app.on('before-quit', () => {
+  killAllProcesses()
 })

@@ -9,6 +9,7 @@ import {
   Search
 } from 'lucide-react'
 import { useProjects } from '@/hooks/use-projects'
+import { useRunningProcesses } from '@/hooks/use-running-processes'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
@@ -17,6 +18,7 @@ const FILTERS = /** @type {const} */ ([
   { id: 'all', label: 'All' },
   { id: 'installed', label: 'Installed' },
   { id: 'not-installed', label: 'Not installed' },
+  { id: 'running', label: 'Running' },
   { id: 'projects', label: 'Projects' },
   { id: 'templates', label: 'Templates' }
 ])
@@ -24,6 +26,7 @@ const FILTERS = /** @type {const} */ ([
 export default function ProjectsList() {
   const { projects, warnings, isLoading, isFetching, error, refresh } =
     useProjects()
+  const { bySlug: runningBySlug } = useRunningProcesses()
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [refreshing, setRefreshing] = useState(false)
@@ -41,6 +44,9 @@ export default function ProjectsList() {
         case 'not-installed':
           if (p.local.cloned) return false
           break
+        case 'running':
+          if (!runningBySlug.has(p.slug)) return false
+          break
         case 'projects':
           if (p.kind !== 'project') return false
           break
@@ -54,7 +60,7 @@ export default function ProjectsList() {
       }
       return true
     })
-  }, [projects, filter, search])
+  }, [projects, filter, search, runningBySlug])
 
   const counts = useMemo(() => {
     if (!projects) return { all: 0 }
@@ -62,10 +68,11 @@ export default function ProjectsList() {
       all: projects.length,
       installed: projects.filter((p) => p.local.cloned).length,
       'not-installed': projects.filter((p) => !p.local.cloned).length,
+      running: projects.filter((p) => runningBySlug.has(p.slug)).length,
       projects: projects.filter((p) => p.kind === 'project').length,
       templates: projects.filter((p) => p.kind === 'template').length
     }
-  }, [projects])
+  }, [projects, runningBySlug])
 
   const handleRefresh = async () => {
     setRefreshing(true)
@@ -156,6 +163,7 @@ export default function ProjectsList() {
               projects={filtered}
               total={projects.length}
               openSlug={openSlug}
+              runningBySlug={runningBySlug}
               onOpen={(slug) => navigate(`/projects/${slug}`)}
             />
           )}
@@ -167,7 +175,7 @@ export default function ProjectsList() {
   )
 }
 
-function ProjectsTable({ projects, total, openSlug, onOpen }) {
+function ProjectsTable({ projects, total, openSlug, runningBySlug, onOpen }) {
   if (total === 0) {
     return (
       <EmptyState
@@ -208,7 +216,10 @@ function ProjectsTable({ projects, total, openSlug, onOpen }) {
             )}
           >
             <td className="px-4 py-2">
-              <StatusDots project={p} />
+              <StatusDots
+                project={p}
+                runtime={runningBySlug.get(p.slug) || null}
+              />
             </td>
             <td className="px-4 py-2 font-mono text-xs">{p.slug}</td>
             <td className="px-4 py-2">
@@ -235,7 +246,8 @@ function ProjectsTable({ projects, total, openSlug, onOpen }) {
   )
 }
 
-function StatusDots({ project }) {
+function StatusDots({ project, runtime }) {
+  const running = !!runtime
   const dots = [
     {
       on: project.local.cloned,
@@ -257,14 +269,14 @@ function StatusDots({ project }) {
       on: false,
       onColor: 'bg-amber-500',
       offColor: 'bg-muted-foreground/15',
-      title: 'Dirty (next checkpoint)'
+      title: 'Dirty (live status only in drawer for now)'
     },
     {
-      on: project.runtime.running,
+      on: running,
       onColor: 'bg-sky-500',
       offColor: 'bg-muted-foreground/15',
-      title: project.runtime.running
-        ? `Running on :${project.runtime.port ?? '?'}`
+      title: running
+        ? `Running on :${runtime?.port ?? '?'} (PID ${runtime?.pid})`
         : 'Not running'
     }
   ]

@@ -2,6 +2,8 @@ import { registerConfigIpc } from './config.ipc.js'
 import { registerBitbucketIpc } from './bitbucket.ipc.js'
 import { registerDbIpc } from './db.ipc.js'
 import { registerEditorIpc } from './editor.ipc.js'
+import { registerGitIpc } from './git.ipc.js'
+import { registerProcessIpc } from './process.ipc.js'
 
 /**
  * Регистрация всех IPC-хендлеров. Вызывается из main/index.js
@@ -12,5 +14,6 @@ export function registerAllIpc() {
   registerBitbucketIpc()
   registerDbIpc()
   registerEditorIpc()
-  // git / fs / process — следующие чекпоинты
+  registerGitIpc()
+  registerProcessIpc()
 }
