@@ -61,17 +61,32 @@ export async function openInVSCode(slug, projectPath) {
     // если readdir упал, всё равно попробуем открыть саму папку
   }
 
+  // .cmd/.bat на Windows нельзя спавнить напрямую с Node 18.20+
+  // (CVE-2024-27980 → spawn EINVAL). Если попали в .cmd/.bat —
+  // запускаем через shell с экранированием.
+  const lower = abs.toLowerCase()
+  const isWinScript =
+    process.platform === 'win32' &&
+    (lower.endsWith('.cmd') || lower.endsWith('.bat'))
+
   // Гонка spawn-vs-error: если 'error' прилетит первым (ENOENT,
   // EACCES и т.п.) — пробрасываем в renderer, не глотаем. На 'spawn'
   // unref'аем и репортим успех. Раньше child.on('error') писал в
   // console.error main-процесса, который в packaged-сборке никто
   // не видит — пользователь думал, что Open молча не работает.
   return await new Promise((resolve, reject) => {
-    const child = spawn(abs, [target], {
-      detached: true,
-      stdio: 'ignore',
-      windowsHide: true
-    })
+    const child = isWinScript
+      ? spawn(`"${abs}" "${target}"`, {
+          detached: true,
+          stdio: 'ignore',
+          windowsHide: true,
+          shell: true
+        })
+      : spawn(abs, [target], {
+          detached: true,
+          stdio: 'ignore',
+          windowsHide: true
+        })
 
     let settled = false
     child.once('spawn', () => {

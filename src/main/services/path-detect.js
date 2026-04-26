@@ -31,11 +31,23 @@ export async function whichBinary(name) {
       : name.startsWith('/')
   if (looksAbsolute) return name
 
-  const fromPath = await lookupOnPath(name)
-  if (fromPath) return fromPath
+  // Параллельно: что нашли в PATH и что лежит в стандартных локациях.
+  // На Windows .exe всегда предпочтительнее .cmd/.bat (Node 18.20+ ломает
+  // spawn для .cmd без shell:true; .exe запускается напрямую). VS Code
+  // ставит в PATH только bin\code.cmd, а Code.exe — в родительской папке;
+  // нам нужен именно Code.exe.
+  const [fromPath, fromKnown] = await Promise.all([
+    lookupOnPath(name),
+    findKnownInstallPath(name)
+  ])
 
-  // PATH не нашёл — пробуем известные install-локации (Windows-only)
-  return findKnownInstallPath(name)
+  if (process.platform === 'win32' && fromPath && fromKnown) {
+    const pathIsExe = fromPath.toLowerCase().endsWith('.exe')
+    const knownIsExe = fromKnown.toLowerCase().endsWith('.exe')
+    if (knownIsExe && !pathIsExe) return fromKnown
+  }
+
+  return fromPath || fromKnown || null
 }
 
 async function lookupOnPath(name) {
