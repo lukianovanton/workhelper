@@ -1,7 +1,8 @@
 import { ipcMain } from 'electron'
 import {
   listProjects,
-  testConnection
+  testConnection,
+  getLastCommit
 } from '../services/bitbucket-client.js'
 import { enrichProjects } from '../services/enrich.js'
 
@@ -29,4 +30,7 @@ export function registerBitbucketIpc() {
     return enrichProjects(raw)
   })
   ipcMain.handle('bitbucket:test', () => testConnection())
+  ipcMain.handle('bitbucket:lastCommit', (_event, slug) =>
+    getLastCommit(slug)
+  )
 }

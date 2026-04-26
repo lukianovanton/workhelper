@@ -12,7 +12,8 @@ const api = {
   bitbucket: {
     list: () => ipcRenderer.invoke('bitbucket:list'),
     refresh: () => ipcRenderer.invoke('bitbucket:refresh'),
-    testConnection: () => ipcRenderer.invoke('bitbucket:test')
+    testConnection: () => ipcRenderer.invoke('bitbucket:test'),
+    lastCommit: (slug) => ipcRenderer.invoke('bitbucket:lastCommit', slug)
   },
   git: {
     pull: (slug) => ipcRenderer.invoke('git:pull', slug),

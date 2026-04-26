@@ -256,6 +256,49 @@ export async function listProjects(forceRefresh = false) {
   return fresh
 }
 
+/**
+ * Последний коммит репо. Грузим лениво (по открытию Detail drawer),
+ * НЕ в составе list — чтобы не делать 70+ доп. запросов на каждый
+ * рефреш списка (и не упираться в rate-limit).
+ *
+ * @param {string} slug
+ * @returns {Promise<import('../../shared/types.js').BitbucketCommit | null>}
+ */
+export async function getLastCommit(slug) {
+  if (!slug || typeof slug !== 'string') return null
+  const client = buildClient()
+  const fields = encodeURIComponent(
+    'values.message,values.author,values.date,values.hash'
+  )
+  const path = `/repositories/${encodeURIComponent(
+    client.workspace
+  )}/${encodeURIComponent(slug)}/commits?pagelen=1&fields=${fields}`
+
+  let data
+  try {
+    data = await client.request(path)
+  } catch (e) {
+    // 404 / 403 — не критично, в UI показываем «—» без эскалации
+    if (e.status === 404 || e.status === 403) return null
+    throw e
+  }
+
+  const c = data.values?.[0]
+  if (!c) return null
+
+  const author =
+    c.author?.user?.display_name ||
+    c.author?.raw ||
+    'unknown'
+
+  return {
+    message: typeof c.message === 'string' ? c.message : '',
+    author,
+    date: c.date || '',
+    hash: c.hash || ''
+  }
+}
+
 function toProjectShape(repo, workspace) {
   const cloneUrl =
     (repo.links?.clone || []).find((c) => c.name === 'https')?.href || ''

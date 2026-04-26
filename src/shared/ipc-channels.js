@@ -6,7 +6,8 @@ export const IPC = {
   bitbucket: {
     list: 'bitbucket:list',
     refresh: 'bitbucket:refresh',
-    test: 'bitbucket:test'
+    test: 'bitbucket:test',
+    lastCommit: 'bitbucket:lastCommit'
   },
   git: {
     pull: 'git:pull',
