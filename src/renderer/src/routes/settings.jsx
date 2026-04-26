@@ -47,15 +47,16 @@ export default function Settings() {
     loadAll()
   }, [loadAll])
 
+  // Детектим по каноническому имени из PATH, а не по текущему значению
+  // поля. Иначе если у пользователя в поле случайно осталось что-то
+  // выглядящее абсолютным путём (например 'C:\' от полу-вписанной
+  // правки), whichBinary возвращает это назад как-есть и кнопка
+  // «Use detected» предлагает уже сломанное значение.
   useEffect(() => {
     if (!config) return
-    api.config.whichBinary(config.paths.vscodeExecutable).then(setVscodeDetected)
-    if (config.database.mysqlExecutable) {
-      api.config.whichBinary(config.database.mysqlExecutable).then(setMysqlDetected)
-    } else {
-      setMysqlDetected(null)
-    }
-  }, [config?.paths?.vscodeExecutable, config?.database?.mysqlExecutable])
+    api.config.whichBinary('code').then(setVscodeDetected)
+    api.config.whichBinary('mysql').then(setMysqlDetected)
+  }, [config])
 
   if (!config) {
     return (
