@@ -10,7 +10,8 @@ import {
   ChevronUp,
   ChevronDown,
   ExternalLink,
-  Star
+  Star,
+  Square
 } from 'lucide-react'
 import { useProjects } from '@/hooks/use-projects'
 import { useRunningProcesses } from '@/hooks/use-running-processes'
@@ -19,6 +20,7 @@ import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { useProjectsMetaStore } from '@/store/projects-meta.store.js'
 import { usePrefsStore } from '@/store/prefs.store.js'
+import { api } from '@/api'
 
 const SORT_STORAGE_KEY = 'projects-sort'
 
@@ -98,7 +100,21 @@ export default function ProjectsList() {
   const recent = useProjectsMetaStore((s) => s.recent)
   const density = usePrefsStore((s) => s.density)
   const searchHighlight = usePrefsStore((s) => s.searchHighlight)
-  const [filter, setFilter] = useState('all')
+  // Multi-select filter: набор активных id. Пустой набор = «All».
+  // ANDится между активными — например {installed, running} даёт
+  // только running-installed.
+  const [activeFilters, setActiveFilters] = useState(() => new Set())
+  const toggleFilter = (id) => {
+    setActiveFilters((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+  const clearFilters = () => setActiveFilters(new Set())
+  const isFilterActive = (id) =>
+    activeFilters.has(id) || (id === 'all' && activeFilters.size === 0)
   const [search, setSearch] = useState('')
   const [refreshing, setRefreshing] = useState(false)
   const [sort, setSort] = useState(loadSort)
@@ -124,22 +140,15 @@ export default function ProjectsList() {
     if (!projects) return []
     const q = search.trim().toLowerCase()
     const filtered = projects.filter((p) => {
-      switch (filter) {
-        case 'installed':
-          if (!p.local.cloned) return false
-          break
-        case 'not-installed':
-          if (p.local.cloned) return false
-          break
-        case 'running':
-          if (!runningBySlug.has(p.slug)) return false
-          break
-        case 'projects':
-          if (p.kind !== 'project') return false
-          break
-        case 'templates':
-          if (p.kind !== 'template') return false
-          break
+      if (activeFilters.size > 0) {
+        if (activeFilters.has('installed') && !p.local.cloned) return false
+        if (activeFilters.has('not-installed') && p.local.cloned) return false
+        if (activeFilters.has('running') && !runningBySlug.has(p.slug))
+          return false
+        if (activeFilters.has('projects') && p.kind !== 'project')
+          return false
+        if (activeFilters.has('templates') && p.kind !== 'template')
+          return false
       }
       if (q) {
         const hay = `${p.slug} ${p.name} ${p.description || ''}`.toLowerCase()
@@ -156,7 +165,7 @@ export default function ProjectsList() {
       if (aFav !== bFav) return aFav ? -1 : 1
       return compareProjects(a, b, sort.column) * sign
     })
-  }, [projects, filter, search, runningBySlug, sort, favorites])
+  }, [projects, activeFilters, search, runningBySlug, sort, favorites])
 
   const counts = useMemo(() => {
     if (!projects) return { all: 0 }
@@ -191,23 +200,28 @@ export default function ProjectsList() {
           )}
         </div>
         <nav className="flex-1 p-3 space-y-1 text-sm overflow-y-auto">
-          {FILTERS.map((f) => (
-            <button
-              key={f.id}
-              onClick={() => setFilter(f.id)}
-              className={cn(
-                'w-full text-left px-3 py-2 rounded-md flex items-center justify-between',
-                filter === f.id
-                  ? 'bg-accent text-accent-foreground'
-                  : 'hover:bg-accent/60'
-              )}
-            >
-              <span>{f.label}</span>
-              <span className="text-xs text-muted-foreground">
-                {counts[f.id] ?? 0}
-              </span>
-            </button>
-          ))}
+          {FILTERS.map((f) => {
+            const active = isFilterActive(f.id)
+            return (
+              <button
+                key={f.id}
+                onClick={() =>
+                  f.id === 'all' ? clearFilters() : toggleFilter(f.id)
+                }
+                className={cn(
+                  'w-full text-left px-3 py-2 rounded-md flex items-center justify-between',
+                  active
+                    ? 'bg-accent text-accent-foreground'
+                    : 'hover:bg-accent/60'
+                )}
+              >
+                <span>{f.label}</span>
+                <span className="text-xs text-muted-foreground">
+                  {counts[f.id] ?? 0}
+                </span>
+              </button>
+            )
+          })}
 
           {recent.length > 0 && projects && (
             <div className="pt-3 mt-3 border-t border-border">
@@ -279,6 +293,18 @@ export default function ProjectsList() {
         </header>
 
         {warnings.length > 0 && <WarningBanner warnings={warnings} />}
+
+        <RunningBar
+          running={Array.from(runningBySlug.values())}
+          onOpen={(slug) => navigate(`/projects/${slug}`)}
+          onStop={async (slug) => {
+            try {
+              await api.process.stop(slug)
+            } catch {
+              // ignore
+            }
+          }}
+        />
 
         <div className="flex-1 overflow-auto">
           {isLoading && <ListLoading />}
@@ -556,6 +582,61 @@ function KindBadge({ kind, projectKey }) {
     >
       {kind}
     </span>
+  )
+}
+
+/**
+ * Sticky bar в шапке main-секции, виден когда есть хоть один
+ * запущенный dotnet. Чипсы по проектам: клик по slug → drawer,
+ * клик по :port → внешний браузер, клик по ✕ → stop.
+ */
+function RunningBar({ running, onOpen, onStop }) {
+  if (!running || running.length === 0) return null
+  return (
+    <div className="px-6 py-2 border-b border-sky-500/30 bg-sky-500/10 flex items-center gap-2 flex-wrap text-xs">
+      <span className="text-sky-400 font-medium">
+        Running ({running.length}):
+      </span>
+      {running.map((r) => (
+        <span
+          key={r.slug}
+          className="inline-flex items-center gap-1 rounded-md border border-sky-500/40 bg-sky-500/15 px-2 py-0.5"
+        >
+          <button
+            onClick={() => onOpen(r.slug)}
+            className="font-mono text-sky-300 hover:text-sky-100"
+            title={`Open ${r.slug} drawer`}
+          >
+            {r.slug}
+          </button>
+          {r.url ? (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                window.open(r.url, '_blank')
+              }}
+              title={`Open ${r.url}`}
+              className="text-sky-400 hover:text-sky-200"
+            >
+              :{r.port ?? '?'}
+              <ExternalLink size={10} className="inline ml-0.5 -mt-0.5" />
+            </button>
+          ) : (
+            <span className="text-muted-foreground">…</span>
+          )}
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              onStop(r.slug)
+            }}
+            title="Stop"
+            className="ml-1 text-muted-foreground hover:text-destructive"
+          >
+            <Square size={10} className="inline" />
+          </button>
+        </span>
+      ))}
+    </div>
   )
 }
 
