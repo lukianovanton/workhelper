@@ -108,21 +108,17 @@ export default function ProjectsList() {
   const recent = useProjectsMetaStore((s) => s.recent)
   const density = usePrefsStore((s) => s.density)
   const searchHighlight = usePrefsStore((s) => s.searchHighlight)
-  // Multi-select filter: набор активных id. Пустой набор = «All».
-  // ANDится между активными — например {installed, running} даёт
-  // только running-installed.
-  const [activeFilters, setActiveFilters] = useState(() => new Set())
+  // Single-select filter: либо null (= All), либо ровно один id.
+  // Multi-select не нужен — комбинация Installed + Not installed
+  // даёт пустой результат и сбивает с толку. Если хочется
+  // «installed AND running» — берётся через колоночные фильтры.
+  const [activeFilter, setActiveFilter] = useState(null)
   const toggleFilter = (id) => {
-    setActiveFilters((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
+    setActiveFilter((prev) => (prev === id ? null : id))
   }
-  const clearFilters = () => setActiveFilters(new Set())
+  const clearFilters = () => setActiveFilter(null)
   const isFilterActive = (id) =>
-    activeFilters.has(id) || (id === 'all' && activeFilters.size === 0)
+    activeFilter === id || (id === 'all' && activeFilter === null)
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState(() => new Set())
   const [bulkBusy, setBulkBusy] = useState(false)
@@ -191,16 +187,12 @@ export default function ProjectsList() {
     if (!projects) return []
     const q = search.trim().toLowerCase()
     const filtered = projects.filter((p) => {
-      if (activeFilters.size > 0) {
-        if (activeFilters.has('installed') && !p.local.cloned) return false
-        if (activeFilters.has('not-installed') && p.local.cloned) return false
-        if (activeFilters.has('running') && !runningBySlug.has(p.slug))
-          return false
-        if (activeFilters.has('projects') && p.kind !== 'project')
-          return false
-        if (activeFilters.has('templates') && p.kind !== 'template')
-          return false
-      }
+      if (activeFilter === 'installed' && !p.local.cloned) return false
+      if (activeFilter === 'not-installed' && p.local.cloned) return false
+      if (activeFilter === 'running' && !runningBySlug.has(p.slug))
+        return false
+      if (activeFilter === 'projects' && p.kind !== 'project') return false
+      if (activeFilter === 'templates' && p.kind !== 'template') return false
       if (q) {
         const hay = `${p.slug} ${p.name} ${p.description || ''}`.toLowerCase()
         if (!hay.includes(q)) return false
@@ -259,7 +251,7 @@ export default function ProjectsList() {
     })
   }, [
     projects,
-    activeFilters,
+    activeFilter,
     search,
     runningBySlug,
     sort,
@@ -473,7 +465,7 @@ export default function ProjectsList() {
           isFilterActive={isFilterActive}
           toggleFilter={toggleFilter}
           clearFilters={clearFilters}
-          activeCount={activeFilters.size}
+          activeCount={activeFilter ? 1 : 0}
           hasColumnFilters={hasColumnFilters}
           clearColumnFilters={clearColumnFilters}
         />
