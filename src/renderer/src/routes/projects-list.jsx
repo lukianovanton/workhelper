@@ -617,6 +617,7 @@ function ProjectsTable({
             onSort={onSort}
             className={cn('w-24', cellPad)}
             align="right"
+            popoverAlign="right"
             label="DB size"
             filter={
               <BucketColumnFilter
@@ -638,6 +639,7 @@ function ProjectsTable({
             sort={sort}
             onSort={onSort}
             className={cn('w-32', cellPad)}
+            popoverAlign="right"
             label="Last commit"
             filter={
               <BucketColumnFilter
@@ -764,9 +766,14 @@ function ColumnHeader({
   label,
   className,
   align = 'left',
+  popoverAlign,
   filter,
   active
 }) {
+  // По умолчанию popover открывается от того же края, что и колонка
+  // выровнена. Для крайних правых колонок (DB size, Last commit) это
+  // спасает от вылета поповера за окно.
+  const popAlign = popoverAlign || align
   const sortable = !!sortId
   const sortActive = sortable && sort?.column === sortId
   const Arrow = sort?.direction === 'asc' ? ChevronUp : ChevronDown
@@ -794,6 +801,7 @@ function ColumnHeader({
         )}
         {filter && (
           <Popover
+            align={popAlign}
             trigger={
               <button
                 title="Filter"
@@ -820,7 +828,7 @@ function ColumnHeader({
  * Кастомный popover без новых deps. Click-outside и Escape закрывают.
  * Trigger принимает любой клик-handlable элемент.
  */
-function Popover({ trigger, children }) {
+function Popover({ trigger, children, align = 'left' }) {
   const [open, setOpen] = useState(false)
   const wrapRef = useRef(null)
 
@@ -852,7 +860,12 @@ function Popover({ trigger, children }) {
         {trigger}
       </span>
       {open && (
-        <div className="absolute top-full left-0 mt-1 z-30 min-w-[200px] bg-popover border border-border rounded-md shadow-lg p-3">
+        <div
+          className={cn(
+            'absolute top-full mt-1 z-30 min-w-[200px] bg-popover border border-border rounded-md shadow-lg p-3',
+            align === 'right' ? 'right-0' : 'left-0'
+          )}
+        >
           {children}
         </div>
       )}
