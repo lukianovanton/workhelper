@@ -5,6 +5,7 @@ import {
   RefreshCw,
   Settings as SettingsIcon,
   AlertCircle,
+  AlertTriangle,
   Search
 } from 'lucide-react'
 import { useProjects } from '@/hooks/use-projects'
@@ -14,12 +15,15 @@ import { cn } from '@/lib/utils'
 
 const FILTERS = /** @type {const} */ ([
   { id: 'all', label: 'All' },
+  { id: 'installed', label: 'Installed' },
+  { id: 'not-installed', label: 'Not installed' },
   { id: 'projects', label: 'Projects' },
   { id: 'templates', label: 'Templates' }
 ])
 
 export default function ProjectsList() {
-  const { projects, isLoading, isFetching, error, refresh } = useProjects()
+  const { projects, warnings, isLoading, isFetching, error, refresh } =
+    useProjects()
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [refreshing, setRefreshing] = useState(false)
@@ -30,8 +34,20 @@ export default function ProjectsList() {
     if (!projects) return []
     const q = search.trim().toLowerCase()
     return projects.filter((p) => {
-      if (filter === 'projects' && p.kind !== 'project') return false
-      if (filter === 'templates' && p.kind !== 'template') return false
+      switch (filter) {
+        case 'installed':
+          if (!p.local.cloned) return false
+          break
+        case 'not-installed':
+          if (p.local.cloned) return false
+          break
+        case 'projects':
+          if (p.kind !== 'project') return false
+          break
+        case 'templates':
+          if (p.kind !== 'template') return false
+          break
+      }
       if (q) {
         const hay = `${p.slug} ${p.name} ${p.description || ''}`.toLowerCase()
         if (!hay.includes(q)) return false
@@ -41,9 +57,11 @@ export default function ProjectsList() {
   }, [projects, filter, search])
 
   const counts = useMemo(() => {
-    if (!projects) return { all: 0, projects: 0, templates: 0 }
+    if (!projects) return { all: 0 }
     return {
       all: projects.length,
+      installed: projects.filter((p) => p.local.cloned).length,
+      'not-installed': projects.filter((p) => !p.local.cloned).length,
       projects: projects.filter((p) => p.kind === 'project').length,
       templates: projects.filter((p) => p.kind === 'template').length
     }
@@ -69,7 +87,7 @@ export default function ProjectsList() {
             </p>
           )}
         </div>
-        <nav className="flex-1 p-3 space-y-1 text-sm">
+        <nav className="flex-1 p-3 space-y-1 text-sm overflow-y-auto">
           {FILTERS.map((f) => (
             <button
               key={f.id}
@@ -83,7 +101,7 @@ export default function ProjectsList() {
             >
               <span>{f.label}</span>
               <span className="text-xs text-muted-foreground">
-                {counts[f.id]}
+                {counts[f.id] ?? 0}
               </span>
             </button>
           ))}
@@ -128,6 +146,8 @@ export default function ProjectsList() {
           </Button>
         </header>
 
+        {warnings.length > 0 && <WarningBanner warnings={warnings} />}
+
         <div className="flex-1 overflow-auto">
           {isLoading && <ListLoading />}
           {error && <ListError error={error} />}
@@ -167,12 +187,14 @@ function ProjectsTable({ projects, total, openSlug, onOpen }) {
 
   return (
     <table className="w-full text-sm">
-      <thead className="sticky top-0 bg-background border-b border-border">
+      <thead className="sticky top-0 bg-background border-b border-border z-10">
         <tr className="text-left text-xs text-muted-foreground">
-          <th className="font-normal px-6 py-2 w-32">Slug</th>
-          <th className="font-normal px-6 py-2">Name</th>
-          <th className="font-normal px-6 py-2 w-24">Kind</th>
-          <th className="font-normal px-6 py-2 w-32">Updated</th>
+          <th className="font-normal px-4 py-2 w-20">Status</th>
+          <th className="font-normal px-4 py-2 w-32">Slug</th>
+          <th className="font-normal px-4 py-2">Name</th>
+          <th className="font-normal px-4 py-2 w-24">Kind</th>
+          <th className="font-normal px-4 py-2 w-24 text-right">DB size</th>
+          <th className="font-normal px-4 py-2 w-32">Updated</th>
         </tr>
       </thead>
       <tbody>
@@ -185,8 +207,11 @@ function ProjectsTable({ projects, total, openSlug, onOpen }) {
               openSlug === p.slug && 'bg-accent/60'
             )}
           >
-            <td className="px-6 py-2 font-mono text-xs">{p.slug}</td>
-            <td className="px-6 py-2">
+            <td className="px-4 py-2">
+              <StatusDots project={p} />
+            </td>
+            <td className="px-4 py-2 font-mono text-xs">{p.slug}</td>
+            <td className="px-4 py-2">
               <div className="font-medium">{p.name}</div>
               {p.description && (
                 <div className="text-xs text-muted-foreground line-clamp-1">
@@ -194,16 +219,68 @@ function ProjectsTable({ projects, total, openSlug, onOpen }) {
                 </div>
               )}
             </td>
-            <td className="px-6 py-2">
+            <td className="px-4 py-2">
               <KindBadge kind={p.kind} projectKey={p.bitbucket.projectKey} />
             </td>
-            <td className="px-6 py-2 text-xs text-muted-foreground">
+            <td className="px-4 py-2 text-right text-xs text-muted-foreground tabular-nums">
+              {formatBytes(p.db.sizeBytes)}
+            </td>
+            <td className="px-4 py-2 text-xs text-muted-foreground">
               {formatRelative(p.bitbucket.updatedOn)}
             </td>
           </tr>
         ))}
       </tbody>
     </table>
+  )
+}
+
+function StatusDots({ project }) {
+  const dots = [
+    {
+      on: project.local.cloned,
+      onColor: 'bg-emerald-500',
+      offColor: 'bg-muted-foreground/25',
+      title: project.local.cloned
+        ? `Cloned at ${project.local.path}`
+        : 'Not cloned'
+    },
+    {
+      on: project.db.exists,
+      onColor: 'bg-emerald-500',
+      offColor: 'bg-muted-foreground/25',
+      title: project.db.exists
+        ? `Database ${project.db.name} exists`
+        : `Database ${project.db.name} not found`
+    },
+    {
+      on: false,
+      onColor: 'bg-amber-500',
+      offColor: 'bg-muted-foreground/15',
+      title: 'Dirty (next checkpoint)'
+    },
+    {
+      on: project.runtime.running,
+      onColor: 'bg-sky-500',
+      offColor: 'bg-muted-foreground/15',
+      title: project.runtime.running
+        ? `Running on :${project.runtime.port ?? '?'}`
+        : 'Not running'
+    }
+  ]
+  return (
+    <div className="flex gap-1">
+      {dots.map((d, i) => (
+        <span
+          key={i}
+          title={d.title}
+          className={cn(
+            'inline-block w-2 h-2 rounded-full',
+            d.on ? d.onColor : d.offColor
+          )}
+        />
+      ))}
+    </div>
   )
 }
 
@@ -222,6 +299,19 @@ function KindBadge({ kind, projectKey }) {
     >
       {kind}
     </span>
+  )
+}
+
+function WarningBanner({ warnings }) {
+  return (
+    <div className="px-6 py-2 border-b border-amber-500/30 bg-amber-500/10 text-amber-400 text-xs flex items-start gap-2">
+      <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+      <div className="space-y-0.5">
+        {warnings.map((w, i) => (
+          <div key={i}>{w}</div>
+        ))}
+      </div>
+    </div>
   )
 }
 
@@ -267,6 +357,19 @@ function EmptyState({ title, message }) {
       </div>
     </div>
   )
+}
+
+function formatBytes(n) {
+  if (n == null || Number.isNaN(n)) return '—'
+  if (n === 0) return '0'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let i = 0
+  let v = n
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024
+    i++
+  }
+  return `${v.toFixed(v >= 100 || i === 0 ? 0 : 1)} ${units[i]}`
 }
 
 function formatRelative(iso) {

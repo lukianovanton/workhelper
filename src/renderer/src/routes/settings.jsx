@@ -29,6 +29,8 @@ export default function Settings() {
   const [saveStatus, setSaveStatus] = useState(null)
   const [testingBitbucket, setTestingBitbucket] = useState(false)
   const [bitbucketTestResult, setBitbucketTestResult] = useState(null)
+  const [testingDb, setTestingDb] = useState(false)
+  const [dbTestResult, setDbTestResult] = useState(null)
 
   const loadAll = useCallback(async () => {
     const [c, s] = await Promise.all([
@@ -69,6 +71,7 @@ export default function Settings() {
       [section]: { ...prev[section], [key]: value }
     }))
     if (section === 'bitbucket') setBitbucketTestResult(null)
+    if (section === 'database') setDbTestResult(null)
   }
 
   const onTestBitbucket = async () => {
@@ -85,6 +88,19 @@ export default function Settings() {
       })
     } finally {
       setTestingBitbucket(false)
+    }
+  }
+
+  const onTestDb = async () => {
+    setTestingDb(true)
+    setDbTestResult(null)
+    try {
+      const result = await api.db.testConnection()
+      setDbTestResult(result)
+    } catch (e) {
+      setDbTestResult({ ok: false, message: e?.message || String(e) })
+    } finally {
+      setTestingDb(false)
     }
   }
 
@@ -319,10 +335,21 @@ export default function Settings() {
                 placeholder="C:\\path\\to\\mysql.exe"
               />
             </Field>
-            <div className="pt-2">
-              <Button variant="outline" size="sm" disabled title="Coming next checkpoint">
+            <div className="pt-2 space-y-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onTestDb}
+                disabled={testingDb}
+              >
+                {testingDb && <Loader2 className="animate-spin" />}
                 Test connection
               </Button>
+              <DbTestResult result={dbTestResult} />
+              <p className="text-xs text-muted-foreground">
+                Test reads stored credentials — Save first if you've changed
+                fields above.
+              </p>
             </div>
           </CardContent>
         </Card>
@@ -400,6 +427,31 @@ function BitbucketTestResult({ result }) {
         <div>{result.message}</div>
         {result.detail && (
           <div className="text-muted-foreground mt-0.5">{result.detail}</div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function DbTestResult({ result }) {
+  if (!result) return null
+  if (result.ok) {
+    return (
+      <div className="flex items-start gap-2 text-xs text-emerald-500">
+        <CheckCircle2 size={14} className="mt-0.5 shrink-0" />
+        <div>
+          Connected — <span className="font-mono">{result.version}</span>
+        </div>
+      </div>
+    )
+  }
+  return (
+    <div className="flex items-start gap-2 text-xs text-destructive">
+      <XCircle size={14} className="mt-0.5 shrink-0" />
+      <div>
+        <div>{result.message}</div>
+        {result.code && (
+          <div className="text-muted-foreground mt-0.5">code: {result.code}</div>
         )}
       </div>
     </div>

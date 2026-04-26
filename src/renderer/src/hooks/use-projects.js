@@ -5,12 +5,20 @@ const KEY = ['bitbucket', 'projects']
 const TEN_MIN = 10 * 60 * 1000
 
 /**
- * Список проектов из Bitbucket. Главный кэш — в main-процессе
- * (electron-store, TTL 10 мин). TanStack Query держит то же значение
- * в renderer для компонентов.
+ * Список проектов из Bitbucket + enrich по локальному состоянию.
+ *
+ * Главный кэш Bitbucket-данных — в main-процессе (10 мин TTL).
+ * Enrich (fs/db) пересчитывается в main на каждый list-вызов.
+ * TanStack Query держит результат в renderer и шарит между экранами.
+ *
+ * IPC возвращает { projects, warnings }:
+ *  - projects — Project[] с заполненными local.cloned/db.exists/...
+ *  - warnings — мягкие сообщения от enrich (БД недоступна и т.п.),
+ *    UI показывает баннером без блокировки списка
  *
  * @returns {{
  *   projects: import('@shared/types.js').Project[] | undefined,
+ *   warnings: string[],
  *   isLoading: boolean,
  *   isFetching: boolean,
  *   error: Error | null,
@@ -32,7 +40,8 @@ export function useProjects() {
   }
 
   return {
-    projects: query.data,
+    projects: query.data?.projects,
+    warnings: query.data?.warnings ?? [],
     isLoading: query.isLoading,
     isFetching: query.isFetching,
     error: query.error,
