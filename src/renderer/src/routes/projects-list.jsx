@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, Outlet, useNavigate, useParams } from 'react-router-dom'
 import {
   Loader2,
@@ -15,7 +15,9 @@ import {
   Package,
   FileCode2,
   GitPullRequest,
-  XSquare
+  XSquare,
+  Filter,
+  X as XIcon
 } from 'lucide-react'
 import { useProjects } from '@/hooks/use-projects'
 import { useRunningProcesses } from '@/hooks/use-running-processes'
@@ -133,6 +135,38 @@ export default function ProjectsList() {
     })
   }
   const clearSelected = () => setSelected(new Set())
+
+  // Per-column filters. Каждое поле своего «вида»:
+  //   slug/name   — text contains (case-insensitive)
+  //   kind        — Set, пусто = любой
+  //   dbSize      — bucket: any | empty | small (<10MB) | medium (10–100MB) | large (>100MB)
+  //   updated     — bucket: any | week | month | quarter | older
+  // Очищается отдельно на колонку или всё разом.
+  const [columnFilters, setColumnFilters] = useState({
+    slug: '',
+    name: '',
+    kind: new Set(),
+    dbSize: 'any',
+    updated: 'any'
+  })
+  const setColumnFilter = (key, value) => {
+    setColumnFilters((prev) => ({ ...prev, [key]: value }))
+  }
+  const clearColumnFilters = () => {
+    setColumnFilters({
+      slug: '',
+      name: '',
+      kind: new Set(),
+      dbSize: 'any',
+      updated: 'any'
+    })
+  }
+  const hasColumnFilters =
+    columnFilters.slug ||
+    columnFilters.name ||
+    columnFilters.kind.size > 0 ||
+    columnFilters.dbSize !== 'any' ||
+    columnFilters.updated !== 'any'
   const [refreshing, setRefreshing] = useState(false)
   const [sort, setSort] = useState(loadSort)
   const navigate = useNavigate()
@@ -171,6 +205,47 @@ export default function ProjectsList() {
         const hay = `${p.slug} ${p.name} ${p.description || ''}`.toLowerCase()
         if (!hay.includes(q)) return false
       }
+
+      // Column filters
+      if (
+        columnFilters.slug &&
+        !p.slug.toLowerCase().includes(columnFilters.slug.toLowerCase())
+      )
+        return false
+      if (
+        columnFilters.name &&
+        !p.name.toLowerCase().includes(columnFilters.name.toLowerCase())
+      )
+        return false
+      if (columnFilters.kind.size > 0 && !columnFilters.kind.has(p.kind))
+        return false
+      if (columnFilters.dbSize !== 'any') {
+        const b = p.db.sizeBytes
+        const exists = p.db.exists
+        const mb = (b ?? 0) / (1024 * 1024)
+        if (columnFilters.dbSize === 'empty' && (exists || (b ?? 0) > 0))
+          return false
+        if (columnFilters.dbSize === 'small' && !(exists && mb < 10))
+          return false
+        if (
+          columnFilters.dbSize === 'medium' &&
+          !(exists && mb >= 10 && mb < 100)
+        )
+          return false
+        if (columnFilters.dbSize === 'large' && !(exists && mb >= 100))
+          return false
+      }
+      if (columnFilters.updated !== 'any') {
+        const t = p.bitbucket.updatedOn
+          ? new Date(p.bitbucket.updatedOn).getTime()
+          : 0
+        const days = (Date.now() - t) / (24 * 60 * 60 * 1000)
+        if (columnFilters.updated === 'week' && !(days <= 7)) return false
+        if (columnFilters.updated === 'month' && !(days <= 30)) return false
+        if (columnFilters.updated === 'quarter' && !(days <= 90))
+          return false
+        if (columnFilters.updated === 'older' && !(days > 90)) return false
+      }
       return true
     })
 
@@ -182,7 +257,15 @@ export default function ProjectsList() {
       if (aFav !== bFav) return aFav ? -1 : 1
       return compareProjects(a, b, sort.column) * sign
     })
-  }, [projects, activeFilters, search, runningBySlug, sort, favorites])
+  }, [
+    projects,
+    activeFilters,
+    search,
+    runningBySlug,
+    sort,
+    favorites,
+    columnFilters
+  ])
 
   const counts = useMemo(() => {
     if (!projects) return { all: 0 }
@@ -391,6 +474,8 @@ export default function ProjectsList() {
           toggleFilter={toggleFilter}
           clearFilters={clearFilters}
           activeCount={activeFilters.size}
+          hasColumnFilters={hasColumnFilters}
+          clearColumnFilters={clearColumnFilters}
         />
 
         <RunningBar
@@ -422,6 +507,8 @@ export default function ProjectsList() {
               search={searchHighlight ? search.trim() : ''}
               selected={selected}
               toggleSelected={toggleSelected}
+              columnFilters={columnFilters}
+              setColumnFilter={setColumnFilter}
               onOpen={(slug) => navigate(`/projects/${slug}`)}
             />
           )}
@@ -446,6 +533,8 @@ function ProjectsTable({
   search,
   selected,
   toggleSelected,
+  columnFilters,
+  setColumnFilter,
   onOpen
 }) {
   const compact = density === 'compact'
@@ -481,30 +570,90 @@ function ProjectsTable({
           <th className={cn('font-normal w-8', cellPad)}></th>
           <th className={cn('font-normal w-8', cellPad)}></th>
           <th className={cn('font-normal w-20', cellPad)}>Status</th>
-          <SortHeader id="slug" sort={sort} onSort={onSort} className={cn('w-32', cellPad)}>
-            Slug
-          </SortHeader>
-          <SortHeader id="name" sort={sort} onSort={onSort} className={cellPad}>
-            Name
-          </SortHeader>
-          <th className={cn('font-normal w-24', cellPad)}>Kind</th>
-          <SortHeader
-            id="dbSize"
+          <ColumnHeader
+            sortId="slug"
+            sort={sort}
+            onSort={onSort}
+            className={cn('w-32', cellPad)}
+            label="Slug"
+            filter={
+              <TextColumnFilter
+                title="Filter by slug"
+                value={columnFilters.slug}
+                onChange={(v) => setColumnFilter('slug', v)}
+              />
+            }
+            active={!!columnFilters.slug}
+          />
+          <ColumnHeader
+            sortId="name"
+            sort={sort}
+            onSort={onSort}
+            className={cellPad}
+            label="Name"
+            filter={
+              <TextColumnFilter
+                title="Filter by name"
+                value={columnFilters.name}
+                onChange={(v) => setColumnFilter('name', v)}
+              />
+            }
+            active={!!columnFilters.name}
+          />
+          <ColumnHeader
+            className={cn('w-24', cellPad)}
+            label="Kind"
+            filter={
+              <KindColumnFilter
+                value={columnFilters.kind}
+                onChange={(v) => setColumnFilter('kind', v)}
+              />
+            }
+            active={columnFilters.kind.size > 0}
+          />
+          <ColumnHeader
+            sortId="dbSize"
             sort={sort}
             onSort={onSort}
             className={cn('w-24', cellPad)}
             align="right"
-          >
-            DB size
-          </SortHeader>
-          <SortHeader
-            id="lastCommit"
+            label="DB size"
+            filter={
+              <BucketColumnFilter
+                value={columnFilters.dbSize}
+                onChange={(v) => setColumnFilter('dbSize', v)}
+                options={[
+                  { value: 'any', label: 'Any' },
+                  { value: 'empty', label: 'Empty / not exists' },
+                  { value: 'small', label: 'Small (<10 MB)' },
+                  { value: 'medium', label: 'Medium (10–100 MB)' },
+                  { value: 'large', label: 'Large (≥100 MB)' }
+                ]}
+              />
+            }
+            active={columnFilters.dbSize !== 'any'}
+          />
+          <ColumnHeader
+            sortId="lastCommit"
             sort={sort}
             onSort={onSort}
             className={cn('w-32', cellPad)}
-          >
-            Last commit
-          </SortHeader>
+            label="Last commit"
+            filter={
+              <BucketColumnFilter
+                value={columnFilters.updated}
+                onChange={(v) => setColumnFilter('updated', v)}
+                options={[
+                  { value: 'any', label: 'Any time' },
+                  { value: 'week', label: 'Last 7 days' },
+                  { value: 'month', label: 'Last 30 days' },
+                  { value: 'quarter', label: 'Last 90 days' },
+                  { value: 'older', label: 'Older than 90 days' }
+                ]}
+              />
+            }
+            active={columnFilters.updated !== 'any'}
+          />
         </tr>
       </thead>
       <tbody>
@@ -599,6 +748,200 @@ function Highlight({ text, match }) {
       </mark>
       {text.slice(idx + match.length)}
     </>
+  )
+}
+
+/**
+ * Унифицированный заголовок колонки: опциональный sort + опциональный
+ * фильтр-popover. Если sortId не задан — это просто текст с фильтром
+ * (Kind). Иконка фильтра подсвечивается когда фильтр активен.
+ */
+function ColumnHeader({
+  sortId,
+  sort,
+  onSort,
+  children,
+  label,
+  className,
+  align = 'left',
+  filter,
+  active
+}) {
+  const sortable = !!sortId
+  const sortActive = sortable && sort?.column === sortId
+  const Arrow = sort?.direction === 'asc' ? ChevronUp : ChevronDown
+  return (
+    <th className={cn('font-normal', className)}>
+      <div
+        className={cn(
+          'inline-flex items-center gap-1',
+          align === 'right' && 'justify-end w-full'
+        )}
+      >
+        {sortable ? (
+          <button
+            onClick={() => onSort(sortId)}
+            className={cn(
+              'inline-flex items-center gap-1 hover:text-foreground transition-colors',
+              sortActive && 'text-foreground'
+            )}
+          >
+            {label}
+            {sortActive && <Arrow size={12} />}
+          </button>
+        ) : (
+          <span>{label}</span>
+        )}
+        {filter && (
+          <Popover
+            trigger={
+              <button
+                title="Filter"
+                className={cn(
+                  'p-0.5 rounded hover:bg-accent transition-colors',
+                  active
+                    ? 'text-sky-400'
+                    : 'text-muted-foreground/50 hover:text-foreground'
+                )}
+              >
+                <Filter size={11} className={active ? 'fill-current' : ''} />
+              </button>
+            }
+          >
+            {filter}
+          </Popover>
+        )}
+      </div>
+    </th>
+  )
+}
+
+/**
+ * Кастомный popover без новых deps. Click-outside и Escape закрывают.
+ * Trigger принимает любой клик-handlable элемент.
+ */
+function Popover({ trigger, children }) {
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target))
+        setOpen(false)
+    }
+    const onKey = (e) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  return (
+    <span ref={wrapRef} className="relative inline-block">
+      <span
+        onClick={(e) => {
+          e.stopPropagation()
+          setOpen((v) => !v)
+        }}
+      >
+        {trigger}
+      </span>
+      {open && (
+        <div className="absolute top-full left-0 mt-1 z-30 min-w-[200px] bg-popover border border-border rounded-md shadow-lg p-3">
+          {children}
+        </div>
+      )}
+    </span>
+  )
+}
+
+function TextColumnFilter({ title, value, onChange }) {
+  return (
+    <div className="space-y-2">
+      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+        {title}
+      </div>
+      <Input
+        autoFocus
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="contains…"
+        className="h-7 text-xs"
+      />
+      {value && (
+        <button
+          onClick={() => onChange('')}
+          className="text-[11px] text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
+        >
+          <XIcon size={10} /> Clear
+        </button>
+      )}
+    </div>
+  )
+}
+
+function KindColumnFilter({ value, onChange }) {
+  const opts = ['project', 'template']
+  const toggle = (k) => {
+    const next = new Set(value)
+    if (next.has(k)) next.delete(k)
+    else next.add(k)
+    onChange(next)
+  }
+  return (
+    <div className="space-y-1.5">
+      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+        Filter by kind
+      </div>
+      {opts.map((k) => (
+        <label
+          key={k}
+          className="flex items-center gap-2 text-xs cursor-pointer"
+        >
+          <input
+            type="checkbox"
+            checked={value.has(k)}
+            onChange={() => toggle(k)}
+            className="rounded border-input"
+          />
+          <span className="capitalize">{k}</span>
+        </label>
+      ))}
+      {value.size > 0 && (
+        <button
+          onClick={() => onChange(new Set())}
+          className="text-[11px] text-muted-foreground hover:text-foreground inline-flex items-center gap-1 mt-1"
+        >
+          <XIcon size={10} /> Clear
+        </button>
+      )}
+    </div>
+  )
+}
+
+function BucketColumnFilter({ value, onChange, options }) {
+  return (
+    <div className="space-y-1.5">
+      {options.map((o) => (
+        <label
+          key={String(o.value)}
+          className="flex items-center gap-2 text-xs cursor-pointer"
+        >
+          <input
+            type="radio"
+            checked={value === o.value}
+            onChange={() => onChange(o.value)}
+            className="border-input"
+          />
+          <span>{o.label}</span>
+        </label>
+      ))}
+    </div>
   )
 }
 
@@ -717,7 +1060,9 @@ function FilterChips({
   isFilterActive,
   toggleFilter,
   clearFilters,
-  activeCount
+  activeCount,
+  hasColumnFilters,
+  clearColumnFilters
 }) {
   const chips = [
     { id: 'installed', label: 'Installed' },
@@ -757,13 +1102,26 @@ function FilterChips({
           </button>
         )
       })}
-      {activeCount > 0 && (
-        <button
-          onClick={clearFilters}
-          className="ml-auto text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
-        >
-          Clear all
-        </button>
+      {(activeCount > 0 || hasColumnFilters) && (
+        <div className="ml-auto flex items-center gap-3">
+          {hasColumnFilters && (
+            <button
+              onClick={clearColumnFilters}
+              className="text-sky-400 hover:text-sky-300 underline-offset-2 hover:underline inline-flex items-center gap-1"
+              title="Clear filters set on column headers"
+            >
+              <Filter size={11} /> Clear column filters
+            </button>
+          )}
+          {activeCount > 0 && (
+            <button
+              onClick={clearFilters}
+              className="text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
+            >
+              Clear all
+            </button>
+          )}
+        </div>
       )}
     </div>
   )
