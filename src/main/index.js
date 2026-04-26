@@ -1,8 +1,12 @@
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, shell } from 'electron'
+import electronUpdater from 'electron-updater'
 import { join } from 'node:path'
 import { registerAllIpc } from './ipc/index.js'
 import { killAll as killAllProcesses } from './services/process-manager.js'
 import { killAllRestores } from './services/db-service.js'
+
+const { autoUpdater } = electronUpdater
+const FOUR_HOURS = 4 * 60 * 60 * 1000
 
 const isDev = !app.isPackaged
 
@@ -40,16 +44,71 @@ function createWindow() {
 
 app.whenReady().then(() => {
   if (process.platform === 'win32') {
-    app.setAppUserModelId('com.antonl.projecthub')
+    app.setAppUserModelId('com.antonl.workhelper')
   }
 
   registerAllIpc()
+  setupAutoUpdater()
   createWindow()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
 })
+
+/**
+ * Авто-обновления через electron-updater + GitHub Releases.
+ * Работает только в packaged-сборке: dev-режим не пакетный, проверка
+ * там бессмысленна (yml-файлов рядом с бинарником нет).
+ *
+ * Дефолты autoDownload: true / autoInstallOnAppQuit: true оставлены —
+ * обновление само скачивается в фоне, ставится при следующем перезапуске.
+ *
+ * Сетевые/HTTP-ошибки идут в console.warn — никаких popup'ов, чтобы
+ * отсутствие интернета не пугало пользователя. Сборки без релизов на
+ * GitHub просто не найдут update — это норма.
+ */
+function setupAutoUpdater() {
+  if (!app.isPackaged) return
+
+  autoUpdater.on('update-available', (info) => {
+    console.log(`[updater] update ${info?.version} available, downloading…`)
+    broadcastUpdaterEvent({ kind: 'available', version: info?.version })
+  })
+
+  autoUpdater.on('update-downloaded', (info) => {
+    console.log(`[updater] update ${info?.version} ready to install`)
+    broadcastUpdaterEvent({ kind: 'downloaded', version: info?.version })
+  })
+
+  autoUpdater.on('error', (err) => {
+    console.warn('[updater] error:', err?.message || err)
+  })
+
+  ipcMain.handle('updater:quit-and-install', () => {
+    autoUpdater.quitAndInstall()
+  })
+
+  // Стартовая проверка + переодическая каждые 4ч пока приложение живо
+  autoUpdater
+    .checkForUpdatesAndNotify()
+    .catch((err) =>
+      console.warn('[updater] initial check failed:', err?.message || err)
+    )
+  setInterval(() => {
+    autoUpdater
+      .checkForUpdatesAndNotify()
+      .catch(() => {})
+  }, FOUR_HOURS)
+}
+
+function broadcastUpdaterEvent(payload) {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.webContents.isDestroyed()) {
+      win.webContents.send('updater:event', payload)
+    }
+  }
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()

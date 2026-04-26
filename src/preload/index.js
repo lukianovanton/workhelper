@@ -84,6 +84,14 @@ const api = {
       ipcRenderer.on('setup:event', handler)
       return () => ipcRenderer.removeListener('setup:event', handler)
     }
+  },
+  updater: {
+    quitAndInstall: () => ipcRenderer.invoke('updater:quit-and-install'),
+    on: (callback) => {
+      const handler = (_e, payload) => callback(payload)
+      ipcRenderer.on('updater:event', handler)
+      return () => ipcRenderer.removeListener('updater:event', handler)
+    }
   }
 }
 

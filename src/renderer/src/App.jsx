@@ -1,9 +1,10 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import ProjectsList from './routes/projects-list.jsx'
 import ProjectDetail from './routes/project-detail.jsx'
 import Settings from './routes/settings.jsx'
+import { UpdateBanner } from './components/update-banner.jsx'
 import { useRestoreStore } from './store/restore.store.js'
 import { useSetupStore } from './store/setup.store.js'
 import { api } from './api'
@@ -11,16 +12,48 @@ import { api } from './api'
 export default function App() {
   useRestoreSubscription()
   useSetupSubscription()
+  const update = useUpdateBanner()
 
   return (
-    <Routes>
-      <Route path="/" element={<Navigate to="/projects" replace />} />
-      <Route path="/projects" element={<ProjectsList />}>
-        <Route path=":slug" element={<ProjectDetail />} />
-      </Route>
-      <Route path="/settings" element={<Settings />} />
-    </Routes>
+    <>
+      {update.banner && (
+        <UpdateBanner
+          version={update.banner.version}
+          onRestart={() => api.updater.quitAndInstall()}
+          onDismiss={update.dismiss}
+        />
+      )}
+      <Routes>
+        <Route path="/" element={<Navigate to="/projects" replace />} />
+        <Route path="/projects" element={<ProjectsList />}>
+          <Route path=":slug" element={<ProjectDetail />} />
+        </Route>
+        <Route path="/settings" element={<Settings />} />
+      </Routes>
+    </>
   )
+}
+
+/**
+ * Слушает updater:event. На 'available' просто логгирует — апдейт ещё
+ * скачивается, дёргать пользователя рано. На 'downloaded' показывает
+ * persistent-баннер сверху до dismiss или клика по Restart.
+ */
+function useUpdateBanner() {
+  const [banner, setBanner] = useState(null)
+
+  useEffect(() => {
+    return api.updater.on((evt) => {
+      if (!evt) return
+      if (evt.kind === 'available') {
+        console.log('[updater] update available:', evt.version)
+      } else if (evt.kind === 'downloaded') {
+        setBanner({ version: evt.version || null })
+      }
+    })
+  }, [])
+
+  return { banner, dismiss: () => setBanner(null) }
 }
 
 /**

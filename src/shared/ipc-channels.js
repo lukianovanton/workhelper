@@ -56,5 +56,9 @@ export const IPC = {
     cancel: 'setup:cancel',
     isActive: 'setup:is-active',
     event: 'setup:event'
+  },
+  updater: {
+    quitAndInstall: 'updater:quit-and-install',
+    event: 'updater:event'
   }
 }
