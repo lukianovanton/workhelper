@@ -71,58 +71,45 @@ export async function clone(slug) {
   // Гарантируем существование parent-папки (projectsRoot)
   fs.mkdirSync(root, { recursive: true })
 
-  // Инжектим креды прямо в URL, а не через -c http.extraHeader.
-  // На Windows extraHeader перебивается Git Credential Manager'ом
-  // (если у пользователя в нём кэш для bitbucket.org), и git
-  // отправляет старые креды → 401. URL-инжекция детерминированна:
-  // git берёт юзера/пароль из URL и НЕ вызывает credential helper.
-  // URL-класс сам percent-encode'ит спец-символы в email/токене.
-  const authedUrl = new URL(cloneUrl)
-  authedUrl.username = username
-  authedUrl.password = token
-  const authedUrlStr = authedUrl.toString()
+  const auth =
+    'Basic ' + Buffer.from(`${username}:${token}`).toString('base64')
 
+  // simple-git раскрывает прогресс через --progress в stderr;
+  // в этом чекпоинте только спиннер на UI, прогресс-эмиссия добавится
+  // вместе с Setup-dialog'ом (чекпоинт 10).
   const git = simpleGit({
     baseDir: root,
     maxConcurrentProcesses: 1
   })
 
   try {
-    await git.raw(['clone', '--progress', authedUrlStr, target])
+    await git.raw([
+      '-c',
+      `http.extraHeader=Authorization: ${auth}`,
+      'clone',
+      '--progress',
+      cloneUrl,
+      target
+    ])
   } catch (e) {
     let msg = e?.message || String(e)
-    // Санитизация — токен и authed URL не должны утечь в UI/логи
-    msg = msg.split(authedUrlStr).join(cloneUrl)
-    if (token) {
-      msg = msg.split(token).join('<TOKEN>')
-      msg = msg.split(encodeURIComponent(token)).join('<TOKEN>')
-    }
-    const firstLine = msg.split(/\r?\n/).find((l) => l.trim()) || msg
-    if (/Authentication failed|invalid credentials|403/i.test(msg)) {
+    // Санитизируем — на всякий случай, чтобы токен не утёк в логи / UI
+    if (token) msg = msg.split(token).join('<TOKEN>')
+    msg = msg.split(auth).join('<AUTH>')
+    if (/Authentication failed|invalid credentials/i.test(msg)) {
       throw new Error(
-        'Clone failed: Bitbucket rejected the API token. Verify it has scope read:repository:bitbucket and the email matches the Atlassian account. Git: ' +
-          firstLine
+        'Clone failed: Bitbucket authentication rejected. Re-check API token in Settings.'
       )
     }
     if (/Could not resolve host|network|connection/i.test(msg)) {
-      throw new Error('Clone failed: network unreachable. ' + firstLine)
+      throw new Error('Clone failed: network unreachable.')
     }
     if (/already exists/i.test(msg)) {
       throw new Error(`${slug} already exists at ${target}.`)
     }
-    throw new Error(`Clone failed: ${firstLine}`)
-  }
-
-  // Чистим remote URL от инжектированных кредов, чтобы они не лежали
-  // в .git/config клонированного репозитория. Future Pull использует
-  // глобальный credential helper (подтверждено в MVP-1).
-  try {
-    const local = simpleGit({ baseDir: target, maxConcurrentProcesses: 1 })
-    await local.remote(['set-url', 'origin', cloneUrl])
-  } catch (e) {
-    // Не фатально — клон удался, пользователь может поправить руками.
-    // В UI ничего не показываем, чтобы не путать после успеха.
-    console.warn('[clone] failed to scrub creds from remote URL:', e?.message)
+    throw new Error(
+      `Clone failed: ${msg.split('\n').slice(0, 3).join(' ').trim()}`
+    )
   }
 
   return { path: target }
