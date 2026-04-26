@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/api'
+import { usePrefsStore } from '@/store/prefs.store.js'
 
 const KEY = ['bitbucket', 'projects']
 const TEN_MIN = 10 * 60 * 1000
@@ -27,10 +28,13 @@ const TEN_MIN = 10 * 60 * 1000
  */
 export function useProjects() {
   const queryClient = useQueryClient()
+  const autoRefreshMs = usePrefsStore((s) => s.autoRefreshMs)
   const query = useQuery({
     queryKey: KEY,
     queryFn: () => api.bitbucket.list(),
     staleTime: TEN_MIN,
+    refetchInterval: autoRefreshMs > 0 ? autoRefreshMs : false,
+    refetchIntervalInBackground: false,
     retry: false
   })
 

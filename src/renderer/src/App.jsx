@@ -5,8 +5,10 @@ import ProjectsList from './routes/projects-list.jsx'
 import ProjectDetail from './routes/project-detail.jsx'
 import Settings from './routes/settings.jsx'
 import { UpdateBanner } from './components/update-banner.jsx'
+import { Toaster } from './components/toaster.jsx'
 import { useRestoreStore } from './store/restore.store.js'
 import { useSetupStore } from './store/setup.store.js'
+import { toast } from './store/toast.store.js'
 import { api } from './api'
 
 export default function App() {
@@ -30,6 +32,7 @@ export default function App() {
         </Route>
         <Route path="/settings" element={<Settings />} />
       </Routes>
+      <Toaster />
     </>
   )
 }
@@ -90,19 +93,23 @@ function useSetupSubscription() {
           break
         case 'finished':
           store.finished(evt.slug)
-          // Свежий enrich: cloned/db.exists/dump/runnable могли поменяться
+          toast.ok(`Setup of ${evt.slug} finished`)
           queryClient.invalidateQueries({
             queryKey: ['bitbucket', 'projects']
           })
           break
         case 'failed':
           store.failed(evt.slug, evt.message || 'Setup failed')
+          toast.error(
+            `Setup of ${evt.slug} failed: ${evt.message || 'unknown error'}`
+          )
           queryClient.invalidateQueries({
             queryKey: ['bitbucket', 'projects']
           })
           break
         case 'cancelled':
           store.cancelled(evt.slug)
+          toast.info(`Setup of ${evt.slug} cancelled`)
           queryClient.invalidateQueries({
             queryKey: ['bitbucket', 'projects']
           })
@@ -133,6 +140,9 @@ function useRestoreSubscription() {
             totalBytes: evt.totalBytes,
             dumpFile: evt.dumpFile
           })
+          toast.ok(
+            `Restored ${evt.slug}${evt.dumpFile ? ` from ${evt.dumpFile}` : ''}`
+          )
           queryClient.invalidateQueries({
             queryKey: ['bitbucket', 'projects']
           })
@@ -140,6 +150,9 @@ function useRestoreSubscription() {
           break
         case 'error':
           store.error(evt.slug, evt.message || 'Restore failed')
+          toast.error(
+            `Restore failed for ${evt.slug}: ${evt.message || 'unknown error'}`
+          )
           break
       }
     })

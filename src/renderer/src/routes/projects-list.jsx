@@ -11,7 +11,9 @@ import {
   ChevronDown,
   ExternalLink,
   Star,
-  Square
+  Square,
+  Package,
+  FileCode2
 } from 'lucide-react'
 import { useProjects } from '@/hooks/use-projects'
 import { useRunningProcesses } from '@/hooks/use-running-processes'
@@ -534,6 +536,7 @@ function StatusDots({ project, runtime }) {
       on: running,
       onColor: 'bg-sky-500',
       offColor: 'bg-muted-foreground/15',
+      pulse: running,
       title: running
         ? `Running on :${runtime?.port ?? '?'} (PID ${runtime?.pid})`
         : 'Not running'
@@ -547,7 +550,8 @@ function StatusDots({ project, runtime }) {
           title={d.title}
           className={cn(
             'inline-block w-2 h-2 rounded-full',
-            d.on ? d.onColor : d.offColor
+            d.on ? d.onColor : d.offColor,
+            d.pulse && 'animate-pulse'
           )}
         />
       ))}
@@ -568,18 +572,20 @@ function StatusDots({ project, runtime }) {
 }
 
 function KindBadge({ kind, projectKey }) {
-  const tone =
-    kind === 'template'
-      ? 'bg-amber-500/15 text-amber-400 border-amber-500/30'
-      : 'bg-sky-500/15 text-sky-400 border-sky-500/30'
+  const isTemplate = kind === 'template'
+  const tone = isTemplate
+    ? 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+    : 'bg-sky-500/15 text-sky-400 border-sky-500/30'
+  const Icon = isTemplate ? FileCode2 : Package
   return (
     <span
       title={projectKey ? `project.key = ${projectKey}` : ''}
       className={cn(
-        'inline-flex items-center px-2 py-0.5 rounded-md text-xs border',
+        'inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs border',
         tone
       )}
     >
+      <Icon size={11} />
       {kind}
     </span>
   )
@@ -654,10 +660,24 @@ function WarningBanner({ warnings }) {
 }
 
 function ListLoading() {
+  // Скелетон-строки вместо одинокого спиннера. Пользователь сразу видит,
+  // что список вот-вот будет, и где он будет.
   return (
-    <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
-      <Loader2 className="animate-spin mr-2" />
-      Loading projects…
+    <div className="w-full">
+      {Array.from({ length: 12 }).map((_, i) => (
+        <div
+          key={i}
+          className="border-b border-border/40 px-4 py-3 flex gap-4 animate-pulse"
+          style={{ animationDelay: `${i * 50}ms` }}
+        >
+          <div className="w-8 h-3 bg-muted/40 rounded" />
+          <div className="w-20 h-3 bg-muted/40 rounded" />
+          <div className="w-32 h-3 bg-muted/40 rounded" />
+          <div className="flex-1 h-3 bg-muted/40 rounded" />
+          <div className="w-16 h-3 bg-muted/40 rounded" />
+          <div className="w-20 h-3 bg-muted/40 rounded" />
+        </div>
+      ))}
     </div>
   )
 }
