@@ -126,8 +126,6 @@ function Drawer({ project, onClose }) {
   }
 
   const onStop = async () => {
-    const port = runtime?.port ?? '?'
-    if (!window.confirm(`Stop ${project.slug} on :${port}?`)) return
     try {
       await stop.mutateAsync()
       flash(`Stopped ${project.slug}`, 'ok')
