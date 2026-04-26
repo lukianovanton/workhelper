@@ -69,5 +69,23 @@ export function useProjectActions(slug) {
     mutationFn: ({ dumpPath }) => api.db.restore(slug, dumpPath)
   })
 
-  return { clone, pull, run, stop, dbCreate, dbDrop, dbRestore }
+  const checkout = useMutation({
+    mutationFn: (branch) => api.git.checkout(slug, branch),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['git-status', slug] })
+      qc.invalidateQueries({ queryKey: ['lastCommit', slug] })
+      qc.invalidateQueries({ queryKey: ['commits', slug, 5] })
+    }
+  })
+
+  return {
+    clone,
+    pull,
+    run,
+    stop,
+    dbCreate,
+    dbDrop,
+    dbRestore,
+    checkout
+  }
 }

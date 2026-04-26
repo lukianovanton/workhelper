@@ -159,6 +159,44 @@ export async function pull(slug) {
 
 /**
  * @param {string} slug
+ * @returns {Promise<{current: string|null, all: string[]}>}
+ */
+export async function branches(slug) {
+  const cwd = ensureClonedPath(slug)
+  const git = simpleGit({ baseDir: cwd, maxConcurrentProcesses: 1 })
+  const b = await git.branchLocal()
+  return {
+    current: b.current || null,
+    all: Array.isArray(b.all) ? b.all : []
+  }
+}
+
+/**
+ * @param {string} slug
+ * @param {string} branch
+ */
+export async function checkout(slug, branch) {
+  if (!branch || typeof branch !== 'string') {
+    throw new Error('Branch name is required')
+  }
+  const cwd = ensureClonedPath(slug)
+  const git = simpleGit({ baseDir: cwd, maxConcurrentProcesses: 1 })
+  try {
+    await git.checkout(branch)
+  } catch (e) {
+    const raw = e?.message || String(e)
+    if (/uncommitted|local changes|would be overwritten/i.test(raw)) {
+      throw new Error(
+        `Cannot switch to ${branch}: you have uncommitted changes. Commit or stash first.`
+      )
+    }
+    throw new Error(`Checkout failed: ${raw.split('\n')[0]}`)
+  }
+  return { branch }
+}
+
+/**
+ * @param {string} slug
  * @returns {Promise<{dirty: boolean, branch: string|null, ahead: number, behind: number}>}
  */
 export async function status(slug) {

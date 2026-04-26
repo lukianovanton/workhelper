@@ -13,12 +13,17 @@ const api = {
     list: () => ipcRenderer.invoke('bitbucket:list'),
     refresh: () => ipcRenderer.invoke('bitbucket:refresh'),
     testConnection: () => ipcRenderer.invoke('bitbucket:test'),
-    lastCommit: (slug) => ipcRenderer.invoke('bitbucket:lastCommit', slug)
+    lastCommit: (slug) => ipcRenderer.invoke('bitbucket:lastCommit', slug),
+    commits: (slug, pagelen) =>
+      ipcRenderer.invoke('bitbucket:commits', slug, pagelen)
   },
   git: {
     clone: (slug) => ipcRenderer.invoke('git:clone', slug),
     pull: (slug) => ipcRenderer.invoke('git:pull', slug),
-    status: (slug) => ipcRenderer.invoke('git:status', slug)
+    status: (slug) => ipcRenderer.invoke('git:status', slug),
+    branches: (slug) => ipcRenderer.invoke('git:branches', slug),
+    checkout: (slug, branch) =>
+      ipcRenderer.invoke('git:checkout', slug, branch)
   },
   db: {
     list: () => ipcRenderer.invoke('db:list'),

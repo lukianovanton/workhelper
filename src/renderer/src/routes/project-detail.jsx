@@ -24,7 +24,7 @@ import {
   StickyNote
 } from 'lucide-react'
 import { useProjects } from '@/hooks/use-projects'
-import { useLastCommit } from '@/hooks/use-last-commit'
+import { useLastCommit, useCommits } from '@/hooks/use-last-commit'
 import { useRunningProcesses } from '@/hooks/use-running-processes'
 import { useGitStatus } from '@/hooks/use-git-status'
 import { useProjectActions } from '@/hooks/use-project-actions'
@@ -144,7 +144,7 @@ function Drawer({ project, dbAvailable, onClose }) {
   const isRunning = !!runtime
 
   const gitStatus = useGitStatus(project.slug, cloned)
-  const { clone, pull, run, stop, dbCreate, dbDrop, dbRestore } =
+  const { clone, pull, run, stop, dbCreate, dbDrop, dbRestore, checkout } =
     useProjectActions(project.slug)
   const restoreState = useRestoreStore((s) => s.bySlug[project.slug])
   const clearRestore = useRestoreStore((s) => s.clear)
@@ -503,7 +503,18 @@ function Drawer({ project, dbAvailable, onClose }) {
               `Will live at ${project.local.path || '<projectsRoot>/' + project.slug.toLowerCase()}`
             )
           }
-          right={<GitInline status={gitStatus.data} loading={gitStatus.isLoading} cloned={cloned} />}
+          right={
+            cloned ? (
+              <BranchSwitcher
+                slug={project.slug}
+                gitStatus={gitStatus.data}
+                gitLoading={gitStatus.isLoading}
+                checkout={checkout}
+                isRunning={isRunning}
+                onResult={flash}
+              />
+            ) : null
+          }
         />
         <DbSection
           project={project}
@@ -876,6 +887,114 @@ function formatDuration(seconds) {
 }
 
 
+function BranchSwitcher({ slug, gitStatus, gitLoading, checkout, isRunning, onResult }) {
+  const [open, setOpen] = useState(false)
+  const [branches, setBranches] = useState(null)
+  const [loadingBranches, setLoadingBranches] = useState(false)
+
+  const branch = gitStatus?.branch || '?'
+  const dirty = gitStatus?.dirty
+  const ahead = gitStatus?.ahead || 0
+  const behind = gitStatus?.behind || 0
+
+  const openMenu = async () => {
+    if (open) {
+      setOpen(false)
+      return
+    }
+    setOpen(true)
+    if (branches) return
+    setLoadingBranches(true)
+    try {
+      const list = await api.git.branches(slug)
+      setBranches(list.all || [])
+    } catch (e) {
+      onResult?.(e?.message || String(e), 'error')
+    } finally {
+      setLoadingBranches(false)
+    }
+  }
+
+  const onPick = async (b) => {
+    setOpen(false)
+    if (b === branch) return
+    try {
+      await checkout.mutateAsync(b)
+      setBranches(null) // refresh next open
+      onResult?.(`Checked out ${b}`, 'ok')
+    } catch (e) {
+      onResult?.(e?.message || String(e), 'error')
+    }
+  }
+
+  if (gitLoading) {
+    return (
+      <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
+        <Loader2 size={12} className="animate-spin" /> status…
+      </span>
+    )
+  }
+
+  return (
+    <div className="relative">
+      <button
+        onClick={openMenu}
+        disabled={isRunning || checkout.isPending}
+        className={cn(
+          'text-xs inline-flex items-center gap-2 px-2 py-1 rounded-md border border-input hover:bg-accent transition-colors',
+          (isRunning || checkout.isPending) && 'opacity-60 cursor-not-allowed'
+        )}
+        title={
+          isRunning
+            ? 'Stop the running process before switching branches'
+            : 'Switch branch'
+        }
+      >
+        <code className="text-[11px]">{branch}</code>
+        {dirty && <span className="text-amber-500">dirty</span>}
+        {ahead > 0 && <span>↑{ahead}</span>}
+        {behind > 0 && <span>↓{behind}</span>}
+        {checkout.isPending && <Loader2 size={10} className="animate-spin" />}
+      </button>
+      {open && (
+        <div
+          className="absolute right-0 top-full mt-1 z-20 min-w-[180px] max-h-64 overflow-auto bg-popover border border-border rounded-md shadow-lg py-1"
+          onMouseLeave={() => setOpen(false)}
+        >
+          {loadingBranches && (
+            <div className="px-3 py-2 text-xs text-muted-foreground">
+              <Loader2 size={12} className="animate-spin inline mr-1" />
+              Loading…
+            </div>
+          )}
+          {!loadingBranches &&
+            branches &&
+            branches.map((b) => (
+              <button
+                key={b}
+                onClick={() => onPick(b)}
+                className={cn(
+                  'w-full text-left text-xs px-3 py-1.5 hover:bg-accent',
+                  b === branch && 'bg-accent/50 font-medium'
+                )}
+              >
+                <code>{b}</code>
+                {b === branch && (
+                  <span className="ml-2 text-muted-foreground">current</span>
+                )}
+              </button>
+            ))}
+          {!loadingBranches && branches && branches.length === 0 && (
+            <div className="px-3 py-2 text-xs text-muted-foreground">
+              No local branches
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function GitInline({ status, loading, cloned }) {
   if (!cloned) return null
   if (loading) {
@@ -959,39 +1078,52 @@ function StateIcon({ state }) {
 }
 
 function LastCommitSection({ slug }) {
-  const { data, isLoading, isError } = useLastCommit(slug)
+  const { data, isLoading, isError } = useCommits(slug, 5)
 
   return (
     <div className="space-y-2">
       <div className="text-xs uppercase tracking-wide text-muted-foreground flex items-center gap-2">
-        <GitCommit size={12} /> Last commit
+        <GitCommit size={12} /> Recent commits
       </div>
       {isLoading && (
-        <div className="space-y-1.5">
-          <div className="h-3 bg-muted rounded w-3/4 animate-pulse" />
-          <div className="h-3 bg-muted rounded w-1/2 animate-pulse" />
+        <div className="space-y-2">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="space-y-1.5">
+              <div className="h-3 bg-muted rounded w-3/4 animate-pulse" />
+              <div className="h-3 bg-muted rounded w-1/2 animate-pulse" />
+            </div>
+          ))}
         </div>
       )}
-      {!isLoading && (data == null || isError) && (
+      {!isLoading && (isError || !data || data.length === 0) && (
         <div className="text-sm text-muted-foreground">—</div>
       )}
-      {!isLoading && data && (
-        <div>
-          <div className="text-sm font-medium whitespace-pre-line line-clamp-3">
-            {data.message.trim() || '(no message)'}
-          </div>
-          <div className="text-xs text-muted-foreground mt-1 flex items-center gap-2">
-            <span>{data.author}</span>
-            <span>·</span>
-            <span>{formatRelative(data.date)}</span>
-            {data.hash && (
-              <>
+      {!isLoading && data && data.length > 0 && (
+        <ul className="space-y-3">
+          {data.map((c, i) => (
+            <li
+              key={c.hash || i}
+              className={cn(
+                i > 0 && 'pt-3 border-t border-border/40'
+              )}
+            >
+              <div className="text-sm whitespace-pre-line line-clamp-2">
+                {c.message.trim() || '(no message)'}
+              </div>
+              <div className="text-xs text-muted-foreground mt-1 flex items-center gap-2 flex-wrap">
+                <span>{c.author}</span>
                 <span>·</span>
-                <code className="text-[10px]">{data.hash.slice(0, 7)}</code>
-              </>
-            )}
-          </div>
-        </div>
+                <span>{formatRelative(c.date)}</span>
+                {c.hash && (
+                  <>
+                    <span>·</span>
+                    <code className="text-[10px]">{c.hash.slice(0, 7)}</code>
+                  </>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   )

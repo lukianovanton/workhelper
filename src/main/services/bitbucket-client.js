@@ -257,9 +257,44 @@ export async function listProjects(forceRefresh = false) {
 }
 
 /**
- * Последний коммит репо. Грузим лениво (по открытию Detail drawer),
- * НЕ в составе list — чтобы не делать 70+ доп. запросов на каждый
- * рефреш списка (и не упираться в rate-limit).
+ * Последние N коммитов репо (по умолчанию 5). Грузим лениво
+ * (по открытию Detail drawer), НЕ в составе list — чтобы не
+ * делать 70+ доп. запросов на каждый рефреш и не упираться в
+ * rate-limit.
+ *
+ * @param {string} slug
+ * @param {number} [pagelen=5]
+ * @returns {Promise<import('../../shared/types.js').BitbucketCommit[]>}
+ */
+export async function getCommits(slug, pagelen = 5) {
+  if (!slug || typeof slug !== 'string') return []
+  const client = buildClient()
+  const fields = encodeURIComponent(
+    'values.message,values.author,values.date,values.hash'
+  )
+  const path = `/repositories/${encodeURIComponent(
+    client.workspace
+  )}/${encodeURIComponent(slug)}/commits?pagelen=${pagelen}&fields=${fields}`
+
+  let data
+  try {
+    data = await client.request(path)
+  } catch (e) {
+    if (e.status === 404 || e.status === 403) return []
+    throw e
+  }
+
+  return (data.values || []).map((c) => ({
+    message: typeof c.message === 'string' ? c.message : '',
+    author:
+      c.author?.user?.display_name || c.author?.raw || 'unknown',
+    date: c.date || '',
+    hash: c.hash || ''
+  }))
+}
+
+/**
+ * Тонкая обёртка getCommits(slug, 1)[0] для сохранения старого API.
  *
  * @param {string} slug
  * @returns {Promise<import('../../shared/types.js').BitbucketCommit | null>}

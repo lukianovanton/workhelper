@@ -1,6 +1,6 @@
 {
   "name": "project-hub",
-  "version": "0.1.7",
+  "version": "0.2.0",
   "description": "Project hub for Bitbucket-based .NET projects",
   "author": "Anton",
   "main": "./out/main/index.js",
