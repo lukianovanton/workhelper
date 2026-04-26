@@ -9,3 +9,4 @@ release
 .env.local
 .env.*.local
 temp
+.claude/
