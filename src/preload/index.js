@@ -92,6 +92,9 @@ const api = {
       ipcRenderer.on('updater:event', handler)
       return () => ipcRenderer.removeListener('updater:event', handler)
     }
+  },
+  app: {
+    openFolder: (path) => ipcRenderer.invoke('app:openFolder', path)
   }
 }
 

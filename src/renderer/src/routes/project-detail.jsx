@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from 'react'
+import { useRef, useState, useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   X,
@@ -18,7 +18,10 @@ import {
   DatabaseBackup,
   FolderOpen,
   Sparkles,
-  Wrench
+  Wrench,
+  FolderInput,
+  Star,
+  StickyNote
 } from 'lucide-react'
 import { useProjects } from '@/hooks/use-projects'
 import { useLastCommit } from '@/hooks/use-last-commit'
@@ -26,6 +29,7 @@ import { useRunningProcesses } from '@/hooks/use-running-processes'
 import { useGitStatus } from '@/hooks/use-git-status'
 import { useProjectActions } from '@/hooks/use-project-actions'
 import { useRestoreStore } from '@/store/restore.store.js'
+import { useProjectsMetaStore } from '@/store/projects-meta.store.js'
 import { SetupDialog } from '@/components/setup-dialog.jsx'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
@@ -48,6 +52,36 @@ export default function ProjectDetail() {
   const { projects, warnings, isLoading: projectsLoading } = useProjects()
   const project = projects?.find((p) => p.slug === slug) || null
   const dbAvailable = !warnings.some((w) => /database/i.test(w))
+
+  // Запоминаем «открыли drawer этого проекта» для секции Recent
+  const touchRecent = useProjectsMetaStore((s) => s.touchRecent)
+  useEffect(() => {
+    if (slug) touchRecent(slug)
+  }, [slug, touchRecent])
+
+  // J/K (или ↑/↓) навигация между проектами не закрывая drawer.
+  // Реагирует на keydown глобально, кроме случая когда фокус в input/textarea.
+  useEffect(() => {
+    if (!projects || !slug) return
+    const onKey = (e) => {
+      if (e.target?.tagName === 'INPUT' || e.target?.tagName === 'TEXTAREA')
+        return
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+      const idx = projects.findIndex((p) => p.slug === slug)
+      if (idx === -1) return
+      let nextIdx = null
+      if (e.key === 'j' || e.key === 'ArrowDown') nextIdx = idx + 1
+      else if (e.key === 'k' || e.key === 'ArrowUp') nextIdx = idx - 1
+      if (nextIdx == null) return
+      const next = projects[(nextIdx + projects.length) % projects.length]
+      if (next) {
+        e.preventDefault()
+        navigate(`/projects/${next.slug}`)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [projects, slug, navigate])
 
   if (projectsLoading)
     return <DrawerShell onClose={() => navigate('/projects')} loading />
@@ -114,6 +148,11 @@ function Drawer({ project, dbAvailable, onClose }) {
     useProjectActions(project.slug)
   const restoreState = useRestoreStore((s) => s.bySlug[project.slug])
   const clearRestore = useRestoreStore((s) => s.clear)
+  const favorites = useProjectsMetaStore((s) => s.favorites)
+  const toggleFavorite = useProjectsMetaStore((s) => s.toggleFavorite)
+  const notes = useProjectsMetaStore((s) => s.notes[project.slug] || '')
+  const setNote = useProjectsMetaStore((s) => s.setNote)
+  const isFavorite = !!favorites[project.slug]
   const [dropDialogOpen, setDropDialogOpen] = useState(false)
   const [replaceDialogOpen, setReplaceDialogOpen] = useState(false)
   const [pendingDumpPath, setPendingDumpPath] = useState(null)
@@ -160,6 +199,14 @@ function Drawer({ project, dbAvailable, onClose }) {
     try {
       const res = await api.editor.openInVSCode(project.slug)
       flash(`Opened ${res?.opened ?? project.local.path} in VS Code`, 'ok')
+    } catch (e) {
+      flash(e?.message || String(e), 'error')
+    }
+  }
+
+  const onOpenFolder = async () => {
+    try {
+      await api.app.openFolder(project.local.path)
     } catch (e) {
       flash(e?.message || String(e), 'error')
     }
@@ -273,6 +320,21 @@ function Drawer({ project, dbAvailable, onClose }) {
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={() => toggleFavorite(project.slug)}
+                title={isFavorite ? 'Unpin' : 'Pin to top'}
+                className={cn(
+                  'transition-colors',
+                  isFavorite
+                    ? 'text-amber-400 hover:text-amber-300'
+                    : 'text-muted-foreground/50 hover:text-amber-400'
+                )}
+              >
+                <Star
+                  size={14}
+                  className={isFavorite ? 'fill-current' : ''}
+                />
+              </button>
               <h2 className="text-base font-semibold font-mono">
                 {project.slug}
               </h2>
@@ -331,6 +393,11 @@ function Drawer({ project, dbAvailable, onClose }) {
                 icon={<Code2 />}
                 onClick={onOpenVSCode}
                 label="Open in VS Code"
+              />
+              <ActionButton
+                icon={<FolderInput />}
+                onClick={onOpenFolder}
+                label="Open folder"
               />
               <ActionButton
                 icon={
@@ -494,6 +561,13 @@ function Drawer({ project, dbAvailable, onClose }) {
         <Separator />
 
         <LastCommitSection slug={project.slug} />
+
+        <Separator />
+
+        <NotesSection
+          value={notes}
+          onChange={(v) => setNote(project.slug, v)}
+        />
       </div>
 
       <AlertDialog open={dropDialogOpen} onOpenChange={setDropDialogOpen}>
@@ -919,6 +993,26 @@ function LastCommitSection({ slug }) {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+function NotesSection({ value, onChange }) {
+  return (
+    <div className="space-y-2">
+      <div className="text-xs uppercase tracking-wide text-muted-foreground flex items-center gap-2">
+        <StickyNote size={12} /> Notes
+      </div>
+      <textarea
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="Что-то про этот проект — баги, контакт людей, контекст…"
+        rows={4}
+        className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-y"
+      />
+      <p className="text-[10px] text-muted-foreground/70">
+        Хранится локально, не синхронизируется между машинами.
+      </p>
     </div>
   )
 }

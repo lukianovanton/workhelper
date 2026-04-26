@@ -9,13 +9,16 @@ import {
   Search,
   ChevronUp,
   ChevronDown,
-  ExternalLink
+  ExternalLink,
+  Star
 } from 'lucide-react'
 import { useProjects } from '@/hooks/use-projects'
 import { useRunningProcesses } from '@/hooks/use-running-processes'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
+import { useProjectsMetaStore } from '@/store/projects-meta.store.js'
+import { usePrefsStore } from '@/store/prefs.store.js'
 
 const SORT_STORAGE_KEY = 'projects-sort'
 
@@ -90,6 +93,11 @@ export default function ProjectsList() {
   const { projects, warnings, isLoading, isFetching, error, refresh } =
     useProjects()
   const { bySlug: runningBySlug } = useRunningProcesses()
+  const favorites = useProjectsMetaStore((s) => s.favorites)
+  const toggleFavorite = useProjectsMetaStore((s) => s.toggleFavorite)
+  const recent = useProjectsMetaStore((s) => s.recent)
+  const density = usePrefsStore((s) => s.density)
+  const searchHighlight = usePrefsStore((s) => s.searchHighlight)
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [refreshing, setRefreshing] = useState(false)
@@ -141,10 +149,14 @@ export default function ProjectsList() {
     })
 
     const sign = sort.direction === 'asc' ? 1 : -1
-    return [...filtered].sort(
-      (a, b) => compareProjects(a, b, sort.column) * sign
-    )
-  }, [projects, filter, search, runningBySlug, sort])
+    return [...filtered].sort((a, b) => {
+      // Избранные всегда наверху, независимо от выбранной сортировки
+      const aFav = !!favorites[a.slug]
+      const bFav = !!favorites[b.slug]
+      if (aFav !== bFav) return aFav ? -1 : 1
+      return compareProjects(a, b, sort.column) * sign
+    })
+  }, [projects, filter, search, runningBySlug, sort, favorites])
 
   const counts = useMemo(() => {
     if (!projects) return { all: 0 }
@@ -196,6 +208,35 @@ export default function ProjectsList() {
               </span>
             </button>
           ))}
+
+          {recent.length > 0 && projects && (
+            <div className="pt-3 mt-3 border-t border-border">
+              <div className="px-3 pb-1 text-[10px] uppercase tracking-wider text-muted-foreground/70">
+                Recent
+              </div>
+              {recent.slice(0, 5).map((r) => {
+                const p = projects.find((x) => x.slug === r.slug)
+                if (!p) return null
+                return (
+                  <button
+                    key={r.slug}
+                    onClick={() => navigate(`/projects/${r.slug}`)}
+                    className={cn(
+                      'w-full text-left px-3 py-1.5 rounded-md flex items-center justify-between text-xs',
+                      openSlug === r.slug
+                        ? 'bg-accent text-accent-foreground'
+                        : 'hover:bg-accent/60 text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    <span className="font-mono truncate">{r.slug}</span>
+                    {runningBySlug.has(r.slug) && (
+                      <span className="ml-2 inline-block w-1.5 h-1.5 rounded-full bg-sky-500 shrink-0" />
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          )}
         </nav>
         <div className="p-3 border-t border-border">
           <Link
@@ -250,6 +291,10 @@ export default function ProjectsList() {
               runningBySlug={runningBySlug}
               sort={sort}
               onSort={onSort}
+              favorites={favorites}
+              toggleFavorite={toggleFavorite}
+              density={density}
+              search={searchHighlight ? search.trim() : ''}
               onOpen={(slug) => navigate(`/projects/${slug}`)}
             />
           )}
@@ -268,8 +313,14 @@ function ProjectsTable({
   runningBySlug,
   sort,
   onSort,
+  favorites,
+  toggleFavorite,
+  density,
+  search,
   onOpen
 }) {
+  const compact = density === 'compact'
+  const cellPad = compact ? 'px-3 py-1' : 'px-4 py-2'
   if (total === 0) {
     return (
       <EmptyState
@@ -291,19 +342,20 @@ function ProjectsTable({
     <table className="w-full text-sm">
       <thead className="sticky top-0 bg-background border-b border-border z-10">
         <tr className="text-left text-xs text-muted-foreground">
-          <th className="font-normal px-4 py-2 w-20">Status</th>
-          <SortHeader id="slug" sort={sort} onSort={onSort} className="w-32">
+          <th className={cn('font-normal w-8', cellPad)}></th>
+          <th className={cn('font-normal w-20', cellPad)}>Status</th>
+          <SortHeader id="slug" sort={sort} onSort={onSort} className={cn('w-32', cellPad)}>
             Slug
           </SortHeader>
-          <SortHeader id="name" sort={sort} onSort={onSort}>
+          <SortHeader id="name" sort={sort} onSort={onSort} className={cellPad}>
             Name
           </SortHeader>
-          <th className="font-normal px-4 py-2 w-24">Kind</th>
+          <th className={cn('font-normal w-24', cellPad)}>Kind</th>
           <SortHeader
             id="dbSize"
             sort={sort}
             onSort={onSort}
-            className="w-24"
+            className={cn('w-24', cellPad)}
             align="right"
           >
             DB size
@@ -312,50 +364,97 @@ function ProjectsTable({
             id="lastCommit"
             sort={sort}
             onSort={onSort}
-            className="w-32"
+            className={cn('w-32', cellPad)}
           >
             Last commit
           </SortHeader>
         </tr>
       </thead>
       <tbody>
-        {projects.map((p) => (
-          <tr
-            key={p.slug}
-            onClick={() => onOpen(p.slug)}
-            className={cn(
-              'border-b border-border/60 cursor-pointer hover:bg-accent/40',
-              openSlug === p.slug && 'bg-accent/60'
-            )}
-          >
-            <td className="px-4 py-2">
-              <StatusDots
-                project={p}
-                runtime={runningBySlug.get(p.slug) || null}
-              />
-            </td>
-            <td className="px-4 py-2 font-mono text-xs">{p.slug}</td>
-            <td className="px-4 py-2">
-              <div className="font-medium">{p.name}</div>
-              {p.description && (
-                <div className="text-xs text-muted-foreground line-clamp-1">
-                  {p.description}
-                </div>
+        {projects.map((p) => {
+          const fav = !!favorites[p.slug]
+          return (
+            <tr
+              key={p.slug}
+              onClick={() => onOpen(p.slug)}
+              className={cn(
+                'border-b border-border/60 cursor-pointer hover:bg-accent/40',
+                openSlug === p.slug && 'bg-accent/60'
               )}
-            </td>
-            <td className="px-4 py-2">
-              <KindBadge kind={p.kind} projectKey={p.bitbucket.projectKey} />
-            </td>
-            <td className="px-4 py-2 text-right text-xs text-muted-foreground tabular-nums">
-              {formatBytes(p.db.sizeBytes)}
-            </td>
-            <td className="px-4 py-2 text-xs text-muted-foreground">
-              {formatRelative(p.bitbucket.updatedOn)}
-            </td>
-          </tr>
-        ))}
+            >
+              <td className={cn(cellPad, 'text-center')}>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    toggleFavorite(p.slug)
+                  }}
+                  title={fav ? 'Unpin' : 'Pin to top'}
+                  className={cn(
+                    'transition-colors',
+                    fav
+                      ? 'text-amber-400 hover:text-amber-300'
+                      : 'text-muted-foreground/30 hover:text-amber-400'
+                  )}
+                >
+                  <Star
+                    size={14}
+                    className={fav ? 'fill-current' : ''}
+                  />
+                </button>
+              </td>
+              <td className={cellPad}>
+                <StatusDots
+                  project={p}
+                  runtime={runningBySlug.get(p.slug) || null}
+                />
+              </td>
+              <td className={cn(cellPad, 'font-mono text-xs')}>
+                <Highlight text={p.slug} match={search} />
+              </td>
+              <td className={cellPad}>
+                <div className="font-medium">
+                  <Highlight text={p.name} match={search} />
+                </div>
+                {p.description && (
+                  <div className="text-xs text-muted-foreground line-clamp-1">
+                    <Highlight text={p.description} match={search} />
+                  </div>
+                )}
+              </td>
+              <td className={cellPad}>
+                <KindBadge kind={p.kind} projectKey={p.bitbucket.projectKey} />
+              </td>
+              <td className={cn(cellPad, 'text-right text-xs text-muted-foreground tabular-nums')}>
+                {formatBytes(p.db.sizeBytes)}
+              </td>
+              <td className={cn(cellPad, 'text-xs text-muted-foreground')}>
+                {formatRelative(p.bitbucket.updatedOn)}
+              </td>
+            </tr>
+          )
+        })}
       </tbody>
     </table>
+  )
+}
+
+/**
+ * Подсветка совпадения с поисковой строкой. Case-insensitive,
+ * только первое вхождение (для slug/name достаточно). Если match
+ * пустой — рендерит исходный текст без обёрток.
+ */
+function Highlight({ text, match }) {
+  if (!match || !text) return text || ''
+  const idx = text.toLowerCase().indexOf(match.toLowerCase())
+  if (idx === -1) return text
+  return (
+    <>
+      {text.slice(0, idx)}
+      <mark className="bg-amber-400/30 text-foreground rounded-sm px-0.5">
+        {text.slice(idx, idx + match.length)}
+      </mark>
+      {text.slice(idx + match.length)}
+    </>
   )
 }
 
