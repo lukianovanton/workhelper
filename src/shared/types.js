@@ -76,7 +76,10 @@
 /**
  * @typedef {Object} AppConfig
  * @property {{ workspace: string, username: string }} bitbucket
- *           appPassword хранится через safeStorage отдельно
+ *           username = Atlassian account email.
+ *           apiToken хранится через safeStorage отдельно (ключ
+ *           bitbucketApiToken). До сен. 2025 это был app password —
+ *           Atlassian задепрекейтил, схема Basic Auth не изменилась.
  * @property {{
  *   projectsRoot: string,
  *   dumpsRoot: string,

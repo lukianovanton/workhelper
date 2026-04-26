@@ -12,6 +12,7 @@ import Store from 'electron-store'
 const DEFAULTS = {
   bitbucket: {
     workspace: 'techgurusit',
+    /** Atlassian account email (используется как username для Basic Auth с API token). */
     username: ''
   },
   paths: {

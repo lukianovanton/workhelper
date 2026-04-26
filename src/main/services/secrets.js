@@ -8,7 +8,7 @@
  * - safeStorage.isEncryptionAvailable() требует, чтобы app был ready;
  *   IPC-хендлеры вызываются после whenReady так что условие всегда выполнено
  *
- * Поддерживаемые ключи: 'bitbucketAppPassword', 'dbPassword'.
+ * Поддерживаемые ключи: 'bitbucketApiToken', 'dbPassword'.
  */
 
 import { safeStorage } from 'electron'
@@ -19,7 +19,7 @@ const store = new Store({
   clearInvalidConfig: true
 })
 
-const VALID_KEYS = new Set(['bitbucketAppPassword', 'dbPassword'])
+const VALID_KEYS = new Set(['bitbucketApiToken', 'dbPassword'])
 
 function assertKey(key) {
   if (!VALID_KEYS.has(key)) {
@@ -28,7 +28,7 @@ function assertKey(key) {
 }
 
 /**
- * @param {'bitbucketAppPassword'|'dbPassword'} key
+ * @param {'bitbucketApiToken'|'dbPassword'} key
  * @param {string} value
  */
 export function setSecret(key, value) {
@@ -47,7 +47,7 @@ export function setSecret(key, value) {
 }
 
 /**
- * @param {'bitbucketAppPassword'|'dbPassword'} key
+ * @param {'bitbucketApiToken'|'dbPassword'} key
  * @returns {string|null}
  */
 export function getSecret(key) {
@@ -65,7 +65,7 @@ export function getSecret(key) {
 }
 
 /**
- * @param {'bitbucketAppPassword'|'dbPassword'} key
+ * @param {'bitbucketApiToken'|'dbPassword'} key
  */
 export function clearSecret(key) {
   assertKey(key)
@@ -75,11 +75,11 @@ export function clearSecret(key) {
 /**
  * Возвращает карту key → boolean (есть ли значение). Не раскрывает значения.
  *
- * @returns {{ bitbucketAppPassword: boolean, dbPassword: boolean }}
+ * @returns {{ bitbucketApiToken: boolean, dbPassword: boolean }}
  */
 export function secretsStatus() {
   return {
-    bitbucketAppPassword: store.has('bitbucketAppPassword'),
+    bitbucketApiToken: store.has('bitbucketApiToken'),
     dbPassword: store.has('dbPassword')
   }
 }

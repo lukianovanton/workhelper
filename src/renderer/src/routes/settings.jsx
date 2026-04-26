@@ -18,10 +18,10 @@ export default function Settings() {
   const navigate = useNavigate()
   const [config, setConfig] = useState(null)
   const [secretsStatus, setSecretsStatus] = useState({
-    bitbucketAppPassword: false,
+    bitbucketApiToken: false,
     dbPassword: false
   })
-  const [bitbucketAppPassword, setBitbucketAppPassword] = useState('')
+  const [bitbucketApiToken, setBitbucketApiToken] = useState('')
   const [dbPassword, setDbPassword] = useState('')
   const [vscodeDetected, setVscodeDetected] = useState(null)
   const [mysqlDetected, setMysqlDetected] = useState(null)
@@ -35,7 +35,7 @@ export default function Settings() {
     ])
     setConfig(c)
     setSecretsStatus(s)
-    setBitbucketAppPassword('')
+    setBitbucketApiToken('')
     setDbPassword('')
   }, [])
 
@@ -73,8 +73,8 @@ export default function Settings() {
     setSaveStatus(null)
     try {
       await api.config.set(config)
-      if (bitbucketAppPassword) {
-        await api.config.setSecret('bitbucketAppPassword', bitbucketAppPassword)
+      if (bitbucketApiToken) {
+        await api.config.setSecret('bitbucketApiToken', bitbucketApiToken)
       }
       if (dbPassword) {
         await api.config.setSecret('dbPassword', dbPassword)
@@ -129,9 +129,11 @@ export default function Settings() {
           <CardHeader>
             <CardTitle>Bitbucket</CardTitle>
             <CardDescription>
-              Workspace and credentials for the Cloud API. App password
-              created at <code>id.atlassian.com → Bitbucket → App passwords</code>
-              {' '}with <code>Repositories: Read</code>.
+              Workspace and credentials for the Cloud API. API token
+              created at <code>id.atlassian.com → Security → Create API
+              token with scopes</code> → Bitbucket →{' '}
+              <code>read:repository:bitbucket</code>. App passwords are
+              deprecated since Sep 2025.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -155,11 +157,11 @@ export default function Settings() {
               />
             </Field>
             <SecretField
-              label="App password"
-              status={secretsStatus.bitbucketAppPassword}
-              value={bitbucketAppPassword}
-              onChange={setBitbucketAppPassword}
-              onClear={() => onClearSecret('bitbucketAppPassword')}
+              label="API token"
+              status={secretsStatus.bitbucketApiToken}
+              value={bitbucketApiToken}
+              onChange={setBitbucketApiToken}
+              onClear={() => onClearSecret('bitbucketApiToken')}
             />
             <div className="pt-2">
               <Button variant="outline" size="sm" disabled title="Coming next checkpoint">
