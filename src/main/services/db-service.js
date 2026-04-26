@@ -84,6 +84,65 @@ export async function getDatabaseSizes(names) {
 }
 
 /**
+ * Имя БД должно быть строго [a-z0-9_]+ — это та же конвенция что в
+ * enrich (slug.toLowerCase()) и плюс защита от SQL-инъекций сверх
+ * backtick-quoting в самом запросе.
+ */
+const NAME_REGEX = /^[a-z0-9_]+$/
+
+function assertDbName(name) {
+  if (typeof name !== 'string' || !NAME_REGEX.test(name)) {
+    throw new Error('Invalid database name: must match [a-z0-9_]+')
+  }
+}
+
+/**
+ * CREATE DATABASE с utf8mb4 и unicode collation.
+ * Если БД существует — переписываем 1007 в человеческое сообщение.
+ *
+ * @param {string} name
+ */
+export async function createDatabase(name) {
+  assertDbName(name)
+  return withConnection(async (conn) => {
+    try {
+      await conn.query(
+        `CREATE DATABASE \`${name}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`
+      )
+    } catch (e) {
+      if (e?.errno === 1007) {
+        throw new Error(`Database '${name}' already exists`)
+      }
+      throw new Error(
+        `Failed to create database '${name}': ${e?.message || String(e)}`
+      )
+    }
+  })
+}
+
+/**
+ * DROP DATABASE — необратимо. Валидация имени так же строга.
+ * 1008 (does-not-exist) переписывается в понятное сообщение.
+ *
+ * @param {string} name
+ */
+export async function dropDatabase(name) {
+  assertDbName(name)
+  return withConnection(async (conn) => {
+    try {
+      await conn.query(`DROP DATABASE \`${name}\``)
+    } catch (e) {
+      if (e?.errno === 1008) {
+        throw new Error(`Database '${name}' does not exist`)
+      }
+      throw new Error(
+        `Failed to drop database '${name}': ${e?.message || String(e)}`
+      )
+    }
+  })
+}
+
+/**
  * Проверка коннекта для Settings → Database → Test.
  * @returns {Promise<{ok:true,version:string}|{ok:false,message:string,code?:string}>}
  */

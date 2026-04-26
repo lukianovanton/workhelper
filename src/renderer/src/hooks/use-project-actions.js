@@ -43,5 +43,19 @@ export function useProjectActions(slug) {
     }
   })
 
-  return { clone, pull, run, stop }
+  const dbCreate = useMutation({
+    mutationFn: () => api.db.create(slug.toLowerCase()),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['bitbucket', 'projects'] })
+    }
+  })
+
+  const dbDrop = useMutation({
+    mutationFn: () => api.db.drop(slug.toLowerCase()),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['bitbucket', 'projects'] })
+    }
+  })
+
+  return { clone, pull, run, stop, dbCreate, dbDrop }
 }

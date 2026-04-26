@@ -24,7 +24,9 @@ const api = {
     list: () => ipcRenderer.invoke('db:list'),
     exists: (name) => ipcRenderer.invoke('db:exists', name),
     size: (name) => ipcRenderer.invoke('db:size', name),
-    testConnection: () => ipcRenderer.invoke('db:test')
+    testConnection: () => ipcRenderer.invoke('db:test'),
+    create: (name) => ipcRenderer.invoke('db:create', name),
+    drop: (name) => ipcRenderer.invoke('db:drop', name)
   },
   fs: {
     findDump: (slug) => ipcRenderer.invoke('fs:findDump', slug),

@@ -12,7 +12,9 @@ import {
   XCircle,
   CircleDashed,
   GitCommit,
-  Download
+  Download,
+  Plus,
+  Trash2
 } from 'lucide-react'
 import { useProjects } from '@/hooks/use-projects'
 import { useLastCommit } from '@/hooks/use-last-commit'
@@ -21,13 +23,25 @@ import { useGitStatus } from '@/hooks/use-git-status'
 import { useProjectActions } from '@/hooks/use-project-actions'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from '@/components/ui/alert-dialog'
+import { cn } from '@/lib/utils'
 import { api } from '@/api'
 
 export default function ProjectDetail() {
   const { slug } = useParams()
   const navigate = useNavigate()
-  const { projects, isLoading: projectsLoading } = useProjects()
+  const { projects, warnings, isLoading: projectsLoading } = useProjects()
   const project = projects?.find((p) => p.slug === slug) || null
+  const dbAvailable = !warnings.some((w) => /database/i.test(w))
 
   if (projectsLoading)
     return <DrawerShell onClose={() => navigate('/projects')} loading />
@@ -36,7 +50,13 @@ export default function ProjectDetail() {
       <DrawerNotFound slug={slug} onClose={() => navigate('/projects')} />
     )
 
-  return <Drawer project={project} onClose={() => navigate('/projects')} />
+  return (
+    <Drawer
+      project={project}
+      dbAvailable={dbAvailable}
+      onClose={() => navigate('/projects')}
+    />
+  )
 }
 
 function DrawerShell({ children, onClose, loading }) {
@@ -77,14 +97,16 @@ function DrawerNotFound({ slug, onClose }) {
   )
 }
 
-function Drawer({ project, onClose }) {
+function Drawer({ project, dbAvailable, onClose }) {
   const cloned = project.local.cloned
   const { bySlug } = useRunningProcesses()
   const runtime = bySlug.get(project.slug) || null
   const isRunning = !!runtime
 
   const gitStatus = useGitStatus(project.slug, cloned)
-  const { clone, pull, run, stop } = useProjectActions(project.slug)
+  const { clone, pull, run, stop, dbCreate, dbDrop } =
+    useProjectActions(project.slug)
+  const [dropDialogOpen, setDropDialogOpen] = useState(false)
 
   const [actionStatus, setActionStatus] = useState(null)
   const flashTimerRef = useRef(null)
@@ -161,6 +183,25 @@ function Drawer({ project, onClose }) {
     try {
       await stop.mutateAsync()
       flash(`Stopped ${project.slug}`, 'ok')
+    } catch (e) {
+      flash(e?.message || String(e), 'error')
+    }
+  }
+
+  const onCreateDb = async () => {
+    try {
+      await dbCreate.mutateAsync()
+      flash(`Database ${project.db.name} created`, 'ok')
+    } catch (e) {
+      flash(e?.message || String(e), 'error')
+    }
+  }
+
+  const onConfirmDrop = async () => {
+    setDropDialogOpen(false)
+    try {
+      await dbDrop.mutateAsync()
+      flash(`Dropped database ${project.db.name}`, 'ok')
     } catch (e) {
       flash(e?.message || String(e), 'error')
     }
@@ -336,6 +377,17 @@ function Drawer({ project, onClose }) {
               ? `Dump available: ${project.db.dumpPath}`
               : 'No dump auto-detected'
           }
+          right={
+            <DbAction
+              dbExists={project.db.exists}
+              dbAvailable={dbAvailable}
+              isRunning={isRunning}
+              creating={dbCreate.isPending}
+              dropping={dbDrop.isPending}
+              onCreate={onCreateDb}
+              onRequestDrop={() => setDropDialogOpen(true)}
+            />
+          }
         />
         <ChecklistRow
           state={isRunning ? 'running' : 'idle'}
@@ -381,7 +433,98 @@ function Drawer({ project, onClose }) {
 
         <LastCommitSection slug={project.slug} />
       </div>
+
+      <AlertDialog open={dropDialogOpen} onOpenChange={setDropDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Drop database <code className="font-mono">{project.db.name}</code>?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete all data in the database. This
+              action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={onConfirmDrop}
+              className={cn(
+                'bg-destructive text-destructive-foreground hover:bg-destructive/90'
+              )}
+            >
+              Drop database
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
+  )
+}
+
+function DbAction({
+  dbExists,
+  dbAvailable,
+  isRunning,
+  creating,
+  dropping,
+  onCreate,
+  onRequestDrop
+}) {
+  if (!dbAvailable) {
+    return (
+      <Button
+        variant="outline"
+        size="sm"
+        disabled
+        title="Configure database connection in Settings"
+      >
+        {dbExists ? 'Drop' : 'Create'}
+      </Button>
+    )
+  }
+
+  if (!dbExists) {
+    return (
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={onCreate}
+        disabled={creating}
+      >
+        {creating ? <Loader2 className="animate-spin" /> : <Plus />}
+        Create database
+      </Button>
+    )
+  }
+
+  // Exists — show Drop. Block if a process is running.
+  if (isRunning) {
+    return (
+      <Button
+        variant="outline"
+        size="sm"
+        disabled
+        title="Stop the running process before dropping the database"
+        className="text-destructive/60"
+      >
+        <Trash2 />
+        Drop database
+      </Button>
+    )
+  }
+
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={onRequestDrop}
+      disabled={dropping}
+      className="text-destructive border-destructive/40 hover:bg-destructive/10 hover:text-destructive"
+    >
+      {dropping ? <Loader2 className="animate-spin" /> : <Trash2 />}
+      Drop database
+    </Button>
   )
 }
 

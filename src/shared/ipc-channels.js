@@ -18,7 +18,9 @@ export const IPC = {
     list: 'db:list',
     exists: 'db:exists',
     size: 'db:size',
-    test: 'db:test'
+    test: 'db:test',
+    create: 'db:create',
+    drop: 'db:drop'
   },
   fs: {
     findDump: 'fs:findDump',
