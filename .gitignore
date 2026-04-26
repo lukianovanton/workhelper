@@ -1,0 +1,11 @@
+node_modules
+out
+dist
+release
+.DS_Store
+*.log
+.vscode/.debug.env
+.env
+.env.local
+.env.*.local
+temp
