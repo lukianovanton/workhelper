@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, Outlet, useNavigate, useParams } from 'react-router-dom'
 import {
   Loader2,
@@ -6,13 +6,75 @@ import {
   Settings as SettingsIcon,
   AlertCircle,
   AlertTriangle,
-  Search
+  Search,
+  ChevronUp,
+  ChevronDown
 } from 'lucide-react'
 import { useProjects } from '@/hooks/use-projects'
 import { useRunningProcesses } from '@/hooks/use-running-processes'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
+
+const SORT_STORAGE_KEY = 'projects-sort'
+
+const SORTABLE_COLUMNS = /** @type {const} */ ({
+  slug: 'Slug',
+  name: 'Name',
+  dbSize: 'DB size',
+  lastCommit: 'Last commit'
+})
+
+function loadSort() {
+  try {
+    const raw = localStorage.getItem(SORT_STORAGE_KEY)
+    if (!raw) return { column: 'slug', direction: 'desc' }
+    const parsed = JSON.parse(raw)
+    if (
+      typeof parsed?.column === 'string' &&
+      parsed.column in SORTABLE_COLUMNS &&
+      (parsed.direction === 'asc' || parsed.direction === 'desc')
+    ) {
+      return parsed
+    }
+  } catch {
+    // fallthrough
+  }
+  return { column: 'slug', direction: 'desc' }
+}
+
+function saveSort(sort) {
+  try {
+    localStorage.setItem(SORT_STORAGE_KEY, JSON.stringify(sort))
+  } catch {
+    // localStorage может быть недоступен — игнорируем
+  }
+}
+
+function compareProjects(a, b, column) {
+  switch (column) {
+    case 'slug':
+      return a.slug.localeCompare(b.slug, undefined, { numeric: true })
+    case 'name':
+      return a.name.localeCompare(b.name, undefined, { numeric: true })
+    case 'dbSize': {
+      const av = a.db.sizeBytes ?? -1
+      const bv = b.db.sizeBytes ?? -1
+      return av - bv
+    }
+    case 'lastCommit': {
+      const at = a.bitbucket.updatedOn
+        ? new Date(a.bitbucket.updatedOn).getTime()
+        : 0
+      const bt = b.bitbucket.updatedOn
+        ? new Date(b.bitbucket.updatedOn).getTime()
+        : 0
+      return at - bt
+    }
+    default:
+      return 0
+  }
+}
 
 const FILTERS = /** @type {const} */ ([
   { id: 'all', label: 'All' },
@@ -30,13 +92,29 @@ export default function ProjectsList() {
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [refreshing, setRefreshing] = useState(false)
+  const [sort, setSort] = useState(loadSort)
   const navigate = useNavigate()
   const { slug: openSlug } = useParams()
 
-  const filtered = useMemo(() => {
+  useEffect(() => {
+    saveSort(sort)
+  }, [sort])
+
+  const onSort = (column) => {
+    setSort((prev) =>
+      prev.column === column
+        ? {
+            column,
+            direction: prev.direction === 'asc' ? 'desc' : 'asc'
+          }
+        : { column, direction: 'asc' }
+    )
+  }
+
+  const sortedAndFiltered = useMemo(() => {
     if (!projects) return []
     const q = search.trim().toLowerCase()
-    return projects.filter((p) => {
+    const filtered = projects.filter((p) => {
       switch (filter) {
         case 'installed':
           if (!p.local.cloned) return false
@@ -60,7 +138,12 @@ export default function ProjectsList() {
       }
       return true
     })
-  }, [projects, filter, search, runningBySlug])
+
+    const sign = sort.direction === 'asc' ? 1 : -1
+    return [...filtered].sort(
+      (a, b) => compareProjects(a, b, sort.column) * sign
+    )
+  }, [projects, filter, search, runningBySlug, sort])
 
   const counts = useMemo(() => {
     if (!projects) return { all: 0 }
@@ -160,10 +243,12 @@ export default function ProjectsList() {
           {error && <ListError error={error} />}
           {!isLoading && !error && projects && (
             <ProjectsTable
-              projects={filtered}
+              projects={sortedAndFiltered}
               total={projects.length}
               openSlug={openSlug}
               runningBySlug={runningBySlug}
+              sort={sort}
+              onSort={onSort}
               onOpen={(slug) => navigate(`/projects/${slug}`)}
             />
           )}
@@ -175,7 +260,15 @@ export default function ProjectsList() {
   )
 }
 
-function ProjectsTable({ projects, total, openSlug, runningBySlug, onOpen }) {
+function ProjectsTable({
+  projects,
+  total,
+  openSlug,
+  runningBySlug,
+  sort,
+  onSort,
+  onOpen
+}) {
   if (total === 0) {
     return (
       <EmptyState
@@ -198,11 +291,30 @@ function ProjectsTable({ projects, total, openSlug, runningBySlug, onOpen }) {
       <thead className="sticky top-0 bg-background border-b border-border z-10">
         <tr className="text-left text-xs text-muted-foreground">
           <th className="font-normal px-4 py-2 w-20">Status</th>
-          <th className="font-normal px-4 py-2 w-32">Slug</th>
-          <th className="font-normal px-4 py-2">Name</th>
+          <SortHeader id="slug" sort={sort} onSort={onSort} className="w-32">
+            Slug
+          </SortHeader>
+          <SortHeader id="name" sort={sort} onSort={onSort}>
+            Name
+          </SortHeader>
           <th className="font-normal px-4 py-2 w-24">Kind</th>
-          <th className="font-normal px-4 py-2 w-24 text-right">DB size</th>
-          <th className="font-normal px-4 py-2 w-32">Updated</th>
+          <SortHeader
+            id="dbSize"
+            sort={sort}
+            onSort={onSort}
+            className="w-24"
+            align="right"
+          >
+            DB size
+          </SortHeader>
+          <SortHeader
+            id="lastCommit"
+            sort={sort}
+            onSort={onSort}
+            className="w-32"
+          >
+            Last commit
+          </SortHeader>
         </tr>
       </thead>
       <tbody>
@@ -243,6 +355,27 @@ function ProjectsTable({ projects, total, openSlug, runningBySlug, onOpen }) {
         ))}
       </tbody>
     </table>
+  )
+}
+
+function SortHeader({ id, sort, onSort, children, className, align = 'left' }) {
+  const active = sort.column === id
+  const Arrow = sort.direction === 'asc' ? ChevronUp : ChevronDown
+  return (
+    <th className={cn('font-normal px-4 py-2', className)}>
+      <button
+        onClick={() => onSort(id)}
+        className={cn(
+          'inline-flex items-center gap-1 hover:text-foreground transition-colors',
+          align === 'right' && 'justify-end w-full',
+          active && 'text-foreground'
+        )}
+      >
+        {align === 'right' && active && <Arrow size={12} />}
+        {children}
+        {align !== 'right' && active && <Arrow size={12} />}
+      </button>
+    </th>
   )
 }
 
