@@ -123,11 +123,15 @@ function buildClient() {
 }
 
 /**
- * Двухступенчатая проверка:
- *  1. /user — токен в принципе валиден
- *  2. /workspaces/{ws} — токен имеет доступ к нужному воркспейсу
+ * Проверка коннекта. Бьём именно тот эндпоинт, который реально нужен
+ * приложению — список репо воркспейса (pagelen=1, чтобы не качать всё).
+ * /user и /workspaces/{ws} требуют отдельных scope'ов
+ * (read:account, read:workspace:bitbucket), которые могут не быть у
+ * токена с только read:repository:bitbucket — и тогда тест бы фейлил
+ * там, где фактическое использование клиента работает. Это неверно.
  *
- * Возвращает structured result, чтобы UI мог различать стадии.
+ * Identity (display name) и красивое имя workspace грузим best-effort
+ * после успеха основного теста — их провал НЕ влияет на ok=true.
  *
  * @returns {Promise<{ok: true, user: any, workspace: any} | {ok: false, stage: string, message: string, detail?: string}>}
  */
@@ -139,42 +143,66 @@ export async function testConnection() {
     return { ok: false, stage: e.stage || 'config', message: e.message }
   }
 
-  let user
+  // Главный функциональный тест — то, что делает list()
   try {
-    user = await client.request('/user')
+    await client.request(
+      `/repositories/${encodeURIComponent(client.workspace)}?pagelen=1&fields=values.slug,next`
+    )
   } catch (e) {
-    return {
-      ok: false,
-      stage: e.stage || 'auth',
-      message: e.message
+    if (e.status === 401) {
+      return {
+        ok: false,
+        stage: 'auth',
+        message: 'Authentication failed (401). API token is invalid, revoked, or the email does not match the account.'
+      }
     }
+    if (e.status === 403) {
+      return {
+        ok: false,
+        stage: 'workspace',
+        message: `Cannot read repositories in workspace "${client.workspace}".`,
+        detail:
+          'Token is valid but lacks the required scope or you do not have access to this workspace. ' +
+          'Required scope: read:repository:bitbucket.'
+      }
+    }
+    if (e.status === 404) {
+      return {
+        ok: false,
+        stage: 'workspace',
+        message: `Workspace "${client.workspace}" not found.`,
+        detail: 'Check the workspace slug in Settings.'
+      }
+    }
+    return { ok: false, stage: e.stage || 'http', message: e.message }
   }
 
+  // Best-effort identity — если scope read:account отсутствует,
+  // /user отдаст 403; это нормально, мы уже подтвердили repo-доступ.
+  let identity = { displayName: client.username }
+  try {
+    const user = await client.request('/user')
+    identity = {
+      accountId: user.account_id,
+      displayName: user.display_name || user.username || client.username,
+      username: user.username
+    }
+  } catch {
+    // ignore
+  }
+
+  // Best-effort красивое имя workspace
+  let workspace = { slug: client.workspace, name: client.workspace }
   try {
     const ws = await client.request(
       `/workspaces/${encodeURIComponent(client.workspace)}`
     )
-    return {
-      ok: true,
-      user: {
-        accountId: user.account_id,
-        displayName: user.display_name || user.username || client.username,
-        username: user.username
-      },
-      workspace: {
-        slug: ws.slug,
-        name: ws.name
-      }
-    }
-  } catch (e) {
-    const who = user.display_name || user.username || client.username
-    return {
-      ok: false,
-      stage: 'workspace',
-      message: `Authenticated as ${who}, but cannot access workspace "${client.workspace}".`,
-      detail: e.message
-    }
+    workspace = { slug: ws.slug, name: ws.name }
+  } catch {
+    // ignore
   }
+
+  return { ok: true, user: identity, workspace }
 }
 
 /**

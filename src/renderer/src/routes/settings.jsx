@@ -374,6 +374,7 @@ export default function Settings() {
 function BitbucketTestResult({ result }) {
   if (!result) return null
   if (result.ok) {
+    const sameWsName = result.workspace.name === result.workspace.slug
     return (
       <div className="flex items-start gap-2 text-xs text-emerald-500">
         <CheckCircle2 size={14} className="mt-0.5 shrink-0" />
@@ -382,7 +383,9 @@ function BitbucketTestResult({ result }) {
             Authenticated as <strong>{result.user.displayName}</strong>
           </div>
           <div className="text-muted-foreground mt-0.5">
-            Workspace <strong>{result.workspace.name}</strong> ({result.workspace.slug}) accessible.
+            Workspace <strong>{result.workspace.slug}</strong>
+            {!sameWsName && <> (<span>{result.workspace.name}</span>)</>}
+            {' '}— repositories readable.
           </div>
         </div>
       </div>
