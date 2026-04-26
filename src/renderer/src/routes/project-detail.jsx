@@ -192,13 +192,30 @@ function Drawer({ project, onClose }) {
             label="Pull"
           />
           {isRunning ? (
-            <ActionButton
-              icon={stop.isPending ? <Loader2 className="animate-spin" /> : <Square />}
-              onClick={onStop}
-              disabled={stop.isPending}
-              label={`Stop${runtime?.port ? ` (:${runtime.port})` : ''}`}
-              destructive
-            />
+            <>
+              <ActionButton
+                icon={stop.isPending ? <Loader2 className="animate-spin" /> : <Square />}
+                onClick={onStop}
+                disabled={stop.isPending}
+                label={`Stop${runtime?.port ? ` (:${runtime.port})` : ''}`}
+                destructive
+              />
+              {runtime?.port != null && (
+                <Button
+                  variant="outline"
+                  size="icon"
+                  title={`Open http://localhost:${runtime.port}`}
+                  onClick={() =>
+                    window.open(
+                      `http://localhost:${runtime.port}`,
+                      '_blank'
+                    )
+                  }
+                >
+                  <ExternalLink />
+                </Button>
+              )}
+            </>
           ) : (
             <ActionButton
               icon={run.isPending ? <Loader2 className="animate-spin" /> : <Play />}

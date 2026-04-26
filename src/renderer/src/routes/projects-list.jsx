@@ -8,7 +8,8 @@ import {
   AlertTriangle,
   Search,
   ChevronUp,
-  ChevronDown
+  ChevronDown,
+  ExternalLink
 } from 'lucide-react'
 import { useProjects } from '@/hooks/use-projects'
 import { useRunningProcesses } from '@/hooks/use-running-processes'
@@ -414,7 +415,7 @@ function StatusDots({ project, runtime }) {
     }
   ]
   return (
-    <div className="flex gap-1">
+    <div className="flex gap-1 items-center">
       {dots.map((d, i) => (
         <span
           key={i}
@@ -425,6 +426,18 @@ function StatusDots({ project, runtime }) {
           )}
         />
       ))}
+      {running && runtime?.port != null && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            window.open(`http://localhost:${runtime.port}`, '_blank')
+          }}
+          title={`Open http://localhost:${runtime.port}`}
+          className="ml-1 text-muted-foreground hover:text-sky-500 transition-colors"
+        >
+          <ExternalLink size={11} />
+        </button>
+      )}
     </div>
   )
 }
