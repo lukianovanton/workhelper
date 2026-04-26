@@ -1,5 +1,5 @@
 /**
- * Список IPC-каналов. Использовать как единственный источник правды
+ * Список IPC-каналов. Использовать как единственный источник правды,
  * чтобы избежать рассинхрона между preload и main-handler'ами.
  */
 export const IPC = {
@@ -15,7 +15,8 @@ export const IPC = {
   db: {
     list: 'db:list',
     exists: 'db:exists',
-    size: 'db:size'
+    size: 'db:size',
+    test: 'db:test'
   },
   fs: {
     findDump: 'fs:findDump',
@@ -33,6 +34,9 @@ export const IPC = {
   config: {
     get: 'config:get',
     set: 'config:set',
-    setSecret: 'config:setSecret'
+    setSecret: 'config:setSecret',
+    clearSecret: 'config:clearSecret',
+    secretsStatus: 'config:secretsStatus',
+    whichBinary: 'config:whichBinary'
   }
 }

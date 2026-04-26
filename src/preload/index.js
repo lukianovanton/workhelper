@@ -1,8 +1,8 @@
-const { contextBridge, ipcRenderer } = require('electron')
+import { contextBridge, ipcRenderer } from 'electron'
 
 /**
  * Тонкие обёртки IPC. Каждый неймспейс отражает раздел 6 спеки.
- * Реализации в main/services/* подключаются позже по мере MVP.
+ * Реализации в main/services/* подключаются по мере MVP.
  *
  * @typedef {import('../shared/types.js').Project} Project
  * @typedef {import('../shared/types.js').AppConfig} AppConfig
@@ -21,7 +21,8 @@ const api = {
   db: {
     list: () => ipcRenderer.invoke('db:list'),
     exists: (name) => ipcRenderer.invoke('db:exists', name),
-    size: (name) => ipcRenderer.invoke('db:size', name)
+    size: (name) => ipcRenderer.invoke('db:size', name),
+    testConnection: () => ipcRenderer.invoke('db:test')
   },
   fs: {
     findDump: (slug) => ipcRenderer.invoke('fs:findDump', slug),
@@ -39,7 +40,10 @@ const api = {
   config: {
     get: () => ipcRenderer.invoke('config:get'),
     set: (patch) => ipcRenderer.invoke('config:set', patch),
-    setSecret: (key, value) => ipcRenderer.invoke('config:setSecret', key, value)
+    setSecret: (key, value) => ipcRenderer.invoke('config:setSecret', key, value),
+    clearSecret: (key) => ipcRenderer.invoke('config:clearSecret', key),
+    secretsStatus: () => ipcRenderer.invoke('config:secretsStatus'),
+    whichBinary: (name) => ipcRenderer.invoke('config:whichBinary', name)
   }
 }
 

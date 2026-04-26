@@ -16,7 +16,8 @@ const path = require('node:path')
 
 delete process.env.ELECTRON_RUN_AS_NODE
 
-const binPath = require.resolve('electron-vite/bin/electron-vite.js')
+const pkgPath = require.resolve('electron-vite/package.json')
+const binPath = path.join(path.dirname(pkgPath), 'bin', 'electron-vite.js')
 
 const child = fork(binPath, process.argv.slice(2), {
   stdio: 'inherit',
