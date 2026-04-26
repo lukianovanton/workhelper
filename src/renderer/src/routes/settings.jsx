@@ -1,6 +1,8 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Check, X, Loader2, CheckCircle2, XCircle } from 'lucide-react'
+import { ArrowLeft, Check, X, Loader2, CheckCircle2, XCircle, Sun, Moon, Monitor, Rows3, Rows4 } from 'lucide-react'
+import { usePrefsStore } from '@/store/prefs.store.js'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -386,6 +388,8 @@ export default function Settings() {
           </CardContent>
         </Card>
 
+        <AppearanceCard />
+
         <Separator />
         <p className="text-xs text-muted-foreground">
           Config stored in <code>%APPDATA%\\project-hub\\config.json</code>.
@@ -393,6 +397,105 @@ export default function Settings() {
           <code>secrets.json</code>.
         </p>
       </div>
+    </div>
+  )
+}
+
+function AppearanceCard() {
+  const theme = usePrefsStore((s) => s.theme)
+  const setTheme = usePrefsStore((s) => s.setTheme)
+  const density = usePrefsStore((s) => s.density)
+  const setDensity = usePrefsStore((s) => s.setDensity)
+  const autoRefreshMs = usePrefsStore((s) => s.autoRefreshMs)
+  const setAutoRefreshMs = usePrefsStore((s) => s.setAutoRefreshMs)
+  const searchHighlight = usePrefsStore((s) => s.searchHighlight)
+  const setSearchHighlight = usePrefsStore((s) => s.setSearchHighlight)
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Appearance</CardTitle>
+        <CardDescription>
+          Display preferences for this machine. Stored locally, not in
+          config.json.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <Field label="Theme">
+          <SegmentedRadio
+            options={[
+              { value: 'dark', label: 'Dark', icon: <Moon size={14} /> },
+              { value: 'light', label: 'Light', icon: <Sun size={14} /> },
+              { value: 'system', label: 'System', icon: <Monitor size={14} /> }
+            ]}
+            value={theme}
+            onChange={setTheme}
+          />
+        </Field>
+        <Field label="Density">
+          <SegmentedRadio
+            options={[
+              {
+                value: 'comfortable',
+                label: 'Comfortable',
+                icon: <Rows3 size={14} />
+              },
+              { value: 'compact', label: 'Compact', icon: <Rows4 size={14} /> }
+            ]}
+            value={density}
+            onChange={setDensity}
+          />
+        </Field>
+        <Field
+          label="Auto-refresh projects"
+          hint="Periodically fetches the Bitbucket list in the background"
+        >
+          <SegmentedRadio
+            options={[
+              { value: 0, label: 'Off' },
+              { value: 60_000, label: '1 min' },
+              { value: 300_000, label: '5 min' },
+              { value: 600_000, label: '10 min' }
+            ]}
+            value={autoRefreshMs}
+            onChange={setAutoRefreshMs}
+          />
+        </Field>
+        <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={searchHighlight}
+            onChange={(e) => setSearchHighlight(e.target.checked)}
+            className="rounded border-input"
+          />
+          Highlight search matches in the projects table
+        </label>
+      </CardContent>
+    </Card>
+  )
+}
+
+function SegmentedRadio({ options, value, onChange }) {
+  return (
+    <div className="inline-flex rounded-md border border-input p-0.5 bg-background">
+      {options.map((opt) => {
+        const active = opt.value === value
+        return (
+          <button
+            key={String(opt.value)}
+            onClick={() => onChange(opt.value)}
+            className={cn(
+              'flex items-center gap-1.5 px-3 py-1 text-xs rounded-sm transition-colors',
+              active
+                ? 'bg-accent text-accent-foreground'
+                : 'text-muted-foreground hover:text-foreground'
+            )}
+          >
+            {opt.icon}
+            {opt.label}
+          </button>
+        )
+      })}
     </div>
   )
 }
