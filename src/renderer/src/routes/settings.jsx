@@ -472,7 +472,10 @@ function BinaryPathField({
   notFoundHint,
   onChange
 }) {
-  const canUseDetected = detected && detected !== value
+  // Кнопка показывается всегда когда есть detected — даже если поле
+  // уже равно detected. Это позволяет «вернуть к авто» одним кликом
+  // в любой момент, не ломая голову над тем, что в поле сейчас.
+  const canUseDetected = !!detected
   const hint = detected ? `detected: ${detected}` : notFoundHint
   return (
     <div className="space-y-1.5">
