@@ -263,22 +263,14 @@ export default function Settings() {
                 placeholder="C:\\Dumps"
               />
             </Field>
-            <Field
+            <BinaryPathField
               label="VS Code executable"
-              hint={
-                vscodeDetected
-                  ? `detected: ${vscodeDetected}`
-                  : 'not found in PATH'
-              }
-            >
-              <Input
-                value={config.paths.vscodeExecutable}
-                onChange={(e) =>
-                  updatePath('paths', 'vscodeExecutable')(e.target.value)
-                }
-                placeholder="code"
-              />
-            </Field>
+              value={config.paths.vscodeExecutable}
+              detected={vscodeDetected}
+              placeholder="code"
+              notFoundHint="not found in PATH"
+              onChange={(v) => updatePath('paths', 'vscodeExecutable')(v)}
+            />
           </CardContent>
         </Card>
 
@@ -329,24 +321,18 @@ export default function Settings() {
               onChange={setDbPassword}
               onClear={() => onClearSecret('dbPassword')}
             />
-            <Field
+            <BinaryPathField
               label="mysql executable"
-              hint={
+              value={config.database.mysqlExecutable}
+              detected={mysqlDetected}
+              placeholder="C:\\path\\to\\mysql.exe"
+              notFoundHint={
                 config.database.mysqlExecutable
-                  ? mysqlDetected
-                    ? `detected: ${mysqlDetected}`
-                    : 'not found — restore will be blocked in MVP-2'
+                  ? 'not found — restore will be blocked in MVP-2'
                   : 'leave empty for MVP-1'
               }
-            >
-              <Input
-                value={config.database.mysqlExecutable}
-                onChange={(e) =>
-                  updatePath('database', 'mysqlExecutable')(e.target.value)
-                }
-                placeholder="C:\\path\\to\\mysql.exe"
-              />
-            </Field>
+              onChange={(v) => updatePath('database', 'mysqlExecutable')(v)}
+            />
             <div className="pt-2 space-y-2">
               <Button
                 variant="outline"
@@ -466,6 +452,49 @@ function DbTestResult({ result }) {
           <div className="text-muted-foreground mt-0.5">code: {result.code}</div>
         )}
       </div>
+    </div>
+  )
+}
+
+/**
+ * Поле с путём к бинарю + кнопка «Use detected» когда runtime-резолв
+ * находит абсолютный путь, а в поле сейчас другое (например дефолтное
+ * имя 'code'). В packaged-сборке наша внутренняя whichBinary иногда
+ * возвращает другой путь, чем встроенный спавн умеет открыть, —
+ * абсолютный путь надёжнее, и эта кнопка позволяет зафиксировать
+ * его одним кликом.
+ */
+function BinaryPathField({
+  label,
+  value,
+  detected,
+  placeholder,
+  notFoundHint,
+  onChange
+}) {
+  const canUseDetected = detected && detected !== value
+  const hint = detected ? `detected: ${detected}` : notFoundHint
+  return (
+    <div className="space-y-1.5">
+      <Label>{label}</Label>
+      <div className="flex gap-2">
+        <Input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+        />
+        {canUseDetected && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onChange(detected)}
+            title={`Set to ${detected}`}
+          >
+            Use detected
+          </Button>
+        )}
+      </div>
+      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
     </div>
   )
 }
