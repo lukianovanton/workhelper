@@ -16,6 +16,7 @@ const api = {
     lastCommit: (slug) => ipcRenderer.invoke('bitbucket:lastCommit', slug)
   },
   git: {
+    clone: (slug) => ipcRenderer.invoke('git:clone', slug),
     pull: (slug) => ipcRenderer.invoke('git:pull', slug),
     status: (slug) => ipcRenderer.invoke('git:status', slug)
   },

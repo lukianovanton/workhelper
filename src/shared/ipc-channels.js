@@ -10,6 +10,7 @@ export const IPC = {
     lastCommit: 'bitbucket:lastCommit'
   },
   git: {
+    clone: 'git:clone',
     pull: 'git:pull',
     status: 'git:status'
   },

@@ -10,6 +10,17 @@ import { api } from '@/api'
 export function useProjectActions(slug) {
   const qc = useQueryClient()
 
+  const clone = useMutation({
+    mutationFn: () => api.git.clone(slug),
+    onSuccess: () => {
+      // local.cloned/runnableSubpath появятся при ре-enrich;
+      // git-status и lastCommit подгрузятся лениво при открытии drawer'а.
+      qc.invalidateQueries({ queryKey: ['bitbucket', 'projects'] })
+      qc.invalidateQueries({ queryKey: ['git-status', slug] })
+      qc.invalidateQueries({ queryKey: ['lastCommit', slug] })
+    }
+  })
+
   const pull = useMutation({
     mutationFn: () => api.git.pull(slug),
     onSuccess: () => {
@@ -32,5 +43,5 @@ export function useProjectActions(slug) {
     }
   })
 
-  return { pull, run, stop }
+  return { clone, pull, run, stop }
 }

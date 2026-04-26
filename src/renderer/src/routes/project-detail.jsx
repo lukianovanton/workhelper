@@ -11,7 +11,8 @@ import {
   CheckCircle2,
   XCircle,
   CircleDashed,
-  GitCommit
+  GitCommit,
+  Download
 } from 'lucide-react'
 import { useProjects } from '@/hooks/use-projects'
 import { useLastCommit } from '@/hooks/use-last-commit'
@@ -83,12 +84,21 @@ function Drawer({ project, onClose }) {
   const isRunning = !!runtime
 
   const gitStatus = useGitStatus(project.slug, cloned)
-  const { pull, run, stop } = useProjectActions(project.slug)
+  const { clone, pull, run, stop } = useProjectActions(project.slug)
 
   const [actionStatus, setActionStatus] = useState(null)
   const flash = (msg, kind = 'info') => {
     setActionStatus({ msg, kind })
     setTimeout(() => setActionStatus(null), 4000)
+  }
+
+  const onClone = async () => {
+    try {
+      const res = await clone.mutateAsync()
+      flash(`Cloned ${project.slug} to ${res?.path}`, 'ok')
+    } catch (e) {
+      flash(e?.message || String(e), 'error')
+    }
   }
 
   const onOpenVSCode = async () => {
@@ -169,55 +179,83 @@ function Drawer({ project, onClose }) {
           </Button>
         </div>
         <div className="flex flex-wrap gap-2">
-          <ActionButton
-            icon={<Code2 />}
-            onClick={onOpenVSCode}
-            disabled={!cloned}
-            disabledTooltip="Project is not cloned locally"
-            label="Open in VS Code"
-          />
-          <ActionButton
-            icon={pull.isPending ? <Loader2 className="animate-spin" /> : <GitPullRequest />}
-            onClick={onPull}
-            disabled={!cloned || pull.isPending || isRunning}
-            disabledTooltip={
-              !cloned
-                ? 'Project is not cloned locally'
-                : isRunning
-                ? 'Stop the running process before pulling'
-                : ''
-            }
-            label="Pull"
-          />
-          {isRunning ? (
+          {!cloned ? (
+            <ActionButton
+              icon={
+                clone.isPending ? (
+                  <Loader2 className="animate-spin" />
+                ) : (
+                  <Download />
+                )
+              }
+              onClick={onClone}
+              disabled={clone.isPending}
+              label={clone.isPending ? 'Cloning…' : 'Clone'}
+            />
+          ) : (
             <>
               <ActionButton
-                icon={stop.isPending ? <Loader2 className="animate-spin" /> : <Square />}
-                onClick={onStop}
-                disabled={stop.isPending}
-                label={`Stop${runtime?.port ? ` (:${runtime.port})` : ''}`}
-                destructive
+                icon={<Code2 />}
+                onClick={onOpenVSCode}
+                label="Open in VS Code"
               />
-              {runtime?.url && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="px-2"
-                  title={`Open ${runtime.url}`}
-                  onClick={() => window.open(runtime.url, '_blank')}
-                >
-                  <ExternalLink />
-                </Button>
+              <ActionButton
+                icon={
+                  pull.isPending ? (
+                    <Loader2 className="animate-spin" />
+                  ) : (
+                    <GitPullRequest />
+                  )
+                }
+                onClick={onPull}
+                disabled={pull.isPending || isRunning}
+                disabledTooltip={
+                  isRunning ? 'Stop the running process before pulling' : ''
+                }
+                label="Pull"
+              />
+              {isRunning ? (
+                <>
+                  <ActionButton
+                    icon={
+                      stop.isPending ? (
+                        <Loader2 className="animate-spin" />
+                      ) : (
+                        <Square />
+                      )
+                    }
+                    onClick={onStop}
+                    disabled={stop.isPending}
+                    label={`Stop${runtime?.port ? ` (:${runtime.port})` : ''}`}
+                    destructive
+                  />
+                  {runtime?.url && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="px-2"
+                      title={`Open ${runtime.url}`}
+                      onClick={() => window.open(runtime.url, '_blank')}
+                    >
+                      <ExternalLink />
+                    </Button>
+                  )}
+                </>
+              ) : (
+                <ActionButton
+                  icon={
+                    run.isPending ? (
+                      <Loader2 className="animate-spin" />
+                    ) : (
+                      <Play />
+                    )
+                  }
+                  onClick={onRun}
+                  disabled={run.isPending}
+                  label="Run"
+                />
               )}
             </>
-          ) : (
-            <ActionButton
-              icon={run.isPending ? <Loader2 className="animate-spin" /> : <Play />}
-              onClick={onRun}
-              disabled={!cloned || run.isPending}
-              disabledTooltip="Project is not cloned locally"
-              label="Run"
-            />
           )}
         </div>
         {actionStatus && (
