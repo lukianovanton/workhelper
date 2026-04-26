@@ -12,28 +12,24 @@
 import simpleGit from 'simple-git'
 import path from 'node:path'
 import fs from 'node:fs'
-import Store from 'electron-store'
 import { getConfig } from './config-store.js'
-import { getSecret } from './secrets.js'
 import { projectExists, projectPath } from './fs-service.js'
-
-const bitbucketCache = new Store({ name: 'bitbucket-cache' })
-
-function getCachedRepo(slug) {
-  const repos = bitbucketCache.get('repos')
-  if (!Array.isArray(repos)) return null
-  return repos.find((r) => r && r.slug === slug) || null
-}
 
 /**
  * Клонирует репо в projectsRoot/slug.toLowerCase().
- * Auth через http.extraHeader (Basic email:apiToken) — креды НЕ
- * уходят в .git/config клонированного репо, остаются только в нашем
- * safeStorage. Будущие git ops у пользователя есть credential helper
- * (подтверждено в MVP-1 — Pull работал без нашей инжекции).
+ *
+ * Аутентификация — на системном Git Credential Manager. Мы строим
+ * URL вида https://{gitUsername}@bitbucket.org/{workspace}/{slug}.git
+ * и вызываем git clone без -c, без extraHeader, без email:token в
+ * URL. GCM (на Windows встроен) подхватывает кэшированные креды для
+ * bitbucket.org так же, как при ручном `git clone` в терминале.
+ *
+ * Если GCM пуст — пользователь должен один раз клонировать любой
+ * репо вручную в терминале, чтобы прокачать кэш кредов. Это и есть
+ * текст auth-error message: даём ровно ту команду, что нужна.
  *
  * @param {string} slug
- * @returns {Promise<{path: string}>}
+ * @returns {Promise<{path: string, url: string}>}
  */
 export async function clone(slug) {
   const config = getConfig()
@@ -49,70 +45,57 @@ export async function clone(slug) {
     )
   }
 
-  const repo = getCachedRepo(slug)
-  if (!repo) {
+  const gitUsername = config.bitbucket.gitUsername
+  const workspace = config.bitbucket.workspace
+  if (!gitUsername) {
     throw new Error(
-      `${slug} is not in the cached projects list. Refresh and try again.`
+      'Bitbucket username (for git) not configured. Open Settings → Bitbucket.'
     )
   }
-  const cloneUrl = repo.bitbucket?.cloneUrl
-  if (!cloneUrl) {
-    throw new Error(`No HTTPS clone URL for ${slug} from Bitbucket.`)
-  }
-
-  const username = config.bitbucket.username
-  const token = getSecret('bitbucketApiToken')
-  if (!username || !token) {
+  if (!workspace) {
     throw new Error(
-      'Bitbucket credentials not configured. Open Settings → Bitbucket.'
+      'Bitbucket workspace not configured. Open Settings → Bitbucket.'
     )
   }
 
   // Гарантируем существование parent-папки (projectsRoot)
   fs.mkdirSync(root, { recursive: true })
 
-  const auth =
-    'Basic ' + Buffer.from(`${username}:${token}`).toString('base64')
+  const url = `https://${gitUsername}@bitbucket.org/${workspace}/${slug.toLowerCase()}.git`
 
-  // simple-git раскрывает прогресс через --progress в stderr;
-  // в этом чекпоинте только спиннер на UI, прогресс-эмиссия добавится
-  // вместе с Setup-dialog'ом (чекпоинт 10).
-  const git = simpleGit({
-    baseDir: root,
-    maxConcurrentProcesses: 1
-  })
+  const git = simpleGit({ baseDir: root, maxConcurrentProcesses: 1 })
 
   try {
-    await git.raw([
-      '-c',
-      `http.extraHeader=Authorization: ${auth}`,
-      'clone',
-      '--progress',
-      cloneUrl,
-      target
-    ])
+    await git.raw(['clone', '--progress', url, target])
   } catch (e) {
-    let msg = e?.message || String(e)
-    // Санитизируем — на всякий случай, чтобы токен не утёк в логи / UI
-    if (token) msg = msg.split(token).join('<TOKEN>')
-    msg = msg.split(auth).join('<AUTH>')
-    if (/Authentication failed|invalid credentials/i.test(msg)) {
+    const raw = e?.message || String(e)
+    const firstLine =
+      raw.split(/\r?\n/).find((l) => l.trim()) || raw
+
+    if (
+      /Authentication failed|invalid credentials|403|denied|could not read Username|terminal prompts disabled/i.test(
+        raw
+      )
+    ) {
       throw new Error(
-        'Clone failed: Bitbucket authentication rejected. Re-check API token in Settings.'
+        `Clone failed: authentication. Run this once in terminal to cache credentials in Git Credential Manager:\n\n  git clone ${url}\n\nThen come back and retry.`
       )
     }
-    if (/Could not resolve host|network|connection/i.test(msg)) {
-      throw new Error('Clone failed: network unreachable.')
+    if (/Could not resolve host|network|connection/i.test(raw)) {
+      throw new Error('Clone failed: network unreachable. ' + firstLine)
     }
-    if (/already exists/i.test(msg)) {
+    if (/repository .* not found|404/i.test(raw)) {
+      throw new Error(
+        `Clone failed: repository not found at ${url}. Check workspace and slug.`
+      )
+    }
+    if (/already exists/i.test(raw)) {
       throw new Error(`${slug} already exists at ${target}.`)
     }
-    throw new Error(
-      `Clone failed: ${msg.split('\n').slice(0, 3).join(' ').trim()}`
-    )
+    throw new Error(`Clone failed: ${firstLine}`)
   }
 
-  return { path: target }
+  return { path: target, url }
 }
 
 function ensureClonedPath(slug) {

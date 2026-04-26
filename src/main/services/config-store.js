@@ -13,7 +13,13 @@ const DEFAULTS = {
   bitbucket: {
     workspace: 'techgurusit',
     /** Atlassian account email (используется как username для Basic Auth с API token). */
-    username: ''
+    username: '',
+    /**
+     * Bitbucket username (НЕ email) — используется в URL `git clone`.
+     * Аутентификация ложится на системный Git Credential Manager,
+     * приложение НЕ передаёт токен в git-слой.
+     */
+    gitUsername: ''
   },
   paths: {
     projectsRoot: 'C:\\Projects',

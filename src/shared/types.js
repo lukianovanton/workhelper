@@ -81,8 +81,11 @@
 
 /**
  * @typedef {Object} AppConfig
- * @property {{ workspace: string, username: string }} bitbucket
- *           username = Atlassian account email.
+ * @property {{ workspace: string, username: string, gitUsername: string }} bitbucket
+ *           username = Atlassian account email (для REST API Basic Auth).
+ *           gitUsername = Bitbucket username (НЕ email) — для URL git clone.
+ *           Аутентификация git делегируется системному Git Credential
+ *           Manager; приложение НЕ передаёт API token в git-слой.
  *           apiToken хранится через safeStorage отдельно (ключ
  *           bitbucketApiToken). До сен. 2025 это был app password —
  *           Atlassian задепрекейтил, схема Basic Auth не изменилась.

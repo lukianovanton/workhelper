@@ -192,6 +192,18 @@ export default function Settings() {
                 placeholder="you@example.com"
               />
             </Field>
+            <Field
+              label="Bitbucket username (for git)"
+              hint="Your Bitbucket username, not email. Find at Bitbucket → Personal settings → Account."
+            >
+              <Input
+                value={config.bitbucket.gitUsername}
+                onChange={(e) =>
+                  updatePath('bitbucket', 'gitUsername')(e.target.value)
+                }
+                placeholder="antonreact1"
+              />
+            </Field>
             <SecretField
               label="API token"
               status={secretsStatus.bitbucketApiToken}
