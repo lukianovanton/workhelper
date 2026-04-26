@@ -373,6 +373,21 @@ export function isRestoring(jobKey) {
 }
 
 /**
+ * Прерывает один активный restore по jobKey (используется setup-orchestrator
+ * на cancel). exit-handler сам удалит запись из Map.
+ */
+export function cancelRestore(jobKey) {
+  const handle = restoreJobs.get(jobKey)
+  if (!handle) return false
+  try {
+    handle.child.kill('SIGTERM')
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
  * Гасит все живые mysql-процессы restore'а — вызывается из before-quit.
  */
 export function killAllRestores() {

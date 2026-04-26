@@ -16,7 +16,9 @@ import {
   Plus,
   Trash2,
   DatabaseBackup,
-  FolderOpen
+  FolderOpen,
+  Sparkles,
+  Wrench
 } from 'lucide-react'
 import { useProjects } from '@/hooks/use-projects'
 import { useLastCommit } from '@/hooks/use-last-commit'
@@ -24,6 +26,7 @@ import { useRunningProcesses } from '@/hooks/use-running-processes'
 import { useGitStatus } from '@/hooks/use-git-status'
 import { useProjectActions } from '@/hooks/use-project-actions'
 import { useRestoreStore } from '@/store/restore.store.js'
+import { SetupDialog } from '@/components/setup-dialog.jsx'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import {
@@ -114,6 +117,7 @@ function Drawer({ project, dbAvailable, onClose }) {
   const [dropDialogOpen, setDropDialogOpen] = useState(false)
   const [replaceDialogOpen, setReplaceDialogOpen] = useState(false)
   const [pendingDumpPath, setPendingDumpPath] = useState(null)
+  const [setupDialogOpen, setSetupDialogOpen] = useState(false)
 
   const [actionStatus, setActionStatus] = useState(null)
   const flashTimerRef = useRef(null)
@@ -299,18 +303,28 @@ function Drawer({ project, dbAvailable, onClose }) {
         </div>
         <div className="flex flex-wrap gap-2">
           {!cloned ? (
-            <ActionButton
-              icon={
-                clone.isPending ? (
-                  <Loader2 className="animate-spin" />
-                ) : (
-                  <Download />
-                )
-              }
-              onClick={onClone}
-              disabled={clone.isPending}
-              label={clone.isPending ? 'Cloning…' : 'Clone'}
-            />
+            <>
+              <Button
+                size="sm"
+                onClick={() => setSetupDialogOpen(true)}
+                disabled={clone.isPending}
+              >
+                <Sparkles />
+                Setup & Run
+              </Button>
+              <ActionButton
+                icon={
+                  clone.isPending ? (
+                    <Loader2 className="animate-spin" />
+                  ) : (
+                    <Download />
+                  )
+                }
+                onClick={onClone}
+                disabled={clone.isPending}
+                label={clone.isPending ? 'Cloning…' : 'Clone only'}
+              />
+            </>
           ) : (
             <>
               <ActionButton
@@ -374,6 +388,11 @@ function Drawer({ project, dbAvailable, onClose }) {
                   label="Run"
                 />
               )}
+              <ActionButton
+                icon={<Wrench />}
+                onClick={() => setSetupDialogOpen(true)}
+                label="Setup remaining"
+              />
             </>
           )}
         </div>
@@ -501,6 +520,12 @@ function Drawer({ project, dbAvailable, onClose }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <SetupDialog
+        project={project}
+        open={setupDialogOpen}
+        onOpenChange={setSetupDialogOpen}
+      />
 
       <AlertDialog
         open={replaceDialogOpen}

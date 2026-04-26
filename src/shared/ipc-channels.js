@@ -50,5 +50,11 @@ export const IPC = {
     clearSecret: 'config:clearSecret',
     secretsStatus: 'config:secretsStatus',
     whichBinary: 'config:whichBinary'
+  },
+  setup: {
+    runFull: 'setup:run-full',
+    cancel: 'setup:cancel',
+    isActive: 'setup:is-active',
+    event: 'setup:event'
   }
 }

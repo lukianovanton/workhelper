@@ -74,6 +74,16 @@ const api = {
     clearSecret: (key) => ipcRenderer.invoke('config:clearSecret', key),
     secretsStatus: () => ipcRenderer.invoke('config:secretsStatus'),
     whichBinary: (name) => ipcRenderer.invoke('config:whichBinary', name)
+  },
+  setup: {
+    runFull: (params) => ipcRenderer.invoke('setup:run-full', params),
+    cancel: (slug) => ipcRenderer.invoke('setup:cancel', slug),
+    isActive: (slug) => ipcRenderer.invoke('setup:is-active', slug),
+    on: (callback) => {
+      const handler = (_e, payload) => callback(payload)
+      ipcRenderer.on('setup:event', handler)
+      return () => ipcRenderer.removeListener('setup:event', handler)
+    }
   }
 }
 
