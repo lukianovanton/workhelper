@@ -248,13 +248,6 @@ export default function ProjectsList() {
     runBulk('Stop', slugs, 'Stop', (slug) => api.process.stop(slug))
   }
 
-  const onPullAllInstalled = () => {
-    if (!projects) return
-    const slugs = projects
-      .filter((p) => p.local.cloned && !runningBySlug.has(p.slug))
-      .map((p) => p.slug)
-    runBulk('Pull all', slugs, 'Pull', (slug) => api.git.pull(slug))
-  }
 
   return (
     <div className="flex h-screen w-screen">
@@ -348,16 +341,6 @@ export default function ProjectsList() {
           <Button
             variant="outline"
             size="sm"
-            onClick={onPullAllInstalled}
-            disabled={bulkBusy || isLoading || !projects}
-            title="Pull on every installed project that isn't running"
-          >
-            {bulkBusy ? <Loader2 className="animate-spin" /> : <GitPullRequest />}
-            Pull all
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
             onClick={handleRefresh}
             disabled={refreshing || isLoading}
           >
@@ -401,6 +384,14 @@ export default function ProjectsList() {
         )}
 
         {warnings.length > 0 && <WarningBanner warnings={warnings} />}
+
+        <FilterChips
+          counts={counts}
+          isFilterActive={isFilterActive}
+          toggleFilter={toggleFilter}
+          clearFilters={clearFilters}
+          activeCount={activeFilters.size}
+        />
 
         <RunningBar
           running={Array.from(runningBySlug.values())}
@@ -458,7 +449,14 @@ function ProjectsTable({
   onOpen
 }) {
   const compact = density === 'compact'
-  const cellPad = compact ? 'px-3 py-1' : 'px-4 py-2'
+  // Compact ощутимо плотнее: уменьшаем не только padding, но и шрифт
+  // тела + сжимаем подзаголовок (description под name) до nowrap.
+  const cellPad = compact ? 'px-3 py-0.5' : 'px-4 py-2.5'
+  const tableTextCls = compact ? 'text-xs' : 'text-sm'
+  const nameTextCls = compact ? 'text-xs' : 'text-sm font-medium'
+  const descCls = compact
+    ? 'hidden'
+    : 'text-xs text-muted-foreground line-clamp-1'
   if (total === 0) {
     return (
       <EmptyState
@@ -477,7 +475,7 @@ function ProjectsTable({
   }
 
   return (
-    <table className="w-full text-sm">
+    <table className={cn('w-full', tableTextCls)}>
       <thead className="sticky top-0 bg-background border-b border-border z-10">
         <tr className="text-left text-xs text-muted-foreground">
           <th className={cn('font-normal w-8', cellPad)}></th>
@@ -558,11 +556,11 @@ function ProjectsTable({
                 <Highlight text={p.slug} match={search} />
               </td>
               <td className={cellPad}>
-                <div className="font-medium">
+                <div className={nameTextCls}>
                   <Highlight text={p.name} match={search} />
                 </div>
                 {p.description && (
-                  <div className="text-xs text-muted-foreground line-clamp-1">
+                  <div className={descCls}>
                     <Highlight text={p.description} match={search} />
                   </div>
                 )}
@@ -706,6 +704,68 @@ function KindBadge({ kind, projectKey }) {
       <Icon size={11} />
       {kind}
     </span>
+  )
+}
+
+/**
+ * Полоса фильтр-chip'ов прямо над таблицей. Дублирует sidebar-фильтры
+ * для тех, кто не привык в sidebar лазить, плюс показывает live counts
+ * у каждого. Клик toggle'ит фильтр, как и в sidebar.
+ */
+function FilterChips({
+  counts,
+  isFilterActive,
+  toggleFilter,
+  clearFilters,
+  activeCount
+}) {
+  const chips = [
+    { id: 'installed', label: 'Installed' },
+    { id: 'not-installed', label: 'Not installed' },
+    { id: 'running', label: 'Running' },
+    { id: 'projects', label: 'Projects' },
+    { id: 'templates', label: 'Templates' }
+  ]
+  return (
+    <div className="px-6 py-2 border-b border-border/60 flex items-center gap-2 flex-wrap text-xs">
+      <span className="text-muted-foreground">Filters:</span>
+      {chips.map((c) => {
+        const active = isFilterActive(c.id)
+        const count = counts[c.id] ?? 0
+        return (
+          <button
+            key={c.id}
+            onClick={() => toggleFilter(c.id)}
+            disabled={count === 0 && !active}
+            className={cn(
+              'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border transition-colors',
+              active
+                ? 'bg-accent text-accent-foreground border-accent'
+                : 'border-border text-muted-foreground hover:text-foreground hover:border-input',
+              count === 0 && !active && 'opacity-40 cursor-not-allowed'
+            )}
+          >
+            <span>{c.label}</span>
+            <span
+              className={cn(
+                'tabular-nums text-[10px] px-1 rounded-sm',
+                active ? 'bg-background/50' : 'bg-muted/50'
+              )}
+            >
+              {count}
+            </span>
+          </button>
+        )
+      })}
+      {activeCount > 0 && (
+        <button
+          onClick={clearFilters}
+          className="ml-auto text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
+        >
+          Clear all
+        </button>
+      )}
+    </div>
   )
 }
 
