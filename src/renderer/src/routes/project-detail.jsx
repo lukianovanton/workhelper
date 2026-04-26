@@ -198,17 +198,13 @@ function Drawer({ project, onClose }) {
                 label={`Stop${runtime?.port ? ` (:${runtime.port})` : ''}`}
                 destructive
               />
-              {runtime?.port != null && (
+              {runtime?.url && (
                 <Button
                   variant="outline"
-                  size="icon"
-                  title={`Open http://localhost:${runtime.port}`}
-                  onClick={() =>
-                    window.open(
-                      `http://localhost:${runtime.port}`,
-                      '_blank'
-                    )
-                  }
+                  size="sm"
+                  className="px-2"
+                  title={`Open ${runtime.url}`}
+                  onClick={() => window.open(runtime.url, '_blank')}
                 >
                   <ExternalLink />
                 </Button>

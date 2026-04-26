@@ -426,13 +426,13 @@ function StatusDots({ project, runtime }) {
           )}
         />
       ))}
-      {running && runtime?.port != null && (
+      {running && runtime?.url && (
         <button
           onClick={(e) => {
             e.stopPropagation()
-            window.open(`http://localhost:${runtime.port}`, '_blank')
+            window.open(runtime.url, '_blank')
           }}
-          title={`Open http://localhost:${runtime.port}`}
+          title={`Open ${runtime.url}`}
           className="ml-1 text-muted-foreground hover:text-sky-500 transition-colors"
         >
           <ExternalLink size={11} />

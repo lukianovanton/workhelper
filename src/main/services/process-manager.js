@@ -21,7 +21,7 @@ import treeKill from 'tree-kill'
 import { getConfig } from './config-store.js'
 import { projectExists, projectPath, resolveRunnableSubpath } from './fs-service.js'
 
-const PORT_REGEX = /Now listening on:\s*\S+:(\d+)/i
+const URL_REGEX = /Now listening on:\s*(https?:\/\/\S+)/i
 const LOG_BUFFER_SIZE = 1000
 
 class RingBuffer {
@@ -125,11 +125,21 @@ export async function run(slug) {
     const text = data.toString()
     handle.logs.push({ stream, text, ts: Date.now() })
     emit('log', { slug, chunk: text, stream })
-    if (handle.port == null) {
-      const m = text.match(PORT_REGEX)
+    if (handle.url == null) {
+      const m = text.match(URL_REGEX)
       if (m) {
-        handle.port = Number(m[1])
-        emit('port', { slug, port: handle.port })
+        try {
+          const u = new URL(m[1])
+          handle.url = u.origin
+          handle.port = Number(u.port) || null
+          emit('port', {
+            slug,
+            port: handle.port,
+            url: handle.url
+          })
+        } catch {
+          // мусорный URL — игнорим, попробуем на след. чанке
+        }
       }
     }
   }
@@ -149,6 +159,7 @@ function createHandle(child) {
     child,
     pid: child.pid,
     port: null,
+    url: null,
     startedAt: new Date().toISOString(),
     logs: new RingBuffer(LOG_BUFFER_SIZE)
   }
@@ -185,13 +196,14 @@ export function isRunning(slug) {
 /**
  * Снимок всех живых процессов для UI-поллинга.
  *
- * @returns {{slug:string, pid:number, port:number|null, startedAt:string}[]}
+ * @returns {{slug:string, pid:number, port:number|null, url:string|null, startedAt:string}[]}
  */
 export function list() {
   return Array.from(processes.entries()).map(([slug, h]) => ({
     slug,
     pid: h.pid,
     port: h.port,
+    url: h.url,
     startedAt: h.startedAt
   }))
 }
