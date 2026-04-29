@@ -190,20 +190,28 @@ export async function runFull(slug, options, emitStep) {
       endStep('db-restore', t)
     }
 
-    // ─── d) workspace ────────────────────────────────────────────────
+    // ─── d) workspace (optional, opt-in) ─────────────────────────────
     checkCancel()
-    const t = beginStep('workspace')
-    try {
-      const projectPath = fsService.projectPath(
-        config.paths.projectsRoot,
-        slug
-      )
-      await editorService.openInVSCode(slug, projectPath)
-    } catch (e) {
-      errorStep('workspace', e?.message || String(e))
-      throw e
+    if (options?.openWorkspace) {
+      const t = beginStep('workspace')
+      try {
+        const projectPath = fsService.projectPath(
+          config.paths.projectsRoot,
+          slug
+        )
+        await editorService.openInVSCode(slug, projectPath)
+      } catch (e) {
+        errorStep('workspace', e?.message || String(e))
+        throw e
+      }
+      endStep('workspace', t)
+    } else {
+      emitStep({
+        kind: 'workspace',
+        status: 'done',
+        message: 'Skipped (user choice)'
+      })
     }
-    endStep('workspace', t)
 
     // ─── e) run dotnet (silent, no SetupStep) ────────────────────────
     if (options?.runAfter) {

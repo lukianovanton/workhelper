@@ -6,7 +6,8 @@ import {
   XCircle,
   AlertTriangle,
   FolderOpen,
-  Play
+  Play,
+  Code2
 } from 'lucide-react'
 import {
   Dialog,
@@ -48,7 +49,10 @@ export function SetupDialog({ project, open, onOpenChange }) {
   const initialDumpPath = project.db.dumpPath || null
   const [dumpPath, setDumpPath] = useState(initialDumpPath)
   const [skipRestore, setSkipRestore] = useState(false)
-  const [runAfter, setRunAfter] = useState(true)
+  // Опциональные пост-шаги — по умолчанию OFF, юзер сам включает
+  // если хочет «всё в одном клике».
+  const [openWorkspace, setOpenWorkspace] = useState(false)
+  const [runAfter, setRunAfter] = useState(false)
   const [acknowledgeReplace, setAcknowledgeReplace] = useState(false)
   const [picking, setPicking] = useState(false)
   const [pickError, setPickError] = useState(null)
@@ -66,7 +70,8 @@ export function SetupDialog({ project, open, onOpenChange }) {
     if (!setupState) {
       setDumpPath(project.db.dumpPath || null)
       setSkipRestore(false)
-      setRunAfter(true)
+      setOpenWorkspace(false)
+      setRunAfter(false)
       setAcknowledgeReplace(false)
       setSubmitError(null)
     }
@@ -106,6 +111,7 @@ export function SetupDialog({ project, open, onOpenChange }) {
         slug,
         dumpPath: skipRestore ? null : dumpPath,
         skipRestore,
+        openWorkspace,
         runAfter
       })
     } catch (e) {
@@ -184,6 +190,8 @@ export function SetupDialog({ project, open, onOpenChange }) {
               dumpFilename={dumpFilename}
               skipRestore={skipRestore}
               setSkipRestore={setSkipRestore}
+              openWorkspace={openWorkspace}
+              setOpenWorkspace={setOpenWorkspace}
               runAfter={runAfter}
               setRunAfter={setRunAfter}
               willReplace={willReplace}
@@ -267,6 +275,8 @@ function PreFlight({
   dumpFilename,
   skipRestore,
   setSkipRestore,
+  openWorkspace,
+  setOpenWorkspace,
   runAfter,
   setRunAfter,
   willReplace,
@@ -356,19 +366,27 @@ function PreFlight({
         </label>
       </div>
 
-      <PreFlightItem
-        on
-        title={`Open ${slug} in VS Code`}
-      />
-
-      <label className="flex items-center gap-2 text-sm select-none cursor-pointer">
-        <Checkbox
-          checked={runAfter}
-          onCheckedChange={(v) => setRunAfter(!!v)}
-        />
-        <Play size={14} className="text-muted-foreground" />
-        <span>Run dotnet after setup</span>
-      </label>
+      <div className="space-y-2 pt-2">
+        <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+          Optional post-steps
+        </div>
+        <label className="flex items-center gap-2 text-sm select-none cursor-pointer">
+          <Checkbox
+            checked={openWorkspace}
+            onCheckedChange={(v) => setOpenWorkspace(!!v)}
+          />
+          <Code2 size={14} className="text-muted-foreground" />
+          <span>Open {slug} in VS Code after setup</span>
+        </label>
+        <label className="flex items-center gap-2 text-sm select-none cursor-pointer">
+          <Checkbox
+            checked={runAfter}
+            onCheckedChange={(v) => setRunAfter(!!v)}
+          />
+          <Play size={14} className="text-muted-foreground" />
+          <span>Run dotnet after setup</span>
+        </label>
+      </div>
 
       {willReplace && (
         <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-xs text-destructive space-y-2">

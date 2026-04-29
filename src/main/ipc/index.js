@@ -7,6 +7,7 @@ import { registerGitIpc } from './git.ipc.js'
 import { registerProcessIpc } from './process.ipc.js'
 import { registerSetupIpc } from './setup.ipc.js'
 import { registerAppIpc } from './app.ipc.js'
+import { registerPresenceIpc } from './presence.ipc.js'
 
 /**
  * Регистрация всех IPC-хендлеров. Вызывается из main/index.js
@@ -22,4 +23,5 @@ export function registerAllIpc() {
   registerProcessIpc()
   registerSetupIpc()
   registerAppIpc()
+  registerPresenceIpc()
 }
