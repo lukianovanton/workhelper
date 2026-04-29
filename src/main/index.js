@@ -5,10 +5,6 @@ import Store from 'electron-store'
 import { registerAllIpc } from './ipc/index.js'
 import { killAll as killAllProcesses } from './services/process-manager.js'
 import { killAllRestores } from './services/db-service.js'
-import {
-  initPresence,
-  stopPresence
-} from './services/presence-service.js'
 
 const { autoUpdater } = electronUpdater
 const FOUR_HOURS = 4 * 60 * 60 * 1000
