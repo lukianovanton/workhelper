@@ -117,6 +117,13 @@
  *           workingDirSubpath резолвится автоматически (9.5).
  *           workingDirSubpathOverride — карта slug → подпуть для случаев,
  *           когда автодетект не сработал (задаётся вручную в Settings).
+ * @property {{
+ *   enabled: boolean
+ * }} presence
+ *           UDP-broadcast presence в LAN/Tailscale-сети. Когда true —
+ *           main-процесс шлёт по UDP пакеты «я живой» с hostname,
+ *           username, IP, версией; собирает такие же от других. См.
+ *           services/presence-service.js. Default: false.
  */
 
 /**

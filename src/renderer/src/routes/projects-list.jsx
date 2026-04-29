@@ -17,7 +17,8 @@ import {
   GitPullRequest,
   XSquare,
   Filter,
-  X as XIcon
+  X as XIcon,
+  Users
 } from 'lucide-react'
 import { useProjects } from '@/hooks/use-projects'
 import { useRunningProcesses } from '@/hooks/use-running-processes'
@@ -28,6 +29,7 @@ import { useProjectsMetaStore } from '@/store/projects-meta.store.js'
 import { usePrefsStore } from '@/store/prefs.store.js'
 import { toast } from '@/store/toast.store.js'
 import { Checkbox } from '@/components/ui/checkbox'
+import { usePresence } from '@/hooks/use-presence'
 import { api } from '@/api'
 
 const SORT_STORAGE_KEY = 'projects-sort'
@@ -413,6 +415,7 @@ export default function ProjectsList() {
               className="pl-9"
             />
           </div>
+          <PresenceWidget />
           <Button
             variant="outline"
             size="sm"
@@ -820,6 +823,109 @@ function ColumnHeader({
  * Кастомный popover без новых deps. Click-outside и Escape закрывают.
  * Trigger принимает любой клик-handlable элемент.
  */
+function PresenceWidget() {
+  const navigate = useNavigate()
+  const { sessions, enabled, me, others } = usePresence()
+  const totalOnline = enabled ? sessions.length : 0
+
+  const trigger = (
+    <button
+      title={
+        enabled
+          ? `${totalOnline} online`
+          : 'Presence disabled. Enable in Settings.'
+      }
+      className={cn(
+        'inline-flex items-center gap-1.5 px-2.5 h-8 rounded-md border text-xs transition-colors',
+        enabled
+          ? 'border-input hover:bg-accent text-foreground'
+          : 'border-border text-muted-foreground hover:text-foreground'
+      )}
+    >
+      <Users size={14} />
+      <span className="tabular-nums">{totalOnline}</span>
+    </button>
+  )
+
+  return (
+    <Popover trigger={trigger} align="right">
+      <div className="min-w-[260px] space-y-2">
+        <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+          Online · {totalOnline}
+        </div>
+        {!enabled && (
+          <div className="text-xs text-muted-foreground space-y-2">
+            <div>Presence disabled. Enable in Settings.</div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate('/settings')}
+            >
+              Open Settings
+            </Button>
+          </div>
+        )}
+        {enabled && others.length === 0 && me && (
+          <div className="space-y-2">
+            <PresenceItem session={me} />
+            <div className="text-xs text-muted-foreground pt-1 border-t border-border/50">
+              No one else online.
+            </div>
+          </div>
+        )}
+        {enabled && others.length === 0 && !me && (
+          <div className="text-xs text-muted-foreground">
+            Starting up… no broadcasts yet.
+          </div>
+        )}
+        {enabled && others.length > 0 && (
+          <ul className="space-y-2">
+            {me && (
+              <li>
+                <PresenceItem session={me} />
+              </li>
+            )}
+            {others.map((s) => (
+              <li
+                key={s.id}
+                className="pt-2 border-t border-border/50 first:border-0 first:pt-0"
+              >
+                <PresenceItem session={s} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </Popover>
+  )
+}
+
+function PresenceItem({ session }) {
+  return (
+    <div>
+      <div className="text-sm font-medium flex items-center gap-1.5 flex-wrap">
+        <span className="font-mono">{session.host}</span>
+        <span className="text-muted-foreground">/</span>
+        <span>{session.user}</span>
+        {session.isMe && (
+          <span className="text-[10px] text-sky-400">(you)</span>
+        )}
+      </div>
+      <div className="text-[11px] text-muted-foreground flex items-center gap-2 flex-wrap mt-0.5">
+        <span>v{session.version}</span>
+        {session.ip && (
+          <>
+            <span>·</span>
+            <code className="text-[10px]">{session.ip}</code>
+          </>
+        )}
+        <span>·</span>
+        <span>since {formatRelative(session.startedAt)}</span>
+      </div>
+    </div>
+  )
+}
+
 function Popover({ trigger, children, align = 'left' }) {
   const [open, setOpen] = useState(false)
   const wrapRef = useRef(null)

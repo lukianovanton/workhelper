@@ -100,6 +100,11 @@ const api = {
   },
   app: {
     openFolder: (path) => ipcRenderer.invoke('app:openFolder', path)
+  },
+  presence: {
+    list: () => ipcRenderer.invoke('presence:list'),
+    isEnabled: () => ipcRenderer.invoke('presence:isEnabled'),
+    setEnabled: (on) => ipcRenderer.invoke('presence:setEnabled', on)
   }
 }
 

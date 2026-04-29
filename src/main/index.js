@@ -5,6 +5,11 @@ import Store from 'electron-store'
 import { registerAllIpc } from './ipc/index.js'
 import { killAll as killAllProcesses } from './services/process-manager.js'
 import { killAllRestores } from './services/db-service.js'
+import {
+  startPresence,
+  stopPresence
+} from './services/presence-service.js'
+import { getConfig } from './services/config-store.js'
 
 const { autoUpdater } = electronUpdater
 const FOUR_HOURS = 4 * 60 * 60 * 1000
@@ -84,6 +89,11 @@ app.whenReady().then(() => {
 
   registerAllIpc()
   setupAutoUpdater()
+  // Presence стартует только если юзер включил его в Settings.
+  // Toggle во время работы тоже будет вызывать start/stop через IPC.
+  if (getConfig().presence?.enabled) {
+    startPresence()
+  }
   createWindow()
 
   app.on('activate', () => {
@@ -149,10 +159,12 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
-// Гасим все запущенные dotnet-процессы и mysql-restore'ы при выходе.
-// Иначе они переживают наш Electron — dotnet продолжает слушать
-// порты, mysql может оставить недовосстановленную БД.
+// Гасим все запущенные dotnet-процессы, mysql-restore'ы и presence
+// при выходе. Иначе они переживают наш Electron — dotnet продолжает
+// слушать порты, mysql может оставить недовосстановленную БД, а UDP-
+// сокет presence не освободит порт.
 app.on('before-quit', () => {
   killAllProcesses()
   killAllRestores()
+  stopPresence()
 })

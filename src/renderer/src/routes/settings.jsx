@@ -388,6 +388,8 @@ export default function Settings() {
           </CardContent>
         </Card>
 
+        <PresenceCard config={config} updatePath={updatePath} />
+
         <AppearanceCard />
 
         <Separator />
@@ -398,6 +400,56 @@ export default function Settings() {
         </p>
       </div>
     </div>
+  )
+}
+
+function PresenceCard({ config, updatePath }) {
+  const enabled = !!config.presence?.enabled
+
+  const onToggle = async (next) => {
+    updatePath('presence', 'enabled')(next)
+    // Запускаем/останавливаем сразу, не дожидаясь Save — чтобы тоггл
+    // ощущался отзывчивым. На Save главный конфиг тоже сохранится.
+    try {
+      await api.presence.setEnabled(next)
+    } catch {
+      // ignore — UI всё равно отразит состояние
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Presence</CardTitle>
+        <CardDescription>
+          See which colleagues are online in WorkHelper. Requires{' '}
+          <a
+            href="https://tailscale.com/"
+            onClick={(e) => {
+              e.preventDefault()
+              window.open('https://tailscale.com/', '_blank')
+            }}
+            className="underline-offset-2 hover:underline text-foreground"
+          >
+            Tailscale
+          </a>
+          {' '}or being on the same LAN. Shares hostname, Windows
+          username, local IP and app version with other users on the
+          same network. Off by default.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <label className="flex items-center gap-2 text-sm select-none cursor-pointer">
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={(e) => onToggle(e.target.checked)}
+            className="rounded border-input"
+          />
+          Enable presence
+        </label>
+      </CardContent>
+    </Card>
   )
 }
 

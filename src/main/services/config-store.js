@@ -35,6 +35,9 @@ const DEFAULTS = {
   dotnet: {
     runArgs: [],
     workingDirSubpathOverride: {}
+  },
+  presence: {
+    enabled: false
   }
 }
 

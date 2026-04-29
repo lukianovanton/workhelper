@@ -60,5 +60,10 @@ export const IPC = {
   updater: {
     quitAndInstall: 'updater:quit-and-install',
     event: 'updater:event'
+  },
+  presence: {
+    list: 'presence:list',
+    isEnabled: 'presence:isEnabled',
+    setEnabled: 'presence:setEnabled'
   }
 }
