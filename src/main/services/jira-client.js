@@ -46,20 +46,35 @@ class JiraError extends Error {
  */
 function buildClient() {
   const config = getConfig()
-  const token = getSecret('jiraApiToken')
-  const email = config.jira?.email || config.bitbucket?.username || ''
-  const host = (config.jira?.host || '').replace(/\/+$/, '')
+  const token = (getSecret('jiraApiToken') || '').trim()
+  const email = (
+    config.jira?.email ||
+    config.bitbucket?.username ||
+    ''
+  ).trim()
+  // Нормализуем host до origin: пользователи часто пастят полный
+  // URL с путём (https://techgurus.atlassian.net/jira/for-you), что
+  // сломает все запросы — мы бы били по SPA route'у вместо REST API.
+  // URL парсер сводит это к https://techgurus.atlassian.net.
+  let host = (config.jira?.host || '').trim()
+  try {
+    const u = new URL(host)
+    host = u.origin
+  } catch {
+    // невалидный URL — оставляем как ввели, validation ниже скажет
+  }
+  host = host.replace(/\/+$/, '')
 
   if (!host) {
     throw new JiraError(
-      'Jira host not configured. Open Settings → Jira and add the host URL (e.g. https://yourcompany.atlassian.net).',
+      'Jira host not configured. Open Settings → Atlassian → Jira and add the host URL (e.g. https://yourcompany.atlassian.net).',
       0,
       'config'
     )
   }
   if (!email || !token) {
     throw new JiraError(
-      'Jira credentials not configured. Open Settings → Jira and add email and API token.',
+      'Jira credentials not configured. Open Settings → Atlassian → Jira and add email and API token.',
       0,
       'config'
     )
@@ -146,7 +161,14 @@ export async function testConnection() {
       return {
         ok: false,
         stage: 'auth',
-        message: 'Authentication failed (401). API token is invalid, revoked, or the email does not match the account.'
+        message: 'Authentication failed (401).',
+        detail:
+          `Tried Basic Auth with email "${client.email}" against ${client.host}. ` +
+          'Possible causes: ' +
+          '(1) email does not match the Atlassian account that owns the token; ' +
+          '(2) the token was revoked or expired; ' +
+          '(3) the host points to a different Atlassian site. ' +
+          'Recreate the token at id.atlassian.com if unsure.'
       }
     }
     if (e.status === 403) {
