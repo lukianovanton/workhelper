@@ -140,7 +140,8 @@ const api = {
       ipcRenderer.invoke('jira:transitions', issueKey),
     applyTransition: (issueKey, transitionId) =>
       ipcRenderer.invoke('jira:apply-transition', issueKey, transitionId),
-    searchUsers: (query) => ipcRenderer.invoke('jira:user-search', query)
+    assignableUsers: (issueKey, query) =>
+      ipcRenderer.invoke('jira:assignable-users', issueKey, query)
   }
 }
 

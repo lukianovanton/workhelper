@@ -10,7 +10,7 @@ import {
   setAssignee,
   getTransitions,
   applyTransition,
-  searchUsers
+  searchAssignableUsers
 } from '../services/jira-client.js'
 
 /**
@@ -50,5 +50,8 @@ export function registerJiraIpc() {
   ipcMain.handle('jira:apply-transition', (_event, issueKey, transitionId) =>
     applyTransition(issueKey, transitionId)
   )
-  ipcMain.handle('jira:user-search', (_event, query) => searchUsers(query))
+  ipcMain.handle(
+    'jira:assignable-users',
+    (_event, issueKey, query) => searchAssignableUsers(issueKey, query)
+  )
 }

@@ -123,16 +123,22 @@ export function useJiraTransitions(issueKey, opts = {}) {
 }
 
 /**
- * Поиск юзеров для assignee-picker'а. Запускается с минимум 2
- * символами; до этого возвращает [] чтобы не дёргать сервер.
+ * Список юзеров, доступных для назначения на конкретную issue.
+ * Без query — весь assignable-список (фильтрованный сервером по
+ * project-permissions). С query — сервер дополнительно фильтрует
+ * по имени/email. Используется assignee picker'ом: при открытии
+ * показывается полный список, при печати фильтруется.
  */
-export function useJiraUserSearch(query, opts = {}) {
+export function useJiraAssignableUsers(issueKey, query, opts = {}) {
   const q = (query || '').trim()
   return useQuery({
-    queryKey: ['jira', 'user-search', q.toLowerCase()],
-    queryFn: () => api.jira.searchUsers(q),
-    enabled: opts.enabled !== false && q.length >= 2,
-    staleTime: 30 * 1000,
+    queryKey: ['jira', 'assignable', issueKey, q.toLowerCase()],
+    queryFn: () => api.jira.assignableUsers(issueKey, q),
+    enabled:
+      opts.enabled !== false &&
+      typeof issueKey === 'string' &&
+      issueKey.length > 0,
+    staleTime: 60 * 1000,
     retry: false
   })
 }

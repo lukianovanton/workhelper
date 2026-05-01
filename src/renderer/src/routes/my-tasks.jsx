@@ -25,7 +25,7 @@ import {
   useMyJiraIssues,
   useJiraIssueDetail,
   useJiraTransitions,
-  useJiraUserSearch,
+  useJiraAssignableUsers,
   useAddJiraComment,
   useSetJiraAssignee,
   useApplyJiraTransition
@@ -603,7 +603,13 @@ function StatusPicker({ issueKey, category, label }) {
 function AssigneePicker({ issueKey, person }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
-  const userSearch = useJiraUserSearch(query, { enabled: open })
+  // Без query загружаем весь assignable-список этой задачи. Сервер
+  // сам фильтрует по project-permissions, и при печати в input —
+  // дополнительно по имени/email. Min-char ограничения нет, lock'а
+  // на 2 символа тоже.
+  const assignable = useJiraAssignableUsers(issueKey, query, {
+    enabled: open
+  })
   const setAssignee = useSetJiraAssignee(issueKey)
   const ref = useClickOutside(() => {
     setOpen(false)
@@ -656,28 +662,27 @@ function AssigneePicker({ issueKey, person }) {
             autoFocus
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search by name or email…"
+            placeholder="Filter by name or email…"
             className="h-8 text-xs"
           />
           <div className="max-h-64 overflow-auto">
-            {query.trim().length < 2 ? (
-              <div className="px-2 py-1.5 text-[11px] text-muted-foreground">
-                Type at least 2 characters.
-              </div>
-            ) : userSearch.isLoading ? (
+            {assignable.isLoading ? (
               <div className="px-2 py-1.5 text-[11px] text-muted-foreground inline-flex items-center gap-2">
-                <Loader2 size={11} className="animate-spin" /> Searching…
+                <Loader2 size={11} className="animate-spin" /> Loading
+                assignable users…
               </div>
-            ) : userSearch.isError ? (
+            ) : assignable.isError ? (
               <div className="px-2 py-1.5 text-[11px] text-destructive">
-                Search failed.
+                Could not load users.
               </div>
-            ) : !userSearch.data || userSearch.data.length === 0 ? (
+            ) : !assignable.data || assignable.data.length === 0 ? (
               <div className="px-2 py-1.5 text-[11px] text-muted-foreground">
-                No matches.
+                {query.trim()
+                  ? 'No matches.'
+                  : 'No assignable users for this issue.'}
               </div>
             ) : (
-              userSearch.data.map((u) => (
+              assignable.data.map((u) => (
                 <button
                   key={u.accountId}
                   onClick={() => onPick(u.accountId)}

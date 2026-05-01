@@ -748,20 +748,34 @@ export async function applyTransition(issueKey, transitionId) {
 }
 
 /**
- * Поиск пользователей для assignee-picker'а. query — частичное
- * совпадение по имени или email. maxResults=20 достаточно для UX
- * в маленьком dropdown'е.
+ * Список пользователей, доступных для назначения на конкретную
+ * задачу. Endpoint /user/assignable/search автоматически
+ * фильтрует по project-permissions — в выдачу попадают только
+ * те, кто реально может быть assignee этой issue (а не все
+ * пользователи Atlassian-org'а).
  *
- * @param {string} query
+ * Без query (пустая строка) возвращает полный список —
+ * пользователь сразу видит всех assignable юзеров. С query —
+ * сервер фильтрует по имени/email на своей стороне.
+ *
+ * @param {string} issueKey
+ * @param {string} [query]
  */
-export async function searchUsers(query) {
-  const q = (query || '').trim()
-  if (q.length < 2) return []
+export async function searchAssignableUsers(issueKey, query) {
+  if (!issueKey) return []
   const client = buildClient()
+  const params = new URLSearchParams({
+    issueKey,
+    // 200 покрывает практически любой проект — assignable lists
+    // редко бывают больше нескольких десятков людей.
+    maxResults: '200'
+  })
+  const q = (query || '').trim()
+  if (q) params.set('query', q)
   let data
   try {
     data = await client.request(
-      `/rest/api/3/user/search?query=${encodeURIComponent(q)}&maxResults=20`
+      `/rest/api/3/user/assignable/search?${params.toString()}`
     )
   } catch (e) {
     if (e.status === 403 || e.status === 404) return []
