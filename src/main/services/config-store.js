@@ -51,14 +51,7 @@ const DEFAULTS = {
      * Atlassian-аккаунт у большинства пользователей). Поле оставлено
      * на случай отдельных Atlassian-аккаунтов.
      */
-    email: '',
-    /**
-     * Atlassian accountId — escape hatch когда автоматический резолв
-     * (/myself / /user/search) не справился. Видно в URL Jira-профиля
-     * пользователя: <host>/jira/people/<accountId>. Если задан —
-     * используется напрямую в JQL вместо currentUser().
-     */
-    accountId: ''
+    email: ''
   }
 }
 

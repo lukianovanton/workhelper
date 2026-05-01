@@ -428,22 +428,57 @@ let cachedAccountIdFor = null
  * "API tokens with scopes" через Bearer auth, и query тогда
  * возвращает 0 вместо реальных тасков.
  *
- * Стратегия:
- *  1. /rest/api/3/myself (требует read:me).
- *  2. Если /myself 403/недоступен — /user/search?query=<email>.
- *     Требует read:jira-user, который у нас уже обязателен.
- *  3. Если оба не сработали — null. Caller падает обратно на
- *     currentUser().
+ * Каскад из трёх API, в порядке надёжности:
+ *
+ *  1. https://api.atlassian.com/me — Atlassian Account API,
+ *     product-agnostic. Использует scope read:me (один из тех,
+ *     что мы заявляем обязательным). Возвращает account_id, который
+ *     валиден везде в экосистеме Atlassian, включая Jira JQL.
+ *     Этот endpoint живёт на отдельном host'е, поэтому fetch'им
+ *     его напрямую, минуя client.request.
+ *
+ *  2. /rest/api/3/myself на Jira-host'е — нужен если read:me нет,
+ *     но есть Jira-specific scope (read:jira-user / granular
+ *     read:user:jira).
+ *
+ *  3. /rest/api/3/user/search?query=<email> — последний шанс через
+ *     read:jira-user. /user/search может вернуть частичный мэтч,
+ *     поэтому фильтруем по точному email и игнорим мусорные
+ *     записи без accountId / без email (GDPR-mode).
+ *
+ * Если все три не вернули accountId — caller падает обратно на
+ * currentUser() JQL и (если оно тоже не работает) показывает
+ * пустой список.
  */
 async function resolveCurrentAccountId(client) {
-  // Manual override из Settings побеждает всё — если пользователь
-  // явно вставил свой accountId, ему доверяем без проверок.
-  const manual = (getConfig().jira?.accountId || '').trim()
-  if (manual) return manual
-
   if (cachedAccountId && cachedAccountIdFor === client.email) {
     return cachedAccountId
   }
+
+  // Plan A: Atlassian Account API на api.atlassian.com.
+  const token = (getSecret('jiraApiToken') || '').trim()
+  if (token) {
+    try {
+      const res = await fetch('https://api.atlassian.com/me', {
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`
+        }
+      })
+      if (res.ok) {
+        const data = await res.json().catch(() => null)
+        if (data?.account_id) {
+          cachedAccountId = data.account_id
+          cachedAccountIdFor = client.email
+          return cachedAccountId
+        }
+      }
+    } catch {
+      // ignore — пробуем Plan B
+    }
+  }
+
+  // Plan B: Jira-specific /myself.
   try {
     const me = await client.request('/rest/api/3/myself')
     if (me?.accountId) {
@@ -452,16 +487,16 @@ async function resolveCurrentAccountId(client) {
       return cachedAccountId
     }
   } catch {
-    // ignore — fallback ниже
+    // ignore — пробуем Plan C
   }
+
+  // Plan C: /user/search с email-фильтром.
   if (client.email) {
     try {
       const results = await client.request(
         `/rest/api/3/user/search?query=${encodeURIComponent(client.email)}`
       )
       if (Array.isArray(results)) {
-        // /user/search умеет возвращать частичные совпадения (по
-        // displayName тоже) — берём ровно того, чей email совпадает.
         const exact = results.find(
           (u) =>
             u.emailAddress &&
@@ -478,6 +513,7 @@ async function resolveCurrentAccountId(client) {
       // ignore
     }
   }
+
   return null
 }
 
