@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import ProjectsList from './routes/projects-list.jsx'
 import ProjectDetail from './routes/project-detail.jsx'
 import Settings from './routes/settings.jsx'
+import MyTasks from './routes/my-tasks.jsx'
 import { UpdateBanner } from './components/update-banner.jsx'
 import { Toaster } from './components/toaster.jsx'
 import { useRestoreStore } from './store/restore.store.js'
@@ -30,6 +31,7 @@ export default function App() {
         <Route path="/projects" element={<ProjectsList />}>
           <Route path=":slug" element={<ProjectDetail />} />
         </Route>
+        <Route path="/my-tasks" element={<MyTasks />} />
         <Route path="/settings" element={<Settings />} />
       </Routes>
       <Toaster />

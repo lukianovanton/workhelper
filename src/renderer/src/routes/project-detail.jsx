@@ -29,7 +29,8 @@ import {
   Clock,
   Pause,
   CircleSlash,
-  RefreshCw
+  RefreshCw,
+  ListTodo
 } from 'lucide-react'
 import { useQueryClient, useIsFetching } from '@tanstack/react-query'
 import { useProjects } from '@/hooks/use-projects'
@@ -42,6 +43,18 @@ import {
   useCommitFileDiff,
   usePipelineStepLog
 } from '@/hooks/use-bitbucket'
+import {
+  useJiraProjectForSlug,
+  useProjectJiraIssues,
+  useJiraIssueDetail,
+  findSlugMentions
+} from '@/hooks/use-jira'
+import {
+  TaskDetailContent,
+  OpenInJiraLink,
+  StatusBadge,
+  SlugMismatchBadge
+} from '@/routes/my-tasks'
 import { useRunningProcesses } from '@/hooks/use-running-processes'
 import { useGitStatus } from '@/hooks/use-git-status'
 import { useProjectActions } from '@/hooks/use-project-actions'
@@ -532,7 +545,7 @@ function Drawer({ project, dbAvailable, onClose }) {
       </header>
 
       <DrawerTabs active={activeTab} onChange={setActiveTab} />
-      {(activeTab === 'commits' || activeTab === 'pipelines') && (
+      {activeTab !== 'overview' && (
         <TabActionBar
           activeTab={activeTab}
           slug={project.slug}
@@ -639,6 +652,7 @@ function Drawer({ project, dbAvailable, onClose }) {
         {activeTab === 'pipelines' && (
           <PipelinesTab project={project} branch={selectedBranch} />
         )}
+        {activeTab === 'tasks' && <TasksTab project={project} />}
       </div>
 
       <AlertDialog open={dropDialogOpen} onOpenChange={setDropDialogOpen}>
@@ -727,7 +741,8 @@ function DrawerTabs({ active, onChange }) {
   const tabs = [
     { id: 'overview', label: 'Overview' },
     { id: 'commits', label: 'Commits', icon: GitCommit },
-    { id: 'pipelines', label: 'Pipelines', icon: Workflow }
+    { id: 'pipelines', label: 'Pipelines', icon: Workflow },
+    { id: 'tasks', label: 'Tasks', icon: ListTodo }
   ]
   return (
     <div className="flex items-center px-3 border-b border-border bg-background/60">
@@ -774,12 +789,19 @@ function TabActionBar({
     useIsFetching({
       predicate: (q) => {
         const key = q.queryKey[0]
-        if (q.queryKey[1] !== slug) return false
+        if (activeTab === 'commits' || activeTab === 'pipelines') {
+          if (q.queryKey[1] !== slug) return false
+        }
         if (activeTab === 'commits') {
           return key === 'commits' || key === 'commit-detail'
         }
         if (activeTab === 'pipelines') {
           return key === 'pipelines' || key === 'pipeline-steps'
+        }
+        if (activeTab === 'tasks') {
+          // Jira queries не привязаны к slug — фетчим список проектов
+          // и issues по project key. Просто учитываем все 'jira' ключи.
+          return key === 'jira'
         }
         return false
       }
@@ -792,16 +814,27 @@ function TabActionBar({
     } else if (activeTab === 'pipelines') {
       queryClient.invalidateQueries({ queryKey: ['pipelines', slug] })
       queryClient.invalidateQueries({ queryKey: ['pipeline-steps', slug] })
+    } else if (activeTab === 'tasks') {
+      queryClient.invalidateQueries({ queryKey: ['jira', 'project-issues'] })
+      queryClient.invalidateQueries({ queryKey: ['jira', 'issue-detail'] })
+      queryClient.invalidateQueries({ queryKey: ['jira', 'projects'] })
     }
   }
 
+  // Branch picker применим только для commits/pipelines — таски
+  // без понятия "ветка". На tasks-табе слева пусто, refresh
+  // справа.
+  const showBranchPicker = activeTab === 'commits' || activeTab === 'pipelines'
+
   return (
     <div className="px-6 py-2 border-b border-border/40 flex items-center gap-3 text-xs">
-      <BranchPicker
-        branchesQuery={branchesQuery}
-        value={branch}
-        onChange={onBranchChange}
-      />
+      {showBranchPicker && (
+        <BranchPicker
+          branchesQuery={branchesQuery}
+          value={branch}
+          onChange={onBranchChange}
+        />
+      )}
       <button
         onClick={refresh}
         disabled={isFetching}
@@ -1202,6 +1235,173 @@ function PipelinesTab({ project, branch }) {
           onToggle={() => toggle(p.uuid)}
         />
       ))}
+    </div>
+  )
+}
+
+/**
+ * Tasks-таб: незакрытые таски Jira-проекта, имя которого
+ * префиксом совпадает с этим slug'ом. Если совпадения нет —
+ * показываем сообщение и линк на My Tasks (там видны все
+ * доступные).
+ *
+ * Каждая строка — accordion: клик раскрывает inline-detail c
+ * description, последними 5 комментами, полями (assignee, status и
+ * т.п.). Для тасков, у которых в title упомянут другой slug,
+ * показываем бейдж slug-mismatch с tooltip — это та самая ситуация
+ * "таск создан в одном проекте, а по факту относится к другому".
+ */
+function TasksTab({ project }) {
+  const slug = project.slug
+  const { project: matchedJira, isLoading: projectsLoading } =
+    useJiraProjectForSlug(slug)
+  const { projects: allBitbucketProjects } = useProjects()
+  const knownSlugs = useMemo(
+    () => (allBitbucketProjects || []).map((p) => p.slug),
+    [allBitbucketProjects]
+  )
+  const issuesQuery = useProjectJiraIssues(matchedJira?.key, {
+    enabled: !!matchedJira
+  })
+  const [expandedKey, setExpandedKey] = useState(null)
+
+  if (projectsLoading) {
+    return (
+      <div className="p-6 text-xs text-muted-foreground inline-flex items-center gap-2">
+        <Loader2 size={12} className="animate-spin" /> Resolving Jira
+        project…
+      </div>
+    )
+  }
+
+  if (!matchedJira) {
+    return (
+      <div className="p-6 text-sm text-muted-foreground space-y-2 max-w-md">
+        <p>
+          No Jira project matches this slug. Looked for a project whose
+          name starts with <code className="font-mono">{slug}</code>{' '}
+          (case-insensitive).
+        </p>
+        <p className="text-xs">
+          If a project does exist, rename it to start with the slug, or
+          check that Jira credentials are configured (Settings → Jira).
+        </p>
+      </div>
+    )
+  }
+
+  const issues = issuesQuery.data?.issues || []
+
+  if (issuesQuery.isLoading) {
+    return (
+      <div className="p-6 space-y-3">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div key={i} className="space-y-1.5">
+            <div className="h-3 bg-muted rounded w-3/4 animate-pulse" />
+            <div className="h-3 bg-muted rounded w-1/2 animate-pulse" />
+          </div>
+        ))}
+      </div>
+    )
+  }
+  if (issuesQuery.isError) {
+    return <TabErrorState onRetry={issuesQuery.refetch} />
+  }
+  if (issues.length === 0) {
+    return (
+      <div className="p-6 text-sm text-muted-foreground space-y-2">
+        <p>
+          No open tasks in{' '}
+          <code className="font-mono">{matchedJira.key}</code> —{' '}
+          {matchedJira.name}.
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <div className="px-6 py-2 text-[11px] text-muted-foreground border-b border-border/40 bg-muted/10">
+        Linked Jira project:{' '}
+        <code className="font-mono text-foreground/80">
+          {matchedJira.key}
+        </code>{' '}
+        — {matchedJira.name}
+      </div>
+      <div className="divide-y divide-border/60">
+        {issues.map((it) => (
+          <TaskRowExpandable
+            key={it.key}
+            issue={it}
+            currentSlug={slug}
+            knownSlugs={knownSlugs}
+            expanded={expandedKey === it.key}
+            onToggle={() =>
+              setExpandedKey((prev) => (prev === it.key ? null : it.key))
+            }
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function TaskRowExpandable({
+  issue,
+  currentSlug,
+  knownSlugs,
+  expanded,
+  onToggle
+}) {
+  const detail = useJiraIssueDetail(issue.key, { enabled: expanded })
+  const Caret = expanded ? ChevronDown : ChevronRight
+  // Парсим slug-mentions в summary (а в expanded — заодно в
+  // description, см. ниже) и отбрасываем сам slug этого проекта
+  // — это нормальное "правильное" упоминание.
+  const mismatched = useMemo(() => {
+    const all = findSlugMentions(issue.summary || '', knownSlugs)
+    return all.filter(
+      (s) => s.toLowerCase() !== currentSlug.toLowerCase()
+    )
+  }, [issue.summary, knownSlugs, currentSlug])
+  return (
+    <div>
+      <button
+        onClick={onToggle}
+        className="w-full text-left px-6 py-2.5 flex items-center gap-3 hover:bg-accent/40 transition-colors"
+      >
+        <Caret size={14} className="shrink-0 text-muted-foreground" />
+        {issue.issueTypeIconUrl && (
+          <img
+            src={issue.issueTypeIconUrl}
+            alt={issue.issueType}
+            title={issue.issueType}
+            className="w-4 h-4 shrink-0"
+          />
+        )}
+        <code className="text-[10px] font-mono shrink-0 text-muted-foreground">
+          {issue.key}
+        </code>
+        <span className="text-sm flex-1 min-w-0 truncate">
+          {issue.summary || '(no summary)'}
+        </span>
+        {mismatched.length > 0 && (
+          <SlugMismatchBadge mentioned={mismatched} />
+        )}
+        <StatusBadge
+          category={issue.statusCategory}
+          label={issue.status}
+        />
+        <span className="text-[11px] text-muted-foreground shrink-0">
+          {formatRelative(issue.updated)}
+        </span>
+      </button>
+      {expanded && (
+        <div className="px-6 pb-4 pl-[2.25rem] bg-muted/20 space-y-3 text-sm">
+          <TaskDetailContent detail={detail} />
+          <OpenInJiraLink issueKey={issue.key} />
+        </div>
+      )}
     </div>
   )
 }

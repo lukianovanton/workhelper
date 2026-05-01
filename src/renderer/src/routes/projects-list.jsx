@@ -32,6 +32,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { usePresence } from '@/hooks/use-presence'
 import { usePipelines } from '@/hooks/use-bitbucket'
 import { PipelineStateBadge } from '@/routes/project-detail'
+import { WorkspaceNav } from '@/routes/my-tasks'
 import { api } from '@/api'
 
 const SORT_STORAGE_KEY = 'projects-sort'
@@ -355,12 +356,12 @@ export default function ProjectsList() {
           )}
         </div>
         <nav className="flex-1 p-3 text-sm overflow-y-auto">
+          <WorkspaceNav active="projects" />
           {NAV_SECTIONS.map((section, sectionIdx) => (
             <div
               key={section.title}
               className={cn(
-                'space-y-1',
-                sectionIdx > 0 && 'pt-3 mt-3 border-t border-border'
+                'space-y-1 pt-3 mt-3 border-t border-border'
               )}
             >
               <div className="px-3 pb-1 text-[10px] uppercase tracking-wider text-muted-foreground/70">
