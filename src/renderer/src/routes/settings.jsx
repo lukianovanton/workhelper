@@ -1,6 +1,24 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Check, X, Loader2, CheckCircle2, XCircle, Sun, Moon, Monitor, Rows3, Rows4 } from 'lucide-react'
+import {
+  ArrowLeft,
+  Check,
+  X,
+  Loader2,
+  CheckCircle2,
+  XCircle,
+  Sun,
+  Moon,
+  Monitor,
+  Rows3,
+  Rows4,
+  Cloud,
+  Folder,
+  Database,
+  Code2,
+  Users,
+  Palette
+} from 'lucide-react'
 import { usePrefsStore } from '@/store/prefs.store.js'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -13,8 +31,30 @@ import {
   CardDescription,
   CardContent
 } from '@/components/ui/card'
-import { Separator } from '@/components/ui/separator'
 import { api } from '@/api'
+
+// Persistent: при возврате в Settings показывается тот же раздел,
+// который был открыт. localStorage, не часть config.json.
+const SECTION_STORAGE_KEY = 'settings-active-section'
+
+const SECTIONS = /** @type {const} */ ([
+  { id: 'bitbucket', label: 'Bitbucket', icon: Cloud },
+  { id: 'paths', label: 'Paths', icon: Folder },
+  { id: 'database', label: 'Database', icon: Database },
+  { id: 'dotnet', label: '.NET', icon: Code2 },
+  { id: 'presence', label: 'Presence', icon: Users },
+  { id: 'appearance', label: 'Appearance', icon: Palette }
+])
+
+function loadActiveSection() {
+  try {
+    const v = localStorage.getItem(SECTION_STORAGE_KEY)
+    if (v && SECTIONS.some((s) => s.id === v)) return v
+  } catch {
+    // ignore
+  }
+  return 'bitbucket'
+}
 
 export default function Settings() {
   const navigate = useNavigate()
@@ -33,6 +73,14 @@ export default function Settings() {
   const [bitbucketTestResult, setBitbucketTestResult] = useState(null)
   const [testingDb, setTestingDb] = useState(false)
   const [dbTestResult, setDbTestResult] = useState(null)
+  const [activeSection, setActiveSection] = useState(loadActiveSection)
+  useEffect(() => {
+    try {
+      localStorage.setItem(SECTION_STORAGE_KEY, activeSection)
+    } catch {
+      // ignore
+    }
+  }, [activeSection])
 
   const loadAll = useCallback(async () => {
     const [c, s] = await Promise.all([
@@ -163,241 +211,290 @@ export default function Settings() {
         </div>
       </header>
 
-      <div className="flex-1 overflow-auto p-6 space-y-6 max-w-3xl mx-auto w-full">
-        <Card>
-          <CardHeader>
-            <CardTitle>Bitbucket</CardTitle>
-            <CardDescription>
-              Workspace and credentials for the Cloud API. API token
-              created at <code>id.atlassian.com → Security → Create API
-              token with scopes</code> → Bitbucket →{' '}
-              <code>read:repository:bitbucket</code>. App passwords are
-              deprecated since Sep 2025.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Field label="Workspace">
-              <Input
-                value={config.bitbucket.workspace}
-                onChange={(e) =>
-                  updatePath('bitbucket', 'workspace')(e.target.value)
-                }
-                placeholder="techgurusit"
-              />
-            </Field>
-            <Field label="Username (email)">
-              <Input
-                type="email"
-                value={config.bitbucket.username}
-                onChange={(e) =>
-                  updatePath('bitbucket', 'username')(e.target.value)
-                }
-                placeholder="you@example.com"
-              />
-            </Field>
-            <Field
-              label="Bitbucket username (for git)"
-              hint="Your Bitbucket username, not email. Find at Bitbucket → Personal settings → Account."
-            >
-              <Input
-                value={config.bitbucket.gitUsername}
-                onChange={(e) =>
-                  updatePath('bitbucket', 'gitUsername')(e.target.value)
-                }
-                placeholder="antonreact1"
-              />
-            </Field>
-            <SecretField
-              label="API token"
-              status={secretsStatus.bitbucketApiToken}
-              value={bitbucketApiToken}
-              onChange={setBitbucketApiToken}
-              onClear={() => {
-                onClearSecret('bitbucketApiToken')
-                setBitbucketTestResult(null)
-              }}
-            />
-            <div className="pt-2 space-y-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={onTestBitbucket}
-                disabled={testingBitbucket}
-              >
-                {testingBitbucket && <Loader2 className="animate-spin" />}
-                Test connection
-              </Button>
-              <BitbucketTestResult result={bitbucketTestResult} />
-              <p className="text-xs text-muted-foreground">
-                Test reads stored credentials — Save first if you've changed
-                fields above.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+      <div className="flex-1 flex overflow-hidden">
+        <aside className="w-56 shrink-0 border-r border-border bg-card flex flex-col">
+          <nav className="flex-1 p-3 space-y-1 text-sm overflow-y-auto">
+            {SECTIONS.map((s) => {
+              const Icon = s.icon
+              const active = s.id === activeSection
+              return (
+                <button
+                  key={s.id}
+                  onClick={() => setActiveSection(s.id)}
+                  className={cn(
+                    'w-full text-left px-3 py-2 rounded-md flex items-center gap-2 transition-colors',
+                    active
+                      ? 'bg-accent text-accent-foreground'
+                      : 'hover:bg-accent/60 text-muted-foreground hover:text-foreground'
+                  )}
+                >
+                  <Icon size={14} />
+                  <span>{s.label}</span>
+                </button>
+              )
+            })}
+          </nav>
+          <div className="p-3 border-t border-border text-[11px] text-muted-foreground space-y-1 leading-snug">
+            <p>
+              Config in{' '}
+              <code className="text-[10px]">%APPDATA%\\project-hub\\config.json</code>
+            </p>
+            <p>
+              Secrets encrypted via safeStorage in{' '}
+              <code className="text-[10px]">secrets.json</code>
+            </p>
+          </div>
+        </aside>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Paths</CardTitle>
-            <CardDescription>
-              Where projects live, where SQL dumps are kept, and how to call
-              VS Code.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Field
-              label="Projects folder"
-              hint="Each repo lives at projectsRoot/slug.toLowerCase()"
-            >
-              <Input
-                value={config.paths.projectsRoot}
-                onChange={(e) =>
-                  updatePath('paths', 'projectsRoot')(e.target.value)
-                }
-                placeholder="C:\\Projects"
-              />
-            </Field>
-            <Field label="Dumps folder">
-              <Input
-                value={config.paths.dumpsRoot}
-                onChange={(e) =>
-                  updatePath('paths', 'dumpsRoot')(e.target.value)
-                }
-                placeholder="C:\\Dumps"
-              />
-            </Field>
-            <BinaryPathField
-              label="VS Code executable"
-              value={config.paths.vscodeExecutable}
-              detected={vscodeDetected}
-              placeholder="code"
-              notFoundHint="not found in PATH"
-              onChange={(v) => updatePath('paths', 'vscodeExecutable')(v)}
-            />
-          </CardContent>
-        </Card>
+        <main className="flex-1 overflow-auto">
+          <div className="p-6 max-w-2xl">
+            {activeSection === 'bitbucket' && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Bitbucket</CardTitle>
+                  <CardDescription>
+                    Workspace and credentials for the Cloud API. API token
+                    created at <code>id.atlassian.com → Security → Create API
+                    token with scopes</code> → Bitbucket →{' '}
+                    <code>read:repository:bitbucket</code>. App passwords are
+                    deprecated since Sep 2025.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <Field label="Workspace">
+                    <Input
+                      value={config.bitbucket.workspace}
+                      onChange={(e) =>
+                        updatePath('bitbucket', 'workspace')(e.target.value)
+                      }
+                      placeholder="techgurusit"
+                    />
+                  </Field>
+                  <Field label="Username (email)">
+                    <Input
+                      type="email"
+                      value={config.bitbucket.username}
+                      onChange={(e) =>
+                        updatePath('bitbucket', 'username')(e.target.value)
+                      }
+                      placeholder="you@example.com"
+                    />
+                  </Field>
+                  <Field
+                    label="Bitbucket username (for git)"
+                    hint="Your Bitbucket username, not email. Find at Bitbucket → Personal settings → Account."
+                  >
+                    <Input
+                      value={config.bitbucket.gitUsername}
+                      onChange={(e) =>
+                        updatePath('bitbucket', 'gitUsername')(e.target.value)
+                      }
+                      placeholder="antonreact1"
+                    />
+                  </Field>
+                  <SecretField
+                    label="API token"
+                    status={secretsStatus.bitbucketApiToken}
+                    value={bitbucketApiToken}
+                    onChange={setBitbucketApiToken}
+                    onClear={() => {
+                      onClearSecret('bitbucketApiToken')
+                      setBitbucketTestResult(null)
+                    }}
+                  />
+                  <div className="pt-2 space-y-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={onTestBitbucket}
+                      disabled={testingBitbucket}
+                    >
+                      {testingBitbucket && <Loader2 className="animate-spin" />}
+                      Test connection
+                    </Button>
+                    <BitbucketTestResult result={bitbucketTestResult} />
+                    <p className="text-xs text-muted-foreground">
+                      Test reads stored credentials — Save first if you've
+                      changed fields above.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Database</CardTitle>
-            <CardDescription>
-              Local MySQL — used in MVP-1 for read-only enrich (db.exists,
-              db.size). <code>mysql</code> CLI is only needed for MVP-2 dump
-              restore; leave path empty until then.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-3 gap-4">
-              <Field label="Host" className="col-span-2">
-                <Input
-                  value={config.database.host}
-                  onChange={(e) =>
-                    updatePath('database', 'host')(e.target.value)
-                  }
-                  placeholder="localhost"
-                />
-              </Field>
-              <Field label="Port">
-                <Input
-                  type="number"
-                  value={config.database.port}
-                  onChange={(e) =>
-                    updatePath('database', 'port')(Number(e.target.value) || 0)
-                  }
-                  placeholder="3306"
-                />
-              </Field>
-            </div>
-            <Field label="User">
-              <Input
-                value={config.database.user}
-                onChange={(e) =>
-                  updatePath('database', 'user')(e.target.value)
-                }
-                placeholder="root"
-              />
-            </Field>
-            <SecretField
-              label="Password"
-              status={secretsStatus.dbPassword}
-              value={dbPassword}
-              onChange={setDbPassword}
-              onClear={() => onClearSecret('dbPassword')}
-            />
-            <BinaryPathField
-              label="mysql executable"
-              value={config.database.mysqlExecutable}
-              detected={mysqlDetected}
-              placeholder="C:\\path\\to\\mysql.exe"
-              notFoundHint={
-                config.database.mysqlExecutable
-                  ? 'not found — restore will be blocked in MVP-2'
-                  : 'leave empty for MVP-1'
-              }
-              onChange={(v) => updatePath('database', 'mysqlExecutable')(v)}
-            />
-            <div className="pt-2 space-y-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={onTestDb}
-                disabled={testingDb}
-              >
-                {testingDb && <Loader2 className="animate-spin" />}
-                Test connection
-              </Button>
-              <DbTestResult result={dbTestResult} />
-              <p className="text-xs text-muted-foreground">
-                Test reads stored credentials — Save first if you've changed
-                fields above.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+            {activeSection === 'paths' && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Paths</CardTitle>
+                  <CardDescription>
+                    Where projects live, where SQL dumps are kept, and how to
+                    call VS Code.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <Field
+                    label="Projects folder"
+                    hint="Each repo lives at projectsRoot/slug.toLowerCase()"
+                  >
+                    <Input
+                      value={config.paths.projectsRoot}
+                      onChange={(e) =>
+                        updatePath('paths', 'projectsRoot')(e.target.value)
+                      }
+                      placeholder="C:\\Projects"
+                    />
+                  </Field>
+                  <Field label="Dumps folder">
+                    <Input
+                      value={config.paths.dumpsRoot}
+                      onChange={(e) =>
+                        updatePath('paths', 'dumpsRoot')(e.target.value)
+                      }
+                      placeholder="C:\\Dumps"
+                    />
+                  </Field>
+                  <BinaryPathField
+                    label="VS Code executable"
+                    value={config.paths.vscodeExecutable}
+                    detected={vscodeDetected}
+                    placeholder="code"
+                    notFoundHint="not found in PATH"
+                    onChange={(v) =>
+                      updatePath('paths', 'vscodeExecutable')(v)
+                    }
+                  />
+                </CardContent>
+              </Card>
+            )}
 
-        <Card>
-          <CardHeader>
-            <CardTitle>.NET</CardTitle>
-            <CardDescription>
-              Extra arguments for <code>dotnet run</code>. The runnable
-              subpath is auto-detected per project (see spec 9.5);
-              per-project overrides are an advanced feature.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Field
-              label="Run arguments"
-              hint="Space-separated, passed to dotnet run after `--`"
-            >
-              <Input
-                value={(config.dotnet.runArgs || []).join(' ')}
-                onChange={(e) =>
-                  updatePath(
-                    'dotnet',
-                    'runArgs'
-                  )(
-                    e.target.value
-                      .split(/\s+/)
-                      .map((s) => s.trim())
-                      .filter(Boolean)
-                  )
-                }
-                placeholder="--no-build --launch-profile Development"
-              />
-            </Field>
-          </CardContent>
-        </Card>
+            {activeSection === 'database' && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Database</CardTitle>
+                  <CardDescription>
+                    Local MySQL — used in MVP-1 for read-only enrich
+                    (db.exists, db.size). <code>mysql</code> CLI is only
+                    needed for MVP-2 dump restore; leave path empty until
+                    then.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-3 gap-4">
+                    <Field label="Host" className="col-span-2">
+                      <Input
+                        value={config.database.host}
+                        onChange={(e) =>
+                          updatePath('database', 'host')(e.target.value)
+                        }
+                        placeholder="localhost"
+                      />
+                    </Field>
+                    <Field label="Port">
+                      <Input
+                        type="number"
+                        value={config.database.port}
+                        onChange={(e) =>
+                          updatePath(
+                            'database',
+                            'port'
+                          )(Number(e.target.value) || 0)
+                        }
+                        placeholder="3306"
+                      />
+                    </Field>
+                  </div>
+                  <Field label="User">
+                    <Input
+                      value={config.database.user}
+                      onChange={(e) =>
+                        updatePath('database', 'user')(e.target.value)
+                      }
+                      placeholder="root"
+                    />
+                  </Field>
+                  <SecretField
+                    label="Password"
+                    status={secretsStatus.dbPassword}
+                    value={dbPassword}
+                    onChange={setDbPassword}
+                    onClear={() => onClearSecret('dbPassword')}
+                  />
+                  <BinaryPathField
+                    label="mysql executable"
+                    value={config.database.mysqlExecutable}
+                    detected={mysqlDetected}
+                    placeholder="C:\\path\\to\\mysql.exe"
+                    notFoundHint={
+                      config.database.mysqlExecutable
+                        ? 'not found — restore will be blocked in MVP-2'
+                        : 'leave empty for MVP-1'
+                    }
+                    onChange={(v) =>
+                      updatePath('database', 'mysqlExecutable')(v)
+                    }
+                  />
+                  <div className="pt-2 space-y-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={onTestDb}
+                      disabled={testingDb}
+                    >
+                      {testingDb && <Loader2 className="animate-spin" />}
+                      Test connection
+                    </Button>
+                    <DbTestResult result={dbTestResult} />
+                    <p className="text-xs text-muted-foreground">
+                      Test reads stored credentials — Save first if you've
+                      changed fields above.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
-        <PresenceCard config={config} updatePath={updatePath} />
+            {activeSection === 'dotnet' && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>.NET</CardTitle>
+                  <CardDescription>
+                    Extra arguments for <code>dotnet run</code>. The runnable
+                    subpath is auto-detected per project (see spec 9.5);
+                    per-project overrides are an advanced feature.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <Field
+                    label="Run arguments"
+                    hint="Space-separated, passed to dotnet run after `--`"
+                  >
+                    <Input
+                      value={(config.dotnet.runArgs || []).join(' ')}
+                      onChange={(e) =>
+                        updatePath(
+                          'dotnet',
+                          'runArgs'
+                        )(
+                          e.target.value
+                            .split(/\s+/)
+                            .map((s) => s.trim())
+                            .filter(Boolean)
+                        )
+                      }
+                      placeholder="--no-build --launch-profile Development"
+                    />
+                  </Field>
+                </CardContent>
+              </Card>
+            )}
 
-        <AppearanceCard />
+            {activeSection === 'presence' && (
+              <PresenceCard config={config} updatePath={updatePath} />
+            )}
 
-        <Separator />
-        <p className="text-xs text-muted-foreground">
-          Config stored in <code>%APPDATA%\\project-hub\\config.json</code>.
-          Secrets encrypted via Electron safeStorage in{' '}
-          <code>secrets.json</code>.
-        </p>
+            {activeSection === 'appearance' && <AppearanceCard />}
+          </div>
+        </main>
       </div>
     </div>
   )
