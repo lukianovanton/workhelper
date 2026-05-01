@@ -419,20 +419,17 @@ async function searchIssues(jql, opts = {}) {
  * Без project-фильтра в JQL: Jira сам ограничит результат
  * проектами, к которым у юзера есть доступ.
  *
+ * Ошибки больше НЕ тихо проглатываем — пустой результат и реальный
+ * 403 / 404 / 401 это разные ситуации, и UI должен мочь их
+ * отличать (показать «No open tasks» vs «scope missing»).
+ *
  * @param {{ maxResults?: number }} [opts]
  */
 export async function getMyIssues(opts = {}) {
-  try {
-    return await searchIssues(
-      'assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC',
-      { maxResults: opts.maxResults ?? 50 }
-    )
-  } catch (e) {
-    if (e.status === 403 || e.status === 404) {
-      return { issues: [], total: 0, isLast: true }
-    }
-    throw e
-  }
+  return searchIssues(
+    'assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC',
+    { maxResults: opts.maxResults ?? 50 }
+  )
 }
 
 /**
@@ -447,17 +444,10 @@ export async function getProjectIssues(projectKey, opts = {}) {
   // alnum, но защититься от инъекции дешевле, чем отлаживать
   // потом потенциальный 400.
   const safe = projectKey.replace(/"/g, '\\"')
-  try {
-    return await searchIssues(
-      `project = "${safe}" AND statusCategory != Done ORDER BY updated DESC`,
-      { maxResults: opts.maxResults ?? 50 }
-    )
-  } catch (e) {
-    if (e.status === 403 || e.status === 404) {
-      return { issues: [], total: 0, isLast: true }
-    }
-    throw e
-  }
+  return searchIssues(
+    `project = "${safe}" AND statusCategory != Done ORDER BY updated DESC`,
+    { maxResults: opts.maxResults ?? 50 }
+  )
 }
 
 /**
