@@ -92,13 +92,28 @@ function compareProjects(a, b, column) {
   }
 }
 
-const FILTERS = /** @type {const} */ ([
-  { id: 'all', label: 'All' },
-  { id: 'installed', label: 'Installed' },
-  { id: 'not-installed', label: 'Not installed' },
-  { id: 'running', label: 'Running' },
-  { id: 'projects', label: 'Projects' },
-  { id: 'templates', label: 'Templates' }
+// Sidebar разбит на два смысловых блока. Внутри одного блока — single
+// select (выбираем «состояние установки» ИЛИ «тип репозитория»), между
+// блоками тоже single select: ровно один активный фильтр на всю
+// навигацию или null = All. Это сознательно, чтобы не было
+// противоречивых комбинаций вроде Installed + Not installed.
+const NAV_SECTIONS = /** @type {const} */ ([
+  {
+    title: 'Status',
+    items: [
+      { id: 'all', label: 'All' },
+      { id: 'installed', label: 'Installed' },
+      { id: 'not-installed', label: 'Not installed' },
+      { id: 'running', label: 'Running' }
+    ]
+  },
+  {
+    title: 'Type',
+    items: [
+      { id: 'projects', label: 'Projects' },
+      { id: 'templates', label: 'Templates' }
+    ]
+  }
 ])
 
 export default function ProjectsList() {
@@ -337,29 +352,42 @@ export default function ProjectsList() {
             </p>
           )}
         </div>
-        <nav className="flex-1 p-3 space-y-1 text-sm overflow-y-auto">
-          {FILTERS.map((f) => {
-            const active = isFilterActive(f.id)
-            return (
-              <button
-                key={f.id}
-                onClick={() =>
-                  f.id === 'all' ? clearFilters() : toggleFilter(f.id)
-                }
-                className={cn(
-                  'w-full text-left px-3 py-2 rounded-md flex items-center justify-between',
-                  active
-                    ? 'bg-accent text-accent-foreground'
-                    : 'hover:bg-accent/60'
-                )}
-              >
-                <span>{f.label}</span>
-                <span className="text-xs text-muted-foreground">
-                  {counts[f.id] ?? 0}
-                </span>
-              </button>
-            )
-          })}
+        <nav className="flex-1 p-3 text-sm overflow-y-auto">
+          {NAV_SECTIONS.map((section, sectionIdx) => (
+            <div
+              key={section.title}
+              className={cn(
+                'space-y-1',
+                sectionIdx > 0 && 'pt-3 mt-3 border-t border-border'
+              )}
+            >
+              <div className="px-3 pb-1 text-[10px] uppercase tracking-wider text-muted-foreground/70">
+                {section.title}
+              </div>
+              {section.items.map((f) => {
+                const active = isFilterActive(f.id)
+                return (
+                  <button
+                    key={f.id}
+                    onClick={() =>
+                      f.id === 'all' ? clearFilters() : toggleFilter(f.id)
+                    }
+                    className={cn(
+                      'w-full text-left px-3 py-1.5 rounded-md flex items-center justify-between',
+                      active
+                        ? 'bg-accent text-accent-foreground'
+                        : 'hover:bg-accent/60'
+                    )}
+                  >
+                    <span>{f.label}</span>
+                    <span className="text-xs text-muted-foreground tabular-nums">
+                      {counts[f.id] ?? 0}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          ))}
 
           {recent.length > 0 && projects && (
             <div className="pt-3 mt-3 border-t border-border">
@@ -415,20 +443,22 @@ export default function ProjectsList() {
               className="pl-9"
             />
           </div>
-          <PresenceWidget />
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleRefresh}
-            disabled={refreshing || isLoading}
-          >
-            {refreshing || isFetching ? (
-              <Loader2 className="animate-spin" />
-            ) : (
-              <RefreshCw />
-            )}
-            Refresh
-          </Button>
+          <div className="flex items-center gap-3 ml-auto">
+            <PresenceWidget />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRefresh}
+              disabled={refreshing || isLoading}
+            >
+              {refreshing || isFetching ? (
+                <Loader2 className="animate-spin" />
+              ) : (
+                <RefreshCw />
+              )}
+              Refresh
+            </Button>
+          </div>
         </header>
 
         {selected.size > 0 && (
@@ -463,15 +493,20 @@ export default function ProjectsList() {
 
         {warnings.length > 0 && <WarningBanner warnings={warnings} />}
 
-        <FilterChips
-          counts={counts}
-          isFilterActive={isFilterActive}
-          toggleFilter={toggleFilter}
-          clearFilters={clearFilters}
-          activeCount={activeFilter ? 1 : 0}
-          hasColumnFilters={hasColumnFilters}
-          clearColumnFilters={clearColumnFilters}
-        />
+        {hasColumnFilters && (
+          <div className="px-6 py-1.5 border-b border-border/60 text-xs flex items-center gap-2">
+            <Filter size={11} className="text-sky-400" />
+            <span className="text-muted-foreground">
+              Column filters active
+            </span>
+            <button
+              onClick={clearColumnFilters}
+              className="ml-auto text-sky-400 hover:text-sky-300 underline-offset-2 hover:underline"
+            >
+              Clear
+            </button>
+          </div>
+        )}
 
         <RunningBar
           running={Array.from(runningBySlug.values())}
@@ -1158,83 +1193,6 @@ function KindBadge({ kind, projectKey }) {
       <Icon size={11} />
       {kind}
     </span>
-  )
-}
-
-/**
- * Полоса фильтр-chip'ов прямо над таблицей. Дублирует sidebar-фильтры
- * для тех, кто не привык в sidebar лазить, плюс показывает live counts
- * у каждого. Клик toggle'ит фильтр, как и в sidebar.
- */
-function FilterChips({
-  counts,
-  isFilterActive,
-  toggleFilter,
-  clearFilters,
-  activeCount,
-  hasColumnFilters,
-  clearColumnFilters
-}) {
-  const chips = [
-    { id: 'installed', label: 'Installed' },
-    { id: 'not-installed', label: 'Not installed' },
-    { id: 'running', label: 'Running' },
-    { id: 'projects', label: 'Projects' },
-    { id: 'templates', label: 'Templates' }
-  ]
-  return (
-    <div className="px-6 py-2 border-b border-border/60 flex items-center gap-2 flex-wrap text-xs">
-      <span className="text-muted-foreground">Filters:</span>
-      {chips.map((c) => {
-        const active = isFilterActive(c.id)
-        const count = counts[c.id] ?? 0
-        return (
-          <button
-            key={c.id}
-            onClick={() => toggleFilter(c.id)}
-            disabled={count === 0 && !active}
-            className={cn(
-              'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border transition-colors',
-              active
-                ? 'bg-accent text-accent-foreground border-accent'
-                : 'border-border text-muted-foreground hover:text-foreground hover:border-input',
-              count === 0 && !active && 'opacity-40 cursor-not-allowed'
-            )}
-          >
-            <span>{c.label}</span>
-            <span
-              className={cn(
-                'tabular-nums text-[10px] px-1 rounded-sm',
-                active ? 'bg-background/50' : 'bg-muted/50'
-              )}
-            >
-              {count}
-            </span>
-          </button>
-        )
-      })}
-      {(activeCount > 0 || hasColumnFilters) && (
-        <div className="ml-auto flex items-center gap-3">
-          {hasColumnFilters && (
-            <button
-              onClick={clearColumnFilters}
-              className="text-sky-400 hover:text-sky-300 underline-offset-2 hover:underline inline-flex items-center gap-1"
-              title="Clear filters set on column headers"
-            >
-              <Filter size={11} /> Clear column filters
-            </button>
-          )}
-          {activeCount > 0 && (
-            <button
-              onClick={clearFilters}
-              className="text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
-            >
-              Clear all
-            </button>
-          )}
-        </div>
-      )}
-    </div>
   )
 }
 
