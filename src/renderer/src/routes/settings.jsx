@@ -17,9 +17,7 @@ import {
   Database,
   Code2,
   Users,
-  Palette,
-  ListTodo,
-  RefreshCw
+  Palette
 } from 'lucide-react'
 import { usePrefsStore } from '@/store/prefs.store.js'
 import { cn } from '@/lib/utils'
@@ -40,8 +38,7 @@ import { api } from '@/api'
 const SECTION_STORAGE_KEY = 'settings-active-section'
 
 const SECTIONS = /** @type {const} */ ([
-  { id: 'bitbucket', label: 'Bitbucket', icon: Cloud },
-  { id: 'jira', label: 'Jira', icon: ListTodo },
+  { id: 'atlassian', label: 'Atlassian', icon: Cloud },
   { id: 'paths', label: 'Paths', icon: Folder },
   { id: 'database', label: 'Database', icon: Database },
   { id: 'dotnet', label: '.NET', icon: Code2 },
@@ -49,14 +46,20 @@ const SECTIONS = /** @type {const} */ ([
   { id: 'appearance', label: 'Appearance', icon: Palette }
 ])
 
+// Старые id 'bitbucket' / 'jira' маппим на новый объединённый
+// 'atlassian' — пользователи которые держали settings открытыми
+// на Bitbucket или Jira увидят то же содержимое, не «404».
+const LEGACY_SECTION_MAP = { bitbucket: 'atlassian', jira: 'atlassian' }
+
 function loadActiveSection() {
   try {
     const v = localStorage.getItem(SECTION_STORAGE_KEY)
-    if (v && SECTIONS.some((s) => s.id === v)) return v
+    const mapped = LEGACY_SECTION_MAP[v] || v
+    if (mapped && SECTIONS.some((s) => s.id === mapped)) return mapped
   } catch {
     // ignore
   }
-  return 'bitbucket'
+  return 'atlassian'
 }
 
 export default function Settings() {
@@ -201,7 +204,12 @@ export default function Settings() {
       setSaveStatus({ ok: false, message: e?.message || String(e) })
     } finally {
       setSaving(false)
-      setTimeout(() => setSaveStatus(null), 3000)
+      // Только успех само исчезает через 3с; ошибка остаётся до
+      // явного закрытия (✕) — её часто хочется прочитать и
+      // скопировать (например, чтобы вставить в issue или поиск).
+      setTimeout(() => {
+        setSaveStatus((prev) => (prev && prev.ok ? null : prev))
+      }, 3000)
     }
   }
 
@@ -223,14 +231,26 @@ export default function Settings() {
         <div className="flex items-center gap-3">
           {saveStatus && (
             <span
-              className={
-                saveStatus.ok
-                  ? 'text-xs text-emerald-500 flex items-center gap-1'
-                  : 'text-xs text-destructive flex items-center gap-1'
-              }
+              className={cn(
+                'text-xs flex items-center gap-1.5 max-w-md',
+                saveStatus.ok ? 'text-emerald-500' : 'text-destructive'
+              )}
             >
-              {saveStatus.ok ? <Check size={14} /> : <X size={14} />}
-              {saveStatus.message}
+              {saveStatus.ok ? (
+                <Check size={14} className="shrink-0" />
+              ) : (
+                <X size={14} className="shrink-0" />
+              )}
+              <span className="break-words">{saveStatus.message}</span>
+              {!saveStatus.ok && (
+                <button
+                  onClick={() => setSaveStatus(null)}
+                  className="ml-1 shrink-0 opacity-60 hover:opacity-100"
+                  title="Dismiss"
+                >
+                  <X size={11} />
+                </button>
+              )}
             </span>
           )}
           <Button onClick={onSave} disabled={saving}>
@@ -277,29 +297,25 @@ export default function Settings() {
 
         <main className="flex-1 overflow-auto">
           <div className="p-6 max-w-2xl">
-            {activeSection === 'bitbucket' && (
+            {activeSection === 'atlassian' && (
               <Card>
                 <CardHeader>
-                  <CardTitle>Bitbucket</CardTitle>
+                  <CardTitle>Atlassian</CardTitle>
                   <CardDescription>
-                    Workspace and credentials for the Cloud API. API token
-                    created at <code>id.atlassian.com → Security → Create API
-                    token with scopes</code> → Bitbucket →{' '}
-                    <code>read:repository:bitbucket</code>. App passwords are
-                    deprecated since Sep 2025.
+                    One Atlassian account for both Bitbucket and Jira.
+                    Email is shared. Tokens are not — Atlassian issues
+                    one API token per product, so Bitbucket and Jira
+                    each need their own. Tokens come from{' '}
+                    <code>id.atlassian.com → Security → Create API token
+                    with scopes</code>; app passwords are deprecated
+                    since Sep 2025.
                   </CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  <Field label="Workspace">
-                    <Input
-                      value={config.bitbucket.workspace}
-                      onChange={(e) =>
-                        updatePath('bitbucket', 'workspace')(e.target.value)
-                      }
-                      placeholder="techgurusit"
-                    />
-                  </Field>
-                  <Field label="Username (email)">
+                <CardContent className="space-y-5">
+                  <Field
+                    label="Email"
+                    hint="Atlassian account email. Used for both Bitbucket and Jira REST APIs (same account in 99% of setups)."
+                  >
                     <Input
                       type="email"
                       value={config.bitbucket.username}
@@ -309,9 +325,21 @@ export default function Settings() {
                       placeholder="you@example.com"
                     />
                   </Field>
+
+                  <SectionDivider label="Bitbucket" />
+
+                  <Field label="Workspace">
+                    <Input
+                      value={config.bitbucket.workspace}
+                      onChange={(e) =>
+                        updatePath('bitbucket', 'workspace')(e.target.value)
+                      }
+                      placeholder="techgurusit"
+                    />
+                  </Field>
                   <Field
                     label="Bitbucket username (for git)"
-                    hint="Your Bitbucket username, not email. Find at Bitbucket → Personal settings → Account."
+                    hint="Your Bitbucket username, not the email. Find at Bitbucket → Personal settings → Account."
                   >
                     <Input
                       value={config.bitbucket.gitUsername}
@@ -322,7 +350,7 @@ export default function Settings() {
                     />
                   </Field>
                   <SecretField
-                    label="API token"
+                    label="Bitbucket API token"
                     status={secretsStatus.bitbucketApiToken}
                     value={bitbucketApiToken}
                     onChange={setBitbucketApiToken}
@@ -331,39 +359,32 @@ export default function Settings() {
                       setBitbucketTestResult(null)
                     }}
                   />
-                  <div className="pt-2 space-y-2">
+                  <div className="pt-1 space-y-2">
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={onTestBitbucket}
                       disabled={testingBitbucket}
                     >
-                      {testingBitbucket && <Loader2 className="animate-spin" />}
-                      Test connection
+                      {testingBitbucket && (
+                        <Loader2 className="animate-spin" />
+                      )}
+                      Test Bitbucket
                     </Button>
                     <BitbucketTestResult result={bitbucketTestResult} />
-                    <p className="text-xs text-muted-foreground">
-                      Test reads stored credentials — Save first if you've
-                      changed fields above.
+                    <p className="text-[11px] text-muted-foreground">
+                      Required scopes: <code>read:account</code>,{' '}
+                      <code>read:workspace:bitbucket</code>,{' '}
+                      <code>read:repository:bitbucket</code>,{' '}
+                      <code>write:repository:bitbucket</code>,{' '}
+                      <code>read:pipeline:bitbucket</code>. Test reads
+                      stored credentials — Save first if you've changed
+                      fields above.
                     </p>
                   </div>
-                </CardContent>
-              </Card>
-            )}
 
-            {activeSection === 'jira' && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Jira</CardTitle>
-                  <CardDescription>
-                    Atlassian Cloud REST API. Atlassian tokens are
-                    per-product — Bitbucket and Jira need separate tokens
-                    even on the same account. Required scopes:{' '}
-                    <code>read:jira-work</code>,{' '}
-                    <code>read:jira-user</code>, <code>read:me</code>.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
+                  <SectionDivider label="Jira" />
+
                   <Field
                     label="Host"
                     hint="Jira Cloud URL without trailing slash (e.g. https://yourcompany.atlassian.net)"
@@ -376,25 +397,8 @@ export default function Settings() {
                       placeholder="https://yourcompany.atlassian.net"
                     />
                   </Field>
-                  <Field
-                    label="Email"
-                    hint={
-                      'Atlassian email. Leave blank to reuse the Bitbucket username — same account in most setups.'
-                    }
-                  >
-                    <Input
-                      type="email"
-                      value={config.jira?.email || ''}
-                      onChange={(e) =>
-                        updatePath('jira', 'email')(e.target.value)
-                      }
-                      placeholder={
-                        config.bitbucket?.username || 'you@example.com'
-                      }
-                    />
-                  </Field>
                   <SecretField
-                    label="API token"
+                    label="Jira API token"
                     status={secretsStatus.jiraApiToken}
                     value={jiraApiToken}
                     onChange={setJiraApiToken}
@@ -403,7 +407,7 @@ export default function Settings() {
                       setJiraTestResult(null)
                     }}
                   />
-                  <div className="pt-2 space-y-2">
+                  <div className="pt-1 space-y-2">
                     <Button
                       variant="outline"
                       size="sm"
@@ -413,10 +417,12 @@ export default function Settings() {
                       {testingJira && (
                         <Loader2 className="animate-spin" />
                       )}
-                      Test connection
+                      Test Jira
                     </Button>
                     <JiraTestResult result={jiraTestResult} />
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-[11px] text-muted-foreground">
+                      Required scopes: <code>read:jira-work</code>,{' '}
+                      <code>read:jira-user</code>, <code>read:me</code>.
                       Test reads stored credentials — Save first if
                       you've changed fields above.
                     </p>
@@ -892,6 +898,23 @@ function BinaryPathField({
         )}
       </div>
       {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+    </div>
+  )
+}
+
+/**
+ * Подзаголовок группы полей внутри одной Card. Используется в
+ * Atlassian-секции, чтобы визуально разделить Bitbucket и Jira
+ * входы — это две части одного аккаунта, но всё-таки разные
+ * сервисы со своим токеном и тестом.
+ */
+function SectionDivider({ label }) {
+  return (
+    <div className="pt-2 flex items-center gap-3">
+      <span className="text-[10px] uppercase tracking-wider text-muted-foreground/80">
+        {label}
+      </span>
+      <div className="flex-1 border-t border-border/50" />
     </div>
   )
 }
