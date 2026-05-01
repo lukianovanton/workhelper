@@ -296,9 +296,16 @@ export default function Settings() {
         </aside>
 
         <main className="flex-1 overflow-auto">
-          <div className="p-6 max-w-2xl">
+          <div
+            className={cn(
+              'p-6',
+              activeSection === 'atlassian'
+                ? 'max-w-6xl'
+                : 'max-w-2xl'
+            )}
+          >
             {activeSection === 'atlassian' && (
-              <div className="space-y-6">
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
                 <Card>
                   <CardHeader>
                     <CardTitle>Bitbucket</CardTitle>
