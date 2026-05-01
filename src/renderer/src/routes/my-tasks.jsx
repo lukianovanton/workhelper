@@ -33,6 +33,7 @@ import {
 } from '@/hooks/use-jira'
 import { useProjects } from '@/hooks/use-projects'
 import { AdfRenderer } from '@/components/adf-renderer'
+import { useT } from '@/i18n'
 import { api } from '@/api'
 
 /**
@@ -45,6 +46,7 @@ import { api } from '@/api'
  * каждый клик.
  */
 export default function MyTasks() {
+  const t = useT()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { data, isLoading, isError, error, refetch, isFetching } =
@@ -69,9 +71,9 @@ export default function MyTasks() {
     <div className="flex h-screen w-screen">
       <aside className="w-60 border-r border-border bg-card flex flex-col">
         <div className="p-4 border-b border-border">
-          <h1 className="text-lg font-semibold">Project Hub</h1>
+          <h1 className="text-lg font-semibold">{t('app.title')}</h1>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Tasks across all your Jira projects
+            {t('tasks.subtitle')}
           </p>
         </div>
         <nav className="flex-1 p-3 text-sm overflow-y-auto">
@@ -83,7 +85,7 @@ export default function MyTasks() {
             className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-accent text-sm"
           >
             <SettingsIcon size={14} />
-            Settings
+            {t('app.settings')}
           </Link>
         </div>
       </aside>
@@ -98,7 +100,7 @@ export default function MyTasks() {
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Filter by key, summary, project…"
+              placeholder={t('tasks.search.placeholder')}
               className="pl-9"
             />
           </div>
@@ -106,8 +108,11 @@ export default function MyTasks() {
             {data && (
               <span className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">
                 {filtered.length === issues.length
-                  ? `${issues.length} open`
-                  : `${filtered.length} of ${issues.length}`}
+                  ? t('tasks.count.full', { count: issues.length })
+                  : t('tasks.count.partial', {
+                      shown: filtered.length,
+                      total: issues.length
+                    })}
               </span>
             )}
             <Button
@@ -126,7 +131,7 @@ export default function MyTasks() {
               ) : (
                 <RefreshCw />
               )}
-              Refresh
+              {t('common.refresh')}
             </Button>
           </div>
         </header>
@@ -136,15 +141,15 @@ export default function MyTasks() {
           {isError && <ErrorState error={error} />}
           {!isLoading && !isError && issues.length === 0 && (
             <EmptyState
-              title="No open tasks"
-              message="Either you don't have any open issues assigned, or Jira credentials are not configured."
+              title={t('tasks.empty.noOpen')}
+              message={t('tasks.empty.message')}
               cta={
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => navigate('/settings')}
                 >
-                  <SettingsIcon size={14} /> Open Settings
+                  <SettingsIcon size={14} /> {t('common.openSettings')}
                 </Button>
               }
             />
@@ -176,10 +181,11 @@ export default function MyTasks() {
  * экспортом — projects-list тоже её рендерит.
  */
 export function WorkspaceNav({ active }) {
+  const t = useT()
   return (
     <div className="space-y-1">
       <div className="px-3 pb-1 text-[10px] uppercase tracking-wider text-muted-foreground/70">
-        Workspace
+        {t('app.workspace')}
       </div>
       <Link
         to="/projects"
@@ -191,7 +197,7 @@ export function WorkspaceNav({ active }) {
         )}
       >
         <ListIcon size={14} />
-        <span>All projects</span>
+        <span>{t('app.workspace.allProjects')}</span>
       </Link>
       <Link
         to="/my-tasks"
@@ -203,7 +209,7 @@ export function WorkspaceNav({ active }) {
         )}
       >
         <ListTodo size={14} />
-        <span>My Tasks</span>
+        <span>{t('app.workspace.myTasks')}</span>
       </Link>
     </div>
   )
@@ -221,9 +227,12 @@ function groupByStatusCategory(issues) {
   for (const it of issues) {
     const key = it.statusCategory || 'undefined'
     if (!buckets.has(key)) {
+      // Atlassian возвращает statusCategoryName уже на языке профиля
+      // юзера в Atlassian. Если строки нет — фолбэчимся на наш
+      // i18n-ключ (через categoryLabelKey ниже).
       buckets.set(key, {
         key,
-        label: it.statusCategoryName || labelFor(key),
+        atlassianLabel: it.statusCategoryName || null,
         items: []
       })
     }
@@ -237,25 +246,26 @@ function groupByStatusCategory(issues) {
   })
 }
 
-function labelFor(category) {
+function categoryLabelKey(category) {
   switch (category) {
     case 'new':
-      return 'To Do'
+      return 'tasks.group.todo'
     case 'indeterminate':
-      return 'In Progress'
+      return 'tasks.group.inProgress'
     case 'done':
-      return 'Done'
+      return 'tasks.group.done'
     default:
-      return 'Other'
+      return 'tasks.group.other'
   }
 }
 
 function TaskGroups({ groups, openedKey, onOpen }) {
+  const t = useT()
   if (groups.length === 0) {
     return (
       <EmptyState
-        title="No matches"
-        message="Filter narrowed the list to zero. Adjust the search box."
+        title={t('tasks.empty.noMatches.title')}
+        message={t('tasks.empty.noMatches.message')}
       />
     )
   }
@@ -264,7 +274,8 @@ function TaskGroups({ groups, openedKey, onOpen }) {
       {groups.map((g) => (
         <section key={g.key}>
           <div className="px-6 py-2 text-[11px] uppercase tracking-wide text-muted-foreground bg-muted/20">
-            {g.label} <span className="tabular-nums">({g.items.length})</span>
+            {g.atlassianLabel || t(categoryLabelKey(g.key))}{' '}
+            <span className="tabular-nums">({g.items.length})</span>
           </div>
           {g.items.map((it) => (
             <TaskRow
@@ -355,17 +366,18 @@ function TaskDrawer({ issueKey, onClose }) {
 }
 
 export function TaskDetailContent({ issueKey, detail }) {
+  const t = useT()
   if (detail.isLoading) {
     return (
       <div className="text-xs text-muted-foreground inline-flex items-center gap-2">
-        <Loader2 size={12} className="animate-spin" /> Loading…
+        <Loader2 size={12} className="animate-spin" /> {t('common.loading')}
       </div>
     )
   }
   if (detail.isError || !detail.data) {
     return (
       <div className="text-xs text-destructive">
-        Could not load issue details.
+        {t('tasks.detail.cantLoad')}
       </div>
     )
   }
@@ -421,17 +433,19 @@ export function TaskDetailContent({ issueKey, detail }) {
           Reporter read-only (Jira не позволяет менять). */}
       <ul className="space-y-1.5">
         <AssigneePicker issueKey={issueKey} person={d.assignee} />
-        <PersonRow role="Reporter" person={d.reporter} />
+        <PersonRow role={t('tasks.role.reporter')} person={d.reporter} />
       </ul>
 
       {/* Times + due — одной серой строкой внизу metadata */}
       <div className="text-[11px] text-muted-foreground">
-        Updated {formatRelative(d.updated)} · Created{' '}
-        {formatRelative(d.created)}
+        {t('tasks.detail.updated')} {formatRelative(d.updated)} ·{' '}
+        {t('tasks.detail.created')} {formatRelative(d.created)}
         {d.duedate && (
           <>
-            {' '}
-            · <span className="text-amber-400">Due {d.duedate}</span>
+            {' '}·{' '}
+            <span className="text-amber-400">
+              {t('tasks.detail.due', { date: d.duedate })}
+            </span>
           </>
         )}
       </div>
@@ -453,7 +467,7 @@ export function TaskDetailContent({ issueKey, detail }) {
       {d.description && (
         <section className="space-y-1.5">
           <h3 className="text-[11px] uppercase tracking-wide text-muted-foreground">
-            Description
+            {t('tasks.detail.description')}
           </h3>
           <div className="text-xs bg-muted/20 border border-border/40 rounded-md px-3 py-2.5 leading-relaxed">
             <AdfRenderer node={d.description} />
@@ -465,7 +479,7 @@ export function TaskDetailContent({ issueKey, detail }) {
         {d.comments.length > 0 && (
           <>
             <h3 className="text-[11px] uppercase tracking-wide text-muted-foreground">
-              Comments ({d.comments.length})
+              {t('tasks.detail.comments', { count: d.comments.length })}
             </h3>
             <ul className="space-y-3">
               {d.comments.map((c) => (
@@ -504,6 +518,7 @@ export function TaskDetailContent({ issueKey, detail }) {
  * задачей. Таск не теряется — он там же inline.
  */
 function ProjectLine({ project, issueKey }) {
+  const t = useT()
   const navigate = useNavigate()
   const { projects: bitbucketProjects } = useProjects()
   const candidate = parseSlugFromProjectName(project?.name)
@@ -517,7 +532,7 @@ function ProjectLine({ project, issueKey }) {
   }, [candidate, bitbucketProjects])
   const inner = (
     <>
-      in{' '}
+      {t('tasks.detail.in')}{' '}
       <code className="font-mono text-foreground/80">{project.key}</code>
       {' '}— {project.name}
     </>
@@ -529,7 +544,7 @@ function ProjectLine({ project, issueKey }) {
   return (
     <button
       onClick={() => navigate(target)}
-      title={`Open ${matched.slug} project drawer with this task expanded`}
+      title={t('projects.runningBar.openDrawer', { slug: matched.slug })}
       className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1 underline-offset-2 hover:underline text-left"
     >
       {inner}
@@ -569,6 +584,7 @@ function useClickOutside(callback) {
  * применяет его и закрывает popup; query'и invalidate'ятся в хуке.
  */
 function StatusPicker({ issueKey, category, label }) {
+  const t = useT()
   const [open, setOpen] = useState(false)
   const transitions = useJiraTransitions(issueKey, { enabled: open })
   const apply = useApplyJiraTransition(issueKey)
@@ -587,7 +603,7 @@ function StatusPicker({ issueKey, category, label }) {
         onClick={() => setOpen((v) => !v)}
         disabled={apply.isPending}
         className="inline-flex items-center gap-1 cursor-pointer disabled:opacity-60"
-        title="Change status"
+        title={t('tasks.statusPicker.tooltip')}
       >
         <StatusBadge category={category} label={label} />
         {apply.isPending ? (
@@ -603,28 +619,29 @@ function StatusPicker({ issueKey, category, label }) {
         <div className="absolute top-full left-0 mt-1 z-30 min-w-[200px] bg-popover border border-border rounded-md shadow-lg p-1">
           {transitions.isLoading ? (
             <div className="px-3 py-2 text-xs text-muted-foreground inline-flex items-center gap-2">
-              <Loader2 size={12} className="animate-spin" /> Loading…
+              <Loader2 size={12} className="animate-spin" />{' '}
+              {t('common.loading')}
             </div>
           ) : transitions.isError ? (
             <div className="px-3 py-2 text-xs text-destructive">
-              Could not load transitions.
+              {t('tasks.statusPicker.loadFailed')}
             </div>
           ) : !transitions.data || transitions.data.length === 0 ? (
             <div className="px-3 py-2 text-xs text-muted-foreground">
-              No transitions available.
+              {t('tasks.statusPicker.noTransitions')}
             </div>
           ) : (
-            transitions.data.map((t) => (
+            transitions.data.map((tr) => (
               <button
-                key={t.id}
-                onClick={() => onPick(t.id)}
+                key={tr.id}
+                onClick={() => onPick(tr.id)}
                 disabled={apply.isPending}
                 className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-accent flex items-center justify-between gap-2"
               >
-                <span>{t.name}</span>
-                {t.toStatus && t.toStatus !== t.name && (
+                <span>{tr.name}</span>
+                {tr.toStatus && tr.toStatus !== tr.name && (
                   <span className="text-[10px] text-muted-foreground">
-                    → {t.toStatus}
+                    → {tr.toStatus}
                   </span>
                 )}
               </button>
@@ -646,6 +663,7 @@ function StatusPicker({ issueKey, category, label }) {
  * открывает search-as-you-type. Кнопка "Unassign" — отвязать.
  */
 function AssigneePicker({ issueKey, person }) {
+  const t = useT()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   // Без query загружаем весь assignable-список этой задачи. Сервер
@@ -675,7 +693,7 @@ function AssigneePicker({ issueKey, person }) {
         onClick={() => setOpen((v) => !v)}
         disabled={setAssignee.isPending}
         className="flex items-center gap-2.5 w-full text-left rounded -mx-1 px-1 py-0.5 hover:bg-accent/40 disabled:opacity-60"
-        title="Change assignee"
+        title={t('tasks.assigneePicker.tooltip')}
       >
         <Avatar name={person?.displayName || null} size={24} />
         <div className="text-xs leading-tight flex-1">
@@ -684,11 +702,15 @@ function AssigneePicker({ issueKey, person }) {
               <strong className="text-foreground/90">
                 {person.displayName}
               </strong>
-              <span className="text-muted-foreground"> · Assignee</span>
+              <span className="text-muted-foreground">
+                {' '}· {t('tasks.role.assignee')}
+              </span>
             </>
           ) : (
             <span className="text-muted-foreground">
-              Assignee — unassigned
+              {t('tasks.role.unassigned', {
+                role: t('tasks.role.assignee')
+              })}
             </span>
           )}
         </div>
@@ -707,24 +729,24 @@ function AssigneePicker({ issueKey, person }) {
             autoFocus
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Filter by name or email…"
+            placeholder={t('tasks.assigneePicker.placeholder')}
             className="h-8 text-xs"
           />
           <div className="max-h-64 overflow-auto">
             {assignable.isLoading ? (
               <div className="px-2 py-1.5 text-[11px] text-muted-foreground inline-flex items-center gap-2">
-                <Loader2 size={11} className="animate-spin" /> Loading
-                assignable users…
+                <Loader2 size={11} className="animate-spin" />{' '}
+                {t('tasks.assigneePicker.loading')}
               </div>
             ) : assignable.isError ? (
               <div className="px-2 py-1.5 text-[11px] text-destructive">
-                Could not load users.
+                {t('tasks.assigneePicker.searchFailed')}
               </div>
             ) : !assignable.data || assignable.data.length === 0 ? (
               <div className="px-2 py-1.5 text-[11px] text-muted-foreground">
                 {query.trim()
-                  ? 'No matches.'
-                  : 'No assignable users for this issue.'}
+                  ? t('tasks.assigneePicker.noMatches')
+                  : t('tasks.assigneePicker.noAssignable')}
               </div>
             ) : (
               assignable.data.map((u) => (
@@ -756,7 +778,7 @@ function AssigneePicker({ issueKey, person }) {
               disabled={setAssignee.isPending}
               className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-destructive/10 text-destructive border-t border-border/50 mt-1 pt-2"
             >
-              Unassign
+              {t('tasks.assigneePicker.unassign')}
             </button>
           )}
           {setAssignee.error && (
@@ -774,6 +796,7 @@ function AssigneePicker({ issueKey, person }) {
  * Форма добавления комментария. Cmd/Ctrl+Enter отправляет.
  */
 function CommentForm({ issueKey }) {
+  const t = useT()
   const [text, setText] = useState('')
   const addComment = useAddJiraComment(issueKey)
   const trimmed = text.trim()
@@ -797,7 +820,7 @@ function CommentForm({ issueKey }) {
             send()
           }
         }}
-        placeholder="Add a comment… (Ctrl+Enter to send)"
+        placeholder={t('tasks.commentForm.placeholder')}
         rows={3}
         className="w-full bg-background border border-input rounded-md px-3 py-2 text-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-y"
       />
@@ -818,7 +841,7 @@ function CommentForm({ issueKey }) {
           ) : (
             <Send size={12} />
           )}
-          Send
+          {t('common.send')}
         </Button>
       </div>
     </div>
@@ -832,6 +855,7 @@ function CommentForm({ issueKey }) {
  * выстраивались в одну колонку.
  */
 function PersonRow({ role, person }) {
+  const t = useT()
   return (
     <li className="flex items-center gap-2.5">
       <Avatar name={person?.displayName || null} size={24} />
@@ -844,7 +868,9 @@ function PersonRow({ role, person }) {
             <span className="text-muted-foreground"> · {role}</span>
           </>
         ) : (
-          <span className="text-muted-foreground">{role} — unassigned</span>
+          <span className="text-muted-foreground">
+            {t('tasks.role.unassigned', { role })}
+          </span>
         )}
       </div>
     </li>
@@ -901,6 +927,7 @@ export function Avatar({ name, size = 24 }) {
 }
 
 export function StatusBadge({ category, label }) {
+  const t = useT()
   const cfg = statusBadgeConfig(category)
   return (
     <span
@@ -909,7 +936,7 @@ export function StatusBadge({ category, label }) {
         cfg.cls
       )}
     >
-      {label || cfg.fallback}
+      {label || t(cfg.fallbackKey)}
     </span>
   )
 }
@@ -917,26 +944,30 @@ export function StatusBadge({ category, label }) {
 function statusBadgeConfig(category) {
   switch (category) {
     case 'new':
-      return { fallback: 'To Do', cls: 'bg-zinc-700/40 text-zinc-300' }
+      return {
+        fallbackKey: 'tasks.status.toDo',
+        cls: 'bg-zinc-700/40 text-zinc-300'
+      }
     case 'indeterminate':
       return {
-        fallback: 'In Progress',
+        fallbackKey: 'tasks.status.inProgress',
         cls: 'bg-sky-500/20 text-sky-300'
       }
     case 'done':
       return {
-        fallback: 'Done',
+        fallbackKey: 'tasks.status.done',
         cls: 'bg-emerald-500/20 text-emerald-300'
       }
     default:
       return {
-        fallback: 'Status',
+        fallbackKey: 'tasks.status.fallback',
         cls: 'bg-muted/50 text-muted-foreground'
       }
   }
 }
 
 export function OpenInJiraLink({ issueKey, className }) {
+  const t = useT()
   return (
     <button
       onClick={async () => {
@@ -952,7 +983,7 @@ export function OpenInJiraLink({ issueKey, className }) {
         className
       )}
     >
-      Open in Jira <ExternalLink size={10} />
+      {t('tasks.detail.openInJira')} <ExternalLink size={10} />
     </button>
   )
 }
@@ -971,20 +1002,21 @@ function ListSkeleton() {
 }
 
 function ErrorState({ error }) {
-  const msg = error?.message || String(error || 'Unknown error')
+  const t = useT()
+  const msg = error?.message || String(error || t('common.unknown'))
   const isConfig = /credentials|host|configured/i.test(msg)
   return (
     <div className="h-full flex items-center justify-center p-8">
       <div className="max-w-md text-center space-y-3">
         <AlertCircle className="mx-auto text-destructive" size={32} />
-        <h3 className="font-medium">Couldn't load tasks</h3>
+        <h3 className="font-medium">{t('tasks.error.title')}</h3>
         <p className="text-sm text-muted-foreground">{msg}</p>
         {isConfig && (
           <Link
             to="/settings"
             className="inline-flex items-center gap-2 text-sm text-primary underline-offset-4 hover:underline"
           >
-            <SettingsIcon size={14} /> Open Jira settings
+            <SettingsIcon size={14} /> {t('tasks.error.openJiraSettings')}
           </Link>
         )}
       </div>
@@ -1011,8 +1043,11 @@ function EmptyState({ title, message, cta }) {
  * элемент с tooltip какого slug'а упомянуто.
  */
 export function SlugMismatchBadge({ mentioned }) {
+  const t = useT()
   if (!mentioned || mentioned.length === 0) return null
-  const tooltip = `Mentions ${mentioned.join(', ')} — different from the Jira project this task lives in`
+  const tooltip = t('tasks.mismatch.tooltip', {
+    slugs: mentioned.join(', ')
+  })
   return (
     <span
       title={tooltip}
