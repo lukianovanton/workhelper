@@ -401,10 +401,16 @@ export default function Settings() {
                   <CardHeader>
                     <CardTitle>Jira</CardTitle>
                     <CardDescription>
-                      Same Atlassian account as Bitbucket — email is
-                      reused from the section above. Jira needs its own
-                      API token though: Atlassian issues one token per
-                      product.
+                      Same Atlassian account as Bitbucket. Jira needs
+                      its own API token. <strong>Use the classic API
+                      token</strong>, not "API token with scopes" —
+                      scoped tokens have a known Atlassian bug where
+                      JQL <code>currentUser()</code> returns nothing
+                      under Bearer auth, leaving "My Tasks" empty.
+                      Classic tokens use Basic auth and just work.
+                      Create at id.atlassian.com → Security → API
+                      tokens → <strong>Create API token</strong> (the
+                      one above "Create API token with scopes").
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
@@ -444,11 +450,13 @@ export default function Settings() {
                       </Button>
                       <JiraTestResult result={jiraTestResult} />
                       <p className="text-[11px] text-muted-foreground">
-                        Required scopes: <code>read:jira-work</code>,{' '}
-                        <code>read:jira-user</code>,{' '}
-                        <code>read:me</code>. Test reads stored
-                        credentials — Save first if you've changed
-                        fields above.
+                        Test reads stored credentials — Save first if
+                        you've changed fields above. If you're using a
+                        scoped token instead of a classic one, the
+                        required Jira scopes are{' '}
+                        <code>read:jira-work</code> +{' '}
+                        <code>read:jira-user</code> — but be aware of
+                        the currentUser() bug noted above.
                       </p>
                     </div>
                   </CardContent>
