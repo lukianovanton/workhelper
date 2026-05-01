@@ -89,11 +89,15 @@
 
   "projects.row.pin": "Pin to top",
   "projects.row.unpin": "Unpin",
+  "projects.row.select": "Select",
+  "projects.row.unselect": "Unselect",
   "projects.row.taskCount": "{count} open Jira tasks assigned to you",
   "projects.row.openInBrowser": "Open {url}",
 
   "projects.statusDots.cloned": "Cloned at {path}",
   "projects.statusDots.notCloned": "Not cloned",
+  "projects.statusDots.clonedNoDb": "Cloned, database {name} not found",
+  "projects.statusDots.clonedWithDb": "Cloned, database {name} exists",
   "projects.statusDots.dbExists": "Database {name} exists",
   "projects.statusDots.dbNotFound": "Database {name} not found",
   "projects.statusDots.dirty": "Dirty (visible in drawer only)",
@@ -101,6 +105,7 @@
   "projects.statusDots.notRunning": "Not running",
 
   "projects.pipeline.hoverToLoad": "Hover to load last pipeline",
+  "projects.pipeline.loading": "Loading last pipeline…",
   "projects.pipeline.noPipelines": "No pipelines",
   "projects.pipeline.lastPipeline": "Last pipeline: {state}",
 

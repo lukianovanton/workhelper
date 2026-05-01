@@ -471,7 +471,7 @@ export default function ProjectsList() {
         </div>
       </aside>
 
-      <main className="flex-1 flex flex-col overflow-hidden">
+      <main className="flex-1 flex flex-col overflow-hidden relative">
         <header className="px-6 py-4 border-b border-border flex items-center justify-between gap-4">
           <div className="flex-1 max-w-md relative">
             <Search
@@ -503,36 +503,6 @@ export default function ProjectsList() {
           </div>
         </header>
 
-        {selected.size > 0 && (
-          <div className="px-6 py-2 border-b border-amber-500/30 bg-amber-500/10 text-amber-300 text-xs flex items-center gap-3">
-            <span>{t('projects.selected', { count: selected.size })}</span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onBulkPull}
-              disabled={bulkBusy}
-            >
-              <GitPullRequest /> {t('projects.bulk.pull')}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onBulkStop}
-              disabled={bulkBusy}
-            >
-              <Square /> {t('projects.bulk.stop')}
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={clearSelected}
-              className="ml-auto"
-            >
-              <XSquare /> {t('common.clear')}
-            </Button>
-          </div>
-        )}
-
         {warnings.length > 0 && <WarningBanner warnings={warnings} />}
 
         {hasColumnFilters && (
@@ -562,7 +532,12 @@ export default function ProjectsList() {
           }}
         />
 
-        <div className="flex-1 overflow-auto">
+        <div
+          className={cn(
+            'flex-1 overflow-auto transition-[padding] duration-200',
+            selected.size > 0 && 'pb-20'
+          )}
+        >
           {isLoading && <ListLoading />}
           {error && <ListError error={error} />}
           {!isLoading && !error && projects && (
@@ -586,9 +561,70 @@ export default function ProjectsList() {
             />
           )}
         </div>
+
+        <FloatingBulkActions
+          count={selected.size}
+          onPull={onBulkPull}
+          onStop={onBulkStop}
+          onClear={clearSelected}
+          busy={bulkBusy}
+        />
       </main>
 
       <Outlet />
+    </div>
+  )
+}
+
+/**
+ * Плавающая панель bulk-действий. Показывается над таблицей по центру
+ * нижнего края main-секции, не отжимая контент вниз — это снимает
+ * сбивающее с толку «строка под выделением сдвинулась». Скрывается
+ * без layout shift через opacity + translate-y, без mount/unmount,
+ * чтобы переход был плавным.
+ */
+function FloatingBulkActions({ count, onPull, onStop, onClear, busy }) {
+  const t = useT()
+  const visible = count > 0
+  return (
+    <div
+      aria-hidden={!visible}
+      className={cn(
+        'pointer-events-none absolute left-1/2 -translate-x-1/2 z-30 transition-all duration-200',
+        visible
+          ? 'bottom-4 opacity-100 translate-y-0'
+          : 'bottom-0 opacity-0 translate-y-2'
+      )}
+    >
+      <div
+        className={cn(
+          'flex items-center gap-2 rounded-lg border border-amber-500/40 bg-popover/95 backdrop-blur shadow-lg px-3 py-2 text-xs',
+          visible && 'pointer-events-auto'
+        )}
+      >
+        <span className="text-amber-300 px-1">
+          {t('projects.selected', { count })}
+        </span>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onPull}
+          disabled={busy}
+        >
+          <GitPullRequest /> {t('projects.bulk.pull')}
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onStop}
+          disabled={busy}
+        >
+          <Square /> {t('projects.bulk.stop')}
+        </Button>
+        <Button variant="ghost" size="sm" onClick={onClear}>
+          <XSquare /> {t('common.clear')}
+        </Button>
+      </div>
     </div>
   )
 }
@@ -786,61 +822,85 @@ function ProjectRow({
   taskCount
 }) {
   const t = useT()
-  const [hovered, setHovered] = useState(false)
-  const [hoverDelayed, setHoverDelayed] = useState(false)
+  const trRef = useRef(null)
+  // Гейтим pipeline-запрос на момент попадания строки во вьюпорт.
+  // Раньше было «грузим только при наведении 500мс», из-за чего dot
+  // у видимых строк был серым — данные не подтягивались сами. Теперь
+  // ровно когда строка стала видимой — летит запрос, один раз.
+  const [seen, setSeen] = useState(favorite)
   useEffect(() => {
-    if (!hovered) {
-      setHoverDelayed(false)
+    if (seen) return
+    const node = trRef.current
+    if (!node || typeof IntersectionObserver === 'undefined') {
+      setSeen(true)
       return
     }
-    const timer = setTimeout(() => setHoverDelayed(true), 500)
-    return () => clearTimeout(timer)
-  }, [hovered])
-  const enabled = favorite || hoverDelayed
+    const obs = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) {
+        setSeen(true)
+        obs.disconnect()
+      }
+    })
+    obs.observe(node)
+    return () => obs.disconnect()
+  }, [seen])
   const { data: pipelines } = usePipelines(p.slug, {
     pagelen: 1,
-    enabled
+    enabled: seen
   })
   const lastPipeline = pipelines?.[0] || null
 
   return (
     <tr
+      ref={trRef}
       onClick={onOpen}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
       className={cn(
         'border-b border-border/60 cursor-pointer hover:bg-accent/40',
         openSlug === p.slug && 'bg-accent/60'
       )}
     >
-      <td className={cn(cellPad, 'text-center')}>
-        <Checkbox
-          checked={selected}
-          onCheckedChange={onToggleSelected}
-          onClick={(e) => e.stopPropagation()}
+      <td
+        className={cn(cellPad, 'text-center cursor-pointer')}
+        onClick={(e) => {
+          e.stopPropagation()
+          onToggleSelected()
+        }}
+        title={
+          selected ? t('projects.row.unselect') : t('projects.row.select')
+        }
+      >
+        {/* pointer-events-none: вся td уже клик-зона, не дублируем
+            обработчик от Radix Checkbox */}
+        <div className="flex items-center justify-center pointer-events-none">
+          <Checkbox checked={selected} tabIndex={-1} aria-hidden />
+        </div>
+      </td>
+      <td
+        className={cn(
+          cellPad,
+          'text-center cursor-pointer transition-colors',
+          favorite
+            ? 'text-amber-400 hover:text-amber-300'
+            : 'text-muted-foreground/30 hover:text-amber-400'
+        )}
+        onClick={(e) => {
+          e.stopPropagation()
+          onToggleFavorite()
+        }}
+        title={favorite ? t('projects.row.unpin') : t('projects.row.pin')}
+      >
+        <Star
+          size={14}
+          className={cn('inline', favorite && 'fill-current')}
         />
       </td>
-      <td className={cn(cellPad, 'text-center')}>
-        <button
-          onClick={(e) => {
-            e.stopPropagation()
-            onToggleFavorite()
-          }}
-          title={
-            favorite ? t('projects.row.unpin') : t('projects.row.pin')
-          }
-          className={cn(
-            'transition-colors',
-            favorite
-              ? 'text-amber-400 hover:text-amber-300'
-              : 'text-muted-foreground/30 hover:text-amber-400'
-          )}
-        >
-          <Star size={14} className={favorite ? 'fill-current' : ''} />
-        </button>
-      </td>
       <td className={cellPad}>
-        <StatusDots project={p} runtime={runtime} />
+        <StatusDots
+          project={p}
+          runtime={runtime}
+          lastPipeline={lastPipeline}
+          pipelineLoaded={seen}
+        />
       </td>
       <td className={cn(cellPad, 'font-mono text-xs')}>
         <div className="inline-flex items-center gap-2">
@@ -878,12 +938,7 @@ function ProjectRow({
         {formatBytes(p.db.sizeBytes)}
       </td>
       <td className={cn(cellPad, 'text-xs text-muted-foreground')}>
-        <div className="flex items-center gap-2">
-          <span className="flex-1">
-            {formatRelative(p.bitbucket.updatedOn)}
-          </span>
-          <PipelineCell pipeline={lastPipeline} enabled={enabled} />
-        </div>
+        {formatRelative(p.bitbucket.updatedOn)}
       </td>
     </tr>
   )
@@ -891,16 +946,17 @@ function ProjectRow({
 
 /**
  * Точка статуса последнего пайплайна с tooltip. Если запрос ещё
- * не разрешён (enabled=false до hover/star) — рендерим placeholder
- * dim-кружок, чтобы не было визуальных скачков по ширине строки.
+ * не выполнен (строка ещё не попала во вьюпорт / не загрузилась) —
+ * рендерим dim-кружок, чтобы не было визуальных скачков по ширине.
+ * Когда данные пришли — это PipelineStateBadge с реальным цветом.
  */
-function PipelineCell({ pipeline, enabled }) {
+function PipelineCell({ pipeline, loaded }) {
   const t = useT()
-  if (!enabled) {
+  if (!loaded) {
     return (
       <span
-        title={t('projects.pipeline.hoverToLoad')}
-        className="inline-block w-2 h-2 rounded-full bg-zinc-800"
+        title={t('projects.pipeline.loading')}
+        className="inline-block w-2 h-2 rounded-full bg-muted-foreground/15"
       />
     )
   }
@@ -908,7 +964,7 @@ function PipelineCell({ pipeline, enabled }) {
     return (
       <span
         title={t('projects.pipeline.noPipelines')}
-        className="inline-block w-2 h-2 rounded-full bg-zinc-800/50"
+        className="inline-block w-2 h-2 rounded-full bg-muted-foreground/25"
       />
     )
   }
@@ -1285,58 +1341,63 @@ function SortHeader({ id, sort, onSort, children, className, align = 'left' }) {
   )
 }
 
-function StatusDots({ project, runtime }) {
+/**
+ * Компактный индикатор статуса проекта.
+ *
+ * Раньше было 4 кружка, всегда видимые: cloned, db, dirty, running.
+ * Большая часть из них почти всегда серые, что создаёт визуальный
+ * шум и впечатление «всё мёртвое». Теперь:
+ *
+ *   - **Install**: один tri-state кружок, кодирующий cloned + db
+ *     одновременно — серый (не склонирован), янтарный (склонирован,
+ *     БД нет), зелёный (склонирован + БД есть).
+ *   - **Running**: показывается только когда проект запущен
+ *     (sky pulse + ссылка на browser). В покое не занимает места.
+ *   - **Pipeline**: всегда виден, цвет реальный (через PipelineCell).
+ *     Подгрузка ленивая — IntersectionObserver, см. ProjectRow.
+ *
+ * «Dirty»-кружок (uncommitted changes) убран до тех пор, пока
+ * git-статус не подтягивается в общем enrichment'е — раньше он был
+ * захардкожен в false и просто всегда оставался серым.
+ */
+function StatusDots({ project, runtime, lastPipeline, pipelineLoaded }) {
   const t = useT()
   const running = !!runtime
-  const dots = [
-    {
-      on: project.local.cloned,
-      onColor: 'bg-emerald-500',
-      offColor: 'bg-muted-foreground/25',
-      title: project.local.cloned
-        ? t('projects.statusDots.cloned', { path: project.local.path })
-        : t('projects.statusDots.notCloned')
-    },
-    {
-      on: project.db.exists,
-      onColor: 'bg-emerald-500',
-      offColor: 'bg-muted-foreground/25',
-      title: project.db.exists
-        ? t('projects.statusDots.dbExists', { name: project.db.name })
-        : t('projects.statusDots.dbNotFound', { name: project.db.name })
-    },
-    {
-      on: false,
-      onColor: 'bg-amber-500',
-      offColor: 'bg-muted-foreground/15',
-      title: t('projects.statusDots.dirty')
-    },
-    {
-      on: running,
-      onColor: 'bg-sky-500',
-      offColor: 'bg-muted-foreground/15',
-      pulse: running,
-      title: running
-        ? t('projects.statusDots.running', {
+  const cloned = project.local.cloned
+  const hasDb = project.db.exists
+
+  let installColor, installTitle
+  if (!cloned) {
+    installColor = 'bg-muted-foreground/25'
+    installTitle = t('projects.statusDots.notCloned')
+  } else if (!hasDb) {
+    installColor = 'bg-amber-500'
+    installTitle = t('projects.statusDots.clonedNoDb', {
+      name: project.db.name
+    })
+  } else {
+    installColor = 'bg-emerald-500'
+    installTitle = t('projects.statusDots.clonedWithDb', {
+      name: project.db.name
+    })
+  }
+
+  return (
+    <div className="flex gap-1.5 items-center">
+      <span
+        title={installTitle}
+        className={cn('inline-block w-2 h-2 rounded-full', installColor)}
+      />
+      <PipelineCell pipeline={lastPipeline} loaded={pipelineLoaded} />
+      {running && (
+        <span
+          title={t('projects.statusDots.running', {
             port: runtime?.port ?? '?',
             pid: runtime?.pid
-          })
-        : t('projects.statusDots.notRunning')
-    }
-  ]
-  return (
-    <div className="flex gap-1 items-center">
-      {dots.map((d, i) => (
-        <span
-          key={i}
-          title={d.title}
-          className={cn(
-            'inline-block w-2 h-2 rounded-full',
-            d.on ? d.onColor : d.offColor,
-            d.pulse && 'animate-pulse'
-          )}
+          })}
+          className="inline-block w-2 h-2 rounded-full bg-sky-500 animate-pulse"
         />
-      ))}
+      )}
       {running && runtime?.url && (
         <button
           onClick={(e) => {
@@ -1344,7 +1405,7 @@ function StatusDots({ project, runtime }) {
             window.open(runtime.url, '_blank')
           }}
           title={t('projects.row.openInBrowser', { url: runtime.url })}
-          className="ml-1 text-muted-foreground hover:text-sky-500 transition-colors"
+          className="ml-0.5 text-muted-foreground hover:text-sky-500 transition-colors"
         >
           <ExternalLink size={11} />
         </button>

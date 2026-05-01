@@ -89,11 +89,15 @@
 
   "projects.row.pin": "Закрепить наверху",
   "projects.row.unpin": "Открепить",
+  "projects.row.select": "Выбрать",
+  "projects.row.unselect": "Снять выбор",
   "projects.row.taskCount": "Назначено на тебя задач в Jira: {count}",
   "projects.row.openInBrowser": "Открыть {url}",
 
   "projects.statusDots.cloned": "Склонирован в {path}",
   "projects.statusDots.notCloned": "Не склонирован",
+  "projects.statusDots.clonedNoDb": "Склонирован, БД {name} не найдена",
+  "projects.statusDots.clonedWithDb": "Склонирован, БД {name} существует",
   "projects.statusDots.dbExists": "База данных {name} существует",
   "projects.statusDots.dbNotFound": "База данных {name} не найдена",
   "projects.statusDots.dirty": "Несохранённые изменения (видны в drawer'е)",
@@ -101,6 +105,7 @@
   "projects.statusDots.notRunning": "Не запущен",
 
   "projects.pipeline.hoverToLoad": "Наведи курсор чтобы загрузить последний pipeline",
+  "projects.pipeline.loading": "Загрузка последнего pipeline…",
   "projects.pipeline.noPipelines": "Нет pipeline'ов",
   "projects.pipeline.lastPipeline": "Последний pipeline: {state}",
 
