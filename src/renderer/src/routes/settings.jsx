@@ -17,7 +17,9 @@ import {
   Database,
   Code2,
   Users,
-  Palette
+  Palette,
+  ListTodo,
+  RefreshCw
 } from 'lucide-react'
 import { usePrefsStore } from '@/store/prefs.store.js'
 import { cn } from '@/lib/utils'
@@ -39,6 +41,7 @@ const SECTION_STORAGE_KEY = 'settings-active-section'
 
 const SECTIONS = /** @type {const} */ ([
   { id: 'bitbucket', label: 'Bitbucket', icon: Cloud },
+  { id: 'jira', label: 'Jira', icon: ListTodo },
   { id: 'paths', label: 'Paths', icon: Folder },
   { id: 'database', label: 'Database', icon: Database },
   { id: 'dotnet', label: '.NET', icon: Code2 },
@@ -61,10 +64,12 @@ export default function Settings() {
   const [config, setConfig] = useState(null)
   const [secretsStatus, setSecretsStatus] = useState({
     bitbucketApiToken: false,
-    dbPassword: false
+    dbPassword: false,
+    jiraApiToken: false
   })
   const [bitbucketApiToken, setBitbucketApiToken] = useState('')
   const [dbPassword, setDbPassword] = useState('')
+  const [jiraApiToken, setJiraApiToken] = useState('')
   const [vscodeDetected, setVscodeDetected] = useState(null)
   const [mysqlDetected, setMysqlDetected] = useState(null)
   const [saving, setSaving] = useState(false)
@@ -73,6 +78,8 @@ export default function Settings() {
   const [bitbucketTestResult, setBitbucketTestResult] = useState(null)
   const [testingDb, setTestingDb] = useState(false)
   const [dbTestResult, setDbTestResult] = useState(null)
+  const [testingJira, setTestingJira] = useState(false)
+  const [jiraTestResult, setJiraTestResult] = useState(null)
   const [activeSection, setActiveSection] = useState(loadActiveSection)
   useEffect(() => {
     try {
@@ -91,6 +98,7 @@ export default function Settings() {
     setSecretsStatus(s)
     setBitbucketApiToken('')
     setDbPassword('')
+    setJiraApiToken('')
   }, [])
 
   useEffect(() => {
@@ -123,6 +131,7 @@ export default function Settings() {
     }))
     if (section === 'bitbucket') setBitbucketTestResult(null)
     if (section === 'database') setDbTestResult(null)
+    if (section === 'jira') setJiraTestResult(null)
   }
 
   const onTestBitbucket = async () => {
@@ -155,6 +164,23 @@ export default function Settings() {
     }
   }
 
+  const onTestJira = async () => {
+    setTestingJira(true)
+    setJiraTestResult(null)
+    try {
+      const result = await api.jira.testConnection()
+      setJiraTestResult(result)
+    } catch (e) {
+      setJiraTestResult({
+        ok: false,
+        stage: 'error',
+        message: e?.message || String(e)
+      })
+    } finally {
+      setTestingJira(false)
+    }
+  }
+
   const onSave = async () => {
     setSaving(true)
     setSaveStatus(null)
@@ -165,6 +191,9 @@ export default function Settings() {
       }
       if (dbPassword) {
         await api.config.setSecret('dbPassword', dbPassword)
+      }
+      if (jiraApiToken) {
+        await api.config.setSecret('jiraApiToken', jiraApiToken)
       }
       await loadAll()
       setSaveStatus({ ok: true, message: 'Saved' })
@@ -316,6 +345,80 @@ export default function Settings() {
                     <p className="text-xs text-muted-foreground">
                       Test reads stored credentials — Save first if you've
                       changed fields above.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {activeSection === 'jira' && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Jira</CardTitle>
+                  <CardDescription>
+                    Atlassian Cloud REST API. Atlassian tokens are
+                    per-product — Bitbucket and Jira need separate tokens
+                    even on the same account. Required scopes:{' '}
+                    <code>read:jira-work</code>,{' '}
+                    <code>read:jira-user</code>, <code>read:me</code>.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <Field
+                    label="Host"
+                    hint="Jira Cloud URL without trailing slash (e.g. https://yourcompany.atlassian.net)"
+                  >
+                    <Input
+                      value={config.jira?.host || ''}
+                      onChange={(e) =>
+                        updatePath('jira', 'host')(e.target.value)
+                      }
+                      placeholder="https://yourcompany.atlassian.net"
+                    />
+                  </Field>
+                  <Field
+                    label="Email"
+                    hint={
+                      'Atlassian email. Leave blank to reuse the Bitbucket username — same account in most setups.'
+                    }
+                  >
+                    <Input
+                      type="email"
+                      value={config.jira?.email || ''}
+                      onChange={(e) =>
+                        updatePath('jira', 'email')(e.target.value)
+                      }
+                      placeholder={
+                        config.bitbucket?.username || 'you@example.com'
+                      }
+                    />
+                  </Field>
+                  <SecretField
+                    label="API token"
+                    status={secretsStatus.jiraApiToken}
+                    value={jiraApiToken}
+                    onChange={setJiraApiToken}
+                    onClear={() => {
+                      onClearSecret('jiraApiToken')
+                      setJiraTestResult(null)
+                    }}
+                  />
+                  <div className="pt-2 space-y-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={onTestJira}
+                      disabled={testingJira}
+                    >
+                      {testingJira && (
+                        <Loader2 className="animate-spin" />
+                      )}
+                      Test connection
+                    </Button>
+                    <JiraTestResult result={jiraTestResult} />
+                    <p className="text-xs text-muted-foreground">
+                      Test reads stored credentials — Save first if
+                      you've changed fields above.
                     </p>
                   </div>
                 </CardContent>
@@ -703,6 +806,44 @@ function DbTestResult({ result }) {
         <div>{result.message}</div>
         {result.code && (
           <div className="text-muted-foreground mt-0.5">code: {result.code}</div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function JiraTestResult({ result }) {
+  if (!result) return null
+  if (result.ok) {
+    return (
+      <div className="flex items-start gap-2 text-xs text-emerald-500">
+        <CheckCircle2 size={14} className="mt-0.5 shrink-0" />
+        <div>
+          <div>
+            Authenticated as{' '}
+            <strong>{result.user.displayName}</strong>
+          </div>
+          <div className="text-muted-foreground mt-0.5">
+            Host: <span className="font-mono">{result.host}</span>{' '}
+            — projects readable.
+          </div>
+        </div>
+      </div>
+    )
+  }
+  const stageColor =
+    result.stage === 'config' || result.stage === 'host'
+      ? 'text-amber-500'
+      : 'text-destructive'
+  return (
+    <div className={`flex items-start gap-2 text-xs ${stageColor}`}>
+      <XCircle size={14} className="mt-0.5 shrink-0" />
+      <div>
+        <div>{result.message}</div>
+        {result.detail && (
+          <div className="text-muted-foreground mt-0.5">
+            {result.detail}
+          </div>
         )}
       </div>
     </div>
