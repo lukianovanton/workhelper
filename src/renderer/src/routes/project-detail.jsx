@@ -730,7 +730,7 @@ function DrawerTabs({ active, onChange }) {
     { id: 'pipelines', label: 'Pipelines', icon: Workflow }
   ]
   return (
-    <div className="flex items-center px-4 border-b border-border bg-background/60">
+    <div className="flex items-center px-3 border-b border-border bg-background/60">
       {tabs.map((t) => {
         const Icon = t.icon
         const on = active === t.id
@@ -902,26 +902,22 @@ function CommitRow({ slug, commit, expanded, onToggle }) {
     <div>
       <button
         onClick={onToggle}
-        className="w-full text-left px-6 py-2.5 flex items-start gap-2 hover:bg-accent/40 transition-colors"
+        className="w-full text-left px-6 py-2.5 flex items-center gap-3 hover:bg-accent/40 transition-colors"
       >
-        <Caret
-          size={14}
-          className="mt-0.5 shrink-0 text-muted-foreground"
-        />
-        <code className="text-[10px] font-mono mt-0.5 shrink-0 text-muted-foreground">
+        <Caret size={14} className="shrink-0 text-muted-foreground" />
+        <code className="text-[10px] font-mono shrink-0 text-muted-foreground">
           {commit.hash.slice(0, 7)}
         </code>
-        <div className="flex-1 min-w-0">
-          <div className="text-sm truncate">{firstLine}</div>
-          <div className="text-[11px] text-muted-foreground mt-0.5 flex items-center gap-2 flex-wrap">
-            <span>{commit.author}</span>
-            <span>·</span>
-            <span>{formatRelative(commit.date)}</span>
-          </div>
-        </div>
+        <span className="text-sm flex-1 min-w-0 truncate">{firstLine}</span>
+        <span className="text-[11px] text-muted-foreground shrink-0 truncate max-w-[10rem]">
+          {commit.author}
+        </span>
+        <span className="text-[11px] text-muted-foreground shrink-0">
+          {formatRelative(commit.date)}
+        </span>
       </button>
       {expanded && (
-        <div className="px-6 pb-4 pl-[3.25rem] text-sm space-y-3 bg-muted/20">
+        <div className="px-6 pb-4 pl-[2.25rem] text-sm space-y-3 bg-muted/20">
           <CommitDetailContent
             slug={slug}
             commit={commit}
@@ -954,11 +950,20 @@ function CommitDetailContent({ slug, commit, detail }) {
   }
   const d = detail.data
   const ds = d.diffstat
+  // Первая строка message уже показана в строке-заголовке — повторно
+  // её не рендерим. Если у коммита есть body (всё что после первого
+  // \n), показываем только body — он несёт реальную дополнительную
+  // информацию. У однострочных коммитов pre-блок просто не появляется.
+  const body = (commit.message || '')
+    .split('\n')
+    .slice(1)
+    .join('\n')
+    .trim()
   return (
     <>
-      {commit.message && commit.message.trim() && (
+      {body && (
         <pre className="text-xs whitespace-pre-wrap font-sans bg-background/60 border border-border/40 rounded px-3 py-2">
-          {commit.message.trim()}
+          {body}
         </pre>
       )}
       {ds && ds.filesChanged > 0 ? (
