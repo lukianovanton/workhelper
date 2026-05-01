@@ -41,12 +41,13 @@ function JiraSetupGuideEn() {
           .
         </p>
         <p>
-          As with Bitbucket,{' '}
+          For Jira,{' '}
           <strong className="text-foreground">
             click "Create API token"
           </strong>
-          {' '}— the one <em>without</em> "with scopes". Scoped Jira
-          tokens have a known Atlassian bug where{' '}
+          {' '}— the one <em>without</em> "with scopes". (For Bitbucket
+          we picked the scoped one; for Jira it's the opposite.)
+          Scoped Jira tokens have a known Atlassian bug where{' '}
           <code>currentUser()</code> in JQL doesn't resolve under
           Bearer auth, which makes "My Tasks" look empty. Classic
           tokens use Basic auth, JQL works, everything works.
@@ -221,11 +222,12 @@ function JiraSetupGuideRu() {
           .
         </p>
         <p>
-          Как и для Bitbucket,{' '}
+          Для Jira{' '}
           <strong className="text-foreground">
             нажмите «Create API token»
           </strong>
-          {' '}— ту, что <em>без</em> «with scopes». У scoped-токенов Jira
+          {' '}— ту, что <em>без</em> «with scopes». (Для Bitbucket мы
+          брали scoped; для Jira ровно наоборот.) У scoped-токенов Jira
           есть известный баг Atlassian: <code>currentUser()</code> в JQL
           не резолвится при Bearer-авторизации, и «My Tasks» оказывается
           пустым. Классические токены работают через Basic auth, JQL

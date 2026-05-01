@@ -41,14 +41,36 @@ function BitbucketSetupGuideEn() {
         <p>
           On that page you'll see <em>two</em> create-buttons.{' '}
           <strong className="text-foreground">
-            Click "Create API token"
-          </strong>{' '}
-          — the one <em>without</em> "with scopes". Classic tokens have
-          full account access and just work; scoped tokens have a few
-          Atlassian quirks (especially in Jira) we'd rather avoid.
+            Click "Create API token with scopes"
+          </strong>
+          {' '}— for Bitbucket we want a scoped token so the app gets
+          exactly the permissions it needs. (Jira is the opposite —
+          there a classic token works better, see the Jira guide.)
         </p>
         <ul className="list-disc pl-5 space-y-1">
-          <li>Give the token a name like "WorkHelper"</li>
+          <li>Name it something like "WorkHelper Bitbucket"</li>
+          <li>
+            <strong className="text-foreground">App</strong>: pick{' '}
+            <strong className="text-foreground">Bitbucket</strong>
+          </li>
+          <li>
+            <strong className="text-foreground">Scopes</strong> — tick:
+            <ul className="list-disc pl-5 mt-1 space-y-0.5">
+              <li>
+                <strong className="text-foreground">Read</strong>:{' '}
+                <code>read:account</code>,{' '}
+                <code>read:workspace:bitbucket</code>,{' '}
+                <code>read:repository:bitbucket</code>,{' '}
+                <code>read:pullrequest:bitbucket</code>,{' '}
+                <code>read:pipeline:bitbucket</code>
+              </li>
+              <li>
+                <strong className="text-foreground">Write</strong>:{' '}
+                <code>write:repository:bitbucket</code>,{' '}
+                <code>write:pullrequest:bitbucket</code>
+              </li>
+            </ul>
+          </li>
           <li>Click <strong className="text-foreground">Create</strong></li>
           <li>
             <strong className="text-foreground">
@@ -137,15 +159,17 @@ function BitbucketSetupGuideEn() {
           </li>
           <li>
             <strong className="text-foreground">
-              You created an "API token with scopes" instead
+              "scope insufficient" / Pipelines tab empty / something
+              read-only fails
             </strong>
-            : it might still work for Bitbucket — required scopes are{' '}
+            : you missed a scope. Recreate the token with all of:{' '}
             <code>read:account</code>,{' '}
             <code>read:workspace:bitbucket</code>,{' '}
             <code>read:repository:bitbucket</code>,{' '}
+            <code>read:pullrequest:bitbucket</code>,{' '}
+            <code>read:pipeline:bitbucket</code>,{' '}
             <code>write:repository:bitbucket</code>,{' '}
-            <code>read:pipeline:bitbucket</code>. But the cleanest path
-            is the classic token.
+            <code>write:pullrequest:bitbucket</code>.
           </li>
           <li>
             <strong className="text-foreground">
@@ -200,15 +224,36 @@ function BitbucketSetupGuideRu() {
         <p>
           На странице будут <em>две</em> кнопки создания.{' '}
           <strong className="text-foreground">
-            Нажмите «Create API token»
-          </strong>{' '}
-          — ту, что <em>без</em> «with scopes». Классические токены имеют
-          полный доступ к аккаунту и просто работают; у scoped-токенов
-          есть пара особенностей Atlassian (особенно в Jira), которых
-          лучше избегать.
+            Нажмите «Create API token with scopes»
+          </strong>
+          {' '}— для Bitbucket нужен именно scoped-токен, чтобы у приложения
+          были ровно те права, которые требуются. (Для Jira всё наоборот —
+          там лучше работает классический, см. гайд Jira.)
         </p>
         <ul className="list-disc pl-5 space-y-1">
-          <li>Дайте токену имя, например «WorkHelper»</li>
+          <li>Назовите как-то типа «WorkHelper Bitbucket»</li>
+          <li>
+            <strong className="text-foreground">App</strong>: выберите{' '}
+            <strong className="text-foreground">Bitbucket</strong>
+          </li>
+          <li>
+            <strong className="text-foreground">Scopes</strong> — отметьте:
+            <ul className="list-disc pl-5 mt-1 space-y-0.5">
+              <li>
+                <strong className="text-foreground">Read</strong>:{' '}
+                <code>read:account</code>,{' '}
+                <code>read:workspace:bitbucket</code>,{' '}
+                <code>read:repository:bitbucket</code>,{' '}
+                <code>read:pullrequest:bitbucket</code>,{' '}
+                <code>read:pipeline:bitbucket</code>
+              </li>
+              <li>
+                <strong className="text-foreground">Write</strong>:{' '}
+                <code>write:repository:bitbucket</code>,{' '}
+                <code>write:pullrequest:bitbucket</code>
+              </li>
+            </ul>
+          </li>
           <li>Нажмите <strong className="text-foreground">Create</strong></li>
           <li>
             <strong className="text-foreground">
@@ -296,15 +341,17 @@ function BitbucketSetupGuideRu() {
           </li>
           <li>
             <strong className="text-foreground">
-              Создали «API token with scopes» вместо классического
+              «scope insufficient» / вкладка Pipelines пустая / что-то
+              read-only падает
             </strong>
-            : для Bitbucket может сработать — нужны scope'ы{' '}
+            : забыли какой-то scope. Пересоздайте токен со всеми:{' '}
             <code>read:account</code>,{' '}
             <code>read:workspace:bitbucket</code>,{' '}
             <code>read:repository:bitbucket</code>,{' '}
+            <code>read:pullrequest:bitbucket</code>,{' '}
+            <code>read:pipeline:bitbucket</code>,{' '}
             <code>write:repository:bitbucket</code>,{' '}
-            <code>read:pipeline:bitbucket</code>. Но самый чистый путь —
-            классический токен.
+            <code>write:pullrequest:bitbucket</code>.
           </li>
           <li>
             <strong className="text-foreground">
