@@ -17,7 +17,8 @@ import {
   Database,
   Code2,
   Users,
-  Palette
+  Palette,
+  BookOpen
 } from 'lucide-react'
 import { usePrefsStore } from '@/store/prefs.store.js'
 import { cn } from '@/lib/utils'
@@ -31,6 +32,14 @@ import {
   CardDescription,
   CardContent
 } from '@/components/ui/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription
+} from '@/components/ui/dialog'
+import { BitbucketSetupGuide } from '@/components/setup-guides/bitbucket'
 import { api } from '@/api'
 
 // Persistent: при возврате в Settings показывается тот же раздел,
@@ -84,6 +93,9 @@ export default function Settings() {
   const [testingJira, setTestingJira] = useState(false)
   const [jiraTestResult, setJiraTestResult] = useState(null)
   const [activeSection, setActiveSection] = useState(loadActiveSection)
+  // Открыт ли setup-guide modal. Один state на все секции (одновременно
+  // открыт максимум один guide), значение — id секции / null.
+  const [guideOpen, setGuideOpen] = useState(null)
   useEffect(() => {
     try {
       localStorage.setItem(SECTION_STORAGE_KEY, activeSection)
@@ -308,19 +320,29 @@ export default function Settings() {
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
                 <Card>
                   <CardHeader>
-                    <CardTitle>Bitbucket</CardTitle>
-                    <CardDescription>
-                      Workspace and credentials for the Cloud API.
-                      Token from{' '}
-                      <code>id.atlassian.com → Security → Create API
-                      token with scopes</code>. App passwords are
-                      deprecated since Sep 2025.
-                    </CardDescription>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <CardTitle>Bitbucket</CardTitle>
+                        <CardDescription>
+                          Email, workspace, username and API token for
+                          the Cloud REST API.
+                        </CardDescription>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setGuideOpen('bitbucket')}
+                        title="Open the full setup walkthrough"
+                      >
+                        <BookOpen size={13} />
+                        Setup guide
+                      </Button>
+                    </div>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <Field
                       label="Email"
-                      hint="Atlassian account email. Used for both Bitbucket and Jira REST APIs (same account in 99% of setups)."
+                      hint="Atlassian account email — same for Bitbucket and Jira."
                     >
                       <Input
                         type="email"
@@ -334,7 +356,10 @@ export default function Settings() {
                         placeholder="you@example.com"
                       />
                     </Field>
-                    <Field label="Workspace">
+                    <Field
+                      label="Workspace"
+                      hint="The short ID from your Bitbucket URL (bitbucket.org/<workspace>/…)."
+                    >
                       <Input
                         value={config.bitbucket.workspace}
                         onChange={(e) =>
@@ -348,7 +373,7 @@ export default function Settings() {
                     </Field>
                     <Field
                       label="Bitbucket username (for git)"
-                      hint="Your Bitbucket username, not the email. Find at Bitbucket → Personal settings → Account."
+                      hint="Different from email. Used in clone URLs."
                     >
                       <Input
                         value={config.bitbucket.gitUsername}
@@ -363,6 +388,7 @@ export default function Settings() {
                     </Field>
                     <SecretField
                       label="API token"
+                      hint="Created at id.atlassian.com → Security → API tokens."
                       status={secretsStatus.bitbucketApiToken}
                       value={bitbucketApiToken}
                       onChange={setBitbucketApiToken}
@@ -384,15 +410,6 @@ export default function Settings() {
                         Test connection
                       </Button>
                       <BitbucketTestResult result={bitbucketTestResult} />
-                      <p className="text-[11px] text-muted-foreground">
-                        Required scopes: <code>read:account</code>,{' '}
-                        <code>read:workspace:bitbucket</code>,{' '}
-                        <code>read:repository:bitbucket</code>,{' '}
-                        <code>write:repository:bitbucket</code>,{' '}
-                        <code>read:pipeline:bitbucket</code>. Test reads
-                        stored credentials — Save first if you've
-                        changed fields above.
-                      </p>
                     </div>
                   </CardContent>
                 </Card>
@@ -638,6 +655,22 @@ export default function Settings() {
           </div>
         </main>
       </div>
+
+      <Dialog
+        open={guideOpen === 'bitbucket'}
+        onOpenChange={(o) => !o && setGuideOpen(null)}
+      >
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Bitbucket setup guide</DialogTitle>
+            <DialogDescription>
+              4 steps to authenticate WorkHelper against Bitbucket
+              Cloud. Estimated time: ~2 minutes.
+            </DialogDescription>
+          </DialogHeader>
+          <BitbucketSetupGuide />
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -947,7 +980,7 @@ function Field({ label, hint, className, children }) {
   )
 }
 
-function SecretField({ label, status, value, onChange, onClear }) {
+function SecretField({ label, hint, status, value, onChange, onClear }) {
   return (
     <div className="space-y-1.5">
       <Label>{label}</Label>
@@ -964,11 +997,13 @@ function SecretField({ label, status, value, onChange, onClear }) {
           </Button>
         )}
       </div>
-      {status && !value && (
+      {status && !value ? (
         <p className="text-xs text-muted-foreground">
           Encrypted value already saved.
         </p>
-      )}
+      ) : hint ? (
+        <p className="text-xs text-muted-foreground">{hint}</p>
+      ) : null}
     </div>
   )
 }
