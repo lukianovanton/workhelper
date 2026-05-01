@@ -298,137 +298,155 @@ export default function Settings() {
         <main className="flex-1 overflow-auto">
           <div className="p-6 max-w-2xl">
             {activeSection === 'atlassian' && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Atlassian</CardTitle>
-                  <CardDescription>
-                    One Atlassian account for both Bitbucket and Jira.
-                    Email is shared. Tokens are not — Atlassian issues
-                    one API token per product, so Bitbucket and Jira
-                    each need their own. Tokens come from{' '}
-                    <code>id.atlassian.com → Security → Create API token
-                    with scopes</code>; app passwords are deprecated
-                    since Sep 2025.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-5">
-                  <Field
-                    label="Email"
-                    hint="Atlassian account email. Used for both Bitbucket and Jira REST APIs (same account in 99% of setups)."
-                  >
-                    <Input
-                      type="email"
-                      value={config.bitbucket.username}
-                      onChange={(e) =>
-                        updatePath('bitbucket', 'username')(e.target.value)
-                      }
-                      placeholder="you@example.com"
-                    />
-                  </Field>
-
-                  <SectionDivider label="Bitbucket" />
-
-                  <Field label="Workspace">
-                    <Input
-                      value={config.bitbucket.workspace}
-                      onChange={(e) =>
-                        updatePath('bitbucket', 'workspace')(e.target.value)
-                      }
-                      placeholder="techgurusit"
-                    />
-                  </Field>
-                  <Field
-                    label="Bitbucket username (for git)"
-                    hint="Your Bitbucket username, not the email. Find at Bitbucket → Personal settings → Account."
-                  >
-                    <Input
-                      value={config.bitbucket.gitUsername}
-                      onChange={(e) =>
-                        updatePath('bitbucket', 'gitUsername')(e.target.value)
-                      }
-                      placeholder="antonreact1"
-                    />
-                  </Field>
-                  <SecretField
-                    label="Bitbucket API token"
-                    status={secretsStatus.bitbucketApiToken}
-                    value={bitbucketApiToken}
-                    onChange={setBitbucketApiToken}
-                    onClear={() => {
-                      onClearSecret('bitbucketApiToken')
-                      setBitbucketTestResult(null)
-                    }}
-                  />
-                  <div className="pt-1 space-y-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={onTestBitbucket}
-                      disabled={testingBitbucket}
+              <div className="space-y-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Bitbucket</CardTitle>
+                    <CardDescription>
+                      Workspace and credentials for the Cloud API.
+                      Token from{' '}
+                      <code>id.atlassian.com → Security → Create API
+                      token with scopes</code>. App passwords are
+                      deprecated since Sep 2025.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <Field
+                      label="Email"
+                      hint="Atlassian account email. Used for both Bitbucket and Jira REST APIs (same account in 99% of setups)."
                     >
-                      {testingBitbucket && (
-                        <Loader2 className="animate-spin" />
-                      )}
-                      Test Bitbucket
-                    </Button>
-                    <BitbucketTestResult result={bitbucketTestResult} />
-                    <p className="text-[11px] text-muted-foreground">
-                      Required scopes: <code>read:account</code>,{' '}
-                      <code>read:workspace:bitbucket</code>,{' '}
-                      <code>read:repository:bitbucket</code>,{' '}
-                      <code>write:repository:bitbucket</code>,{' '}
-                      <code>read:pipeline:bitbucket</code>. Test reads
-                      stored credentials — Save first if you've changed
-                      fields above.
-                    </p>
-                  </div>
-
-                  <SectionDivider label="Jira" />
-
-                  <Field
-                    label="Host"
-                    hint="Jira Cloud URL without trailing slash (e.g. https://yourcompany.atlassian.net)"
-                  >
-                    <Input
-                      value={config.jira?.host || ''}
-                      onChange={(e) =>
-                        updatePath('jira', 'host')(e.target.value)
-                      }
-                      placeholder="https://yourcompany.atlassian.net"
-                    />
-                  </Field>
-                  <SecretField
-                    label="Jira API token"
-                    status={secretsStatus.jiraApiToken}
-                    value={jiraApiToken}
-                    onChange={setJiraApiToken}
-                    onClear={() => {
-                      onClearSecret('jiraApiToken')
-                      setJiraTestResult(null)
-                    }}
-                  />
-                  <div className="pt-1 space-y-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={onTestJira}
-                      disabled={testingJira}
+                      <Input
+                        type="email"
+                        value={config.bitbucket.username}
+                        onChange={(e) =>
+                          updatePath(
+                            'bitbucket',
+                            'username'
+                          )(e.target.value)
+                        }
+                        placeholder="you@example.com"
+                      />
+                    </Field>
+                    <Field label="Workspace">
+                      <Input
+                        value={config.bitbucket.workspace}
+                        onChange={(e) =>
+                          updatePath(
+                            'bitbucket',
+                            'workspace'
+                          )(e.target.value)
+                        }
+                        placeholder="techgurusit"
+                      />
+                    </Field>
+                    <Field
+                      label="Bitbucket username (for git)"
+                      hint="Your Bitbucket username, not the email. Find at Bitbucket → Personal settings → Account."
                     >
-                      {testingJira && (
-                        <Loader2 className="animate-spin" />
-                      )}
-                      Test Jira
-                    </Button>
-                    <JiraTestResult result={jiraTestResult} />
-                    <p className="text-[11px] text-muted-foreground">
-                      Required scopes: <code>read:jira-work</code>,{' '}
-                      <code>read:jira-user</code>, <code>read:me</code>.
-                      Test reads stored credentials — Save first if
-                      you've changed fields above.
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
+                      <Input
+                        value={config.bitbucket.gitUsername}
+                        onChange={(e) =>
+                          updatePath(
+                            'bitbucket',
+                            'gitUsername'
+                          )(e.target.value)
+                        }
+                        placeholder="antonreact1"
+                      />
+                    </Field>
+                    <SecretField
+                      label="API token"
+                      status={secretsStatus.bitbucketApiToken}
+                      value={bitbucketApiToken}
+                      onChange={setBitbucketApiToken}
+                      onClear={() => {
+                        onClearSecret('bitbucketApiToken')
+                        setBitbucketTestResult(null)
+                      }}
+                    />
+                    <div className="pt-1 space-y-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={onTestBitbucket}
+                        disabled={testingBitbucket}
+                      >
+                        {testingBitbucket && (
+                          <Loader2 className="animate-spin" />
+                        )}
+                        Test connection
+                      </Button>
+                      <BitbucketTestResult result={bitbucketTestResult} />
+                      <p className="text-[11px] text-muted-foreground">
+                        Required scopes: <code>read:account</code>,{' '}
+                        <code>read:workspace:bitbucket</code>,{' '}
+                        <code>read:repository:bitbucket</code>,{' '}
+                        <code>write:repository:bitbucket</code>,{' '}
+                        <code>read:pipeline:bitbucket</code>. Test reads
+                        stored credentials — Save first if you've
+                        changed fields above.
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Jira</CardTitle>
+                    <CardDescription>
+                      Same Atlassian account as Bitbucket — email is
+                      reused from the section above. Jira needs its own
+                      API token though: Atlassian issues one token per
+                      product.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <Field
+                      label="Host"
+                      hint="Jira Cloud URL without trailing slash (e.g. https://yourcompany.atlassian.net)"
+                    >
+                      <Input
+                        value={config.jira?.host || ''}
+                        onChange={(e) =>
+                          updatePath('jira', 'host')(e.target.value)
+                        }
+                        placeholder="https://yourcompany.atlassian.net"
+                      />
+                    </Field>
+                    <SecretField
+                      label="API token"
+                      status={secretsStatus.jiraApiToken}
+                      value={jiraApiToken}
+                      onChange={setJiraApiToken}
+                      onClear={() => {
+                        onClearSecret('jiraApiToken')
+                        setJiraTestResult(null)
+                      }}
+                    />
+                    <div className="pt-1 space-y-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={onTestJira}
+                        disabled={testingJira}
+                      >
+                        {testingJira && (
+                          <Loader2 className="animate-spin" />
+                        )}
+                        Test connection
+                      </Button>
+                      <JiraTestResult result={jiraTestResult} />
+                      <p className="text-[11px] text-muted-foreground">
+                        Required scopes: <code>read:jira-work</code>,{' '}
+                        <code>read:jira-user</code>,{' '}
+                        <code>read:me</code>. Test reads stored
+                        credentials — Save first if you've changed
+                        fields above.
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
             )}
 
             {activeSection === 'paths' && (
@@ -898,23 +916,6 @@ function BinaryPathField({
         )}
       </div>
       {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
-    </div>
-  )
-}
-
-/**
- * Подзаголовок группы полей внутри одной Card. Используется в
- * Atlassian-секции, чтобы визуально разделить Bitbucket и Jira
- * входы — это две части одного аккаунта, но всё-таки разные
- * сервисы со своим токеном и тестом.
- */
-function SectionDivider({ label }) {
-  return (
-    <div className="pt-2 flex items-center gap-3">
-      <span className="text-[10px] uppercase tracking-wider text-muted-foreground/80">
-        {label}
-      </span>
-      <div className="flex-1 border-t border-border/50" />
     </div>
   )
 }
