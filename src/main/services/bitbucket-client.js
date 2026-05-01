@@ -257,20 +257,32 @@ export async function listProjects(forceRefresh = false) {
 }
 
 /**
- * Последние N коммитов репо (по умолчанию 5). Грузим лениво
- * (по открытию Detail drawer), НЕ в составе list — чтобы не
- * делать 70+ доп. запросов на каждый рефреш и не упираться в
- * rate-limit.
+ * Последние N коммитов репо. Грузим лениво (по открытию Detail
+ * drawer), НЕ в составе list — чтобы не делать 70+ доп. запросов
+ * на каждый рефреш и не упираться в rate-limit.
+ *
+ * Возвращает обогащённую форму: author — display name (string,
+ * для обратной совместимости с LastCommitSection), плюс
+ * authorAccountId (понадобится в Jira-фазе для парсинга
+ * привязки коммита к юзеру) и parents (для chains/merge-commit
+ * визуализации).
  *
  * @param {string} slug
- * @param {number} [pagelen=5]
- * @returns {Promise<import('../../shared/types.js').BitbucketCommit[]>}
+ * @param {number} [pagelen=30]
+ * @returns {Promise<Array<{
+ *   hash: string,
+ *   message: string,
+ *   date: string,
+ *   author: string,
+ *   authorAccountId: string | null,
+ *   parents: string[]
+ * }>>}
  */
-export async function getCommits(slug, pagelen = 5) {
+export async function getCommits(slug, pagelen = 30) {
   if (!slug || typeof slug !== 'string') return []
   const client = buildClient()
   const fields = encodeURIComponent(
-    'values.message,values.author,values.date,values.hash'
+    'values.hash,values.message,values.date,values.author.user.display_name,values.author.user.account_id,values.author.raw,values.parents.hash'
   )
   const path = `/repositories/${encodeURIComponent(
     client.workspace
@@ -284,12 +296,226 @@ export async function getCommits(slug, pagelen = 5) {
     throw e
   }
 
-  return (data.values || []).map((c) => ({
+  return (data.values || []).map(toCommitShape)
+}
+
+function toCommitShape(c) {
+  return {
+    hash: c.hash || '',
     message: typeof c.message === 'string' ? c.message : '',
+    date: c.date || '',
     author:
       c.author?.user?.display_name || c.author?.raw || 'unknown',
-    date: c.date || '',
-    hash: c.hash || ''
+    authorAccountId: c.author?.user?.account_id || null,
+    parents: Array.isArray(c.parents)
+      ? c.parents.map((p) => p?.hash).filter(Boolean)
+      : []
+  }
+}
+
+/**
+ * Детали одного коммита + diffstat одним запросом-обёрткой.
+ *
+ * Bitbucket diffstat — пагинированный, но для UI достаточно первой
+ * страницы (pagelen=100); файлов больше 100 в одном коммите бывает
+ * крайне редко, и UI всё равно их сворачивает. Если 404 на
+ * diffstat (бывает для корневых initial-коммитов без родителя) —
+ * возвращаем коммит без diffstat вместо ошибки.
+ *
+ * @param {string} slug
+ * @param {string} hash
+ * @returns {Promise<{
+ *   hash: string,
+ *   message: string,
+ *   date: string,
+ *   author: string,
+ *   authorAccountId: string | null,
+ *   parents: string[],
+ *   diffstat: {
+ *     filesChanged: number,
+ *     linesAdded: number,
+ *     linesRemoved: number,
+ *     files: Array<{
+ *       status: string,
+ *       linesAdded: number,
+ *       linesRemoved: number,
+ *       path: string
+ *     }>,
+ *     truncated: boolean
+ *   } | null,
+ *   url: string
+ * } | null>}
+ */
+export async function getCommitDetail(slug, hash) {
+  if (!slug || !hash) return null
+  const client = buildClient()
+  const ws = encodeURIComponent(client.workspace)
+  const s = encodeURIComponent(slug)
+  const h = encodeURIComponent(hash)
+
+  const commitFields = encodeURIComponent(
+    'hash,message,date,author.user.display_name,author.user.account_id,author.raw,parents.hash'
+  )
+
+  let commit
+  try {
+    commit = await client.request(
+      `/repositories/${ws}/${s}/commit/${h}?fields=${commitFields}`
+    )
+  } catch (e) {
+    if (e.status === 404 || e.status === 403) return null
+    throw e
+  }
+
+  // Diffstat — best-effort. Для самого первого коммита в репо
+  // diffstat может вернуть 404 (нет parent для diff), это не ошибка.
+  let diffstat = null
+  try {
+    const ds = await client.request(
+      `/repositories/${ws}/${s}/diffstat/${h}?pagelen=100&fields=values.status,values.lines_added,values.lines_removed,values.old.path,values.new.path,next`
+    )
+    const files = (ds.values || []).map((f) => ({
+      status: f.status || 'modified',
+      linesAdded: f.lines_added || 0,
+      linesRemoved: f.lines_removed || 0,
+      path: f.new?.path || f.old?.path || '(unknown)'
+    }))
+    diffstat = {
+      filesChanged: files.length,
+      linesAdded: files.reduce((sum, f) => sum + f.linesAdded, 0),
+      linesRemoved: files.reduce((sum, f) => sum + f.linesRemoved, 0),
+      files,
+      truncated: !!ds.next
+    }
+  } catch {
+    // ignore
+  }
+
+  return {
+    ...toCommitShape(commit),
+    diffstat,
+    url: `https://bitbucket.org/${client.workspace}/${slug}/commits/${commit.hash || hash}`
+  }
+}
+
+/**
+ * Нормализация state-объекта пайплайна/шага в одну строку:
+ *   SUCCESSFUL | FAILED | STOPPED | ERROR | EXPIRED |
+ *   IN_PROGRESS | PAUSED | PENDING | HALTED
+ *
+ * Bitbucket отдаёт вложенный state:
+ *   { name: 'COMPLETED', result: { name: 'SUCCESSFUL' } }
+ *   { name: 'IN_PROGRESS', stage: { name: 'PAUSED' } }
+ *   { name: 'PENDING' }
+ * Нам в UI достаточно одного «итогового» статуса для иконки.
+ */
+function normalizePipelineState(state) {
+  if (!state) return 'PENDING'
+  if (state.name === 'COMPLETED' && state.result?.name) {
+    return state.result.name
+  }
+  if (state.name === 'IN_PROGRESS' && state.stage?.name === 'PAUSED') {
+    return 'PAUSED'
+  }
+  return state.name || 'PENDING'
+}
+
+/**
+ * Список последних пайплайнов репо. По умолчанию 20 — больше
+ * UI всё равно не показывает, а Bitbucket режет pagelen<=100.
+ *
+ * @param {string} slug
+ * @param {{ pagelen?: number }} [opts]
+ * @returns {Promise<Array<{
+ *   uuid: string,
+ *   buildNumber: number,
+ *   state: string,
+ *   createdOn: string,
+ *   completedOn: string | null,
+ *   durationSeconds: number | null,
+ *   branch: string | null,
+ *   author: string,
+ *   url: string
+ * }>>}
+ */
+export async function getPipelines(slug, opts = {}) {
+  if (!slug || typeof slug !== 'string') return []
+  const pagelen = opts.pagelen ?? 20
+  const client = buildClient()
+  const ws = encodeURIComponent(client.workspace)
+  const s = encodeURIComponent(slug)
+  const fields = encodeURIComponent(
+    'values.uuid,values.build_number,values.state,values.created_on,values.completed_on,values.duration_in_seconds,values.target.ref_name,values.target.commit.hash,values.creator.display_name'
+  )
+  const path = `/repositories/${ws}/${s}/pipelines/?pagelen=${pagelen}&sort=-created_on&fields=${fields}`
+
+  let data
+  try {
+    data = await client.request(path)
+  } catch (e) {
+    if (e.status === 404 || e.status === 403) return []
+    throw e
+  }
+
+  return (data.values || []).map((p) => ({
+    uuid: p.uuid || '',
+    buildNumber: p.build_number ?? 0,
+    state: normalizePipelineState(p.state),
+    createdOn: p.created_on || '',
+    completedOn: p.completed_on || null,
+    durationSeconds:
+      typeof p.duration_in_seconds === 'number'
+        ? p.duration_in_seconds
+        : null,
+    branch: p.target?.ref_name || null,
+    commitHash: p.target?.commit?.hash || null,
+    author: p.creator?.display_name || 'unknown',
+    url: `https://bitbucket.org/${client.workspace}/${slug}/pipelines/results/${p.build_number}`
+  }))
+}
+
+/**
+ * Steps конкретного пайплайна. UUID Bitbucket'а имеет вид
+ * '{abc-def-...}' с фигурными скобками — encodeURIComponent
+ * это съест корректно.
+ *
+ * @param {string} slug
+ * @param {string} pipelineUuid
+ * @returns {Promise<Array<{
+ *   uuid: string,
+ *   name: string,
+ *   state: string,
+ *   durationSeconds: number | null
+ * }>>}
+ */
+export async function getPipelineSteps(slug, pipelineUuid) {
+  if (!slug || !pipelineUuid) return []
+  const client = buildClient()
+  const ws = encodeURIComponent(client.workspace)
+  const s = encodeURIComponent(slug)
+  const u = encodeURIComponent(pipelineUuid)
+  const fields = encodeURIComponent(
+    'values.uuid,values.name,values.state,values.duration_in_seconds'
+  )
+
+  let data
+  try {
+    data = await client.request(
+      `/repositories/${ws}/${s}/pipelines/${u}/steps/?fields=${fields}`
+    )
+  } catch (e) {
+    if (e.status === 404 || e.status === 403) return []
+    throw e
+  }
+
+  return (data.values || []).map((step) => ({
+    uuid: step.uuid || '',
+    name: step.name || '(unnamed step)',
+    state: normalizePipelineState(step.state),
+    durationSeconds:
+      typeof step.duration_in_seconds === 'number'
+        ? step.duration_in_seconds
+        : null
   }))
 }
 

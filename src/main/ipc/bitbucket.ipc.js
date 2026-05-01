@@ -3,7 +3,10 @@ import {
   listProjects,
   testConnection,
   getLastCommit,
-  getCommits
+  getCommits,
+  getCommitDetail,
+  getPipelines,
+  getPipelineSteps
 } from '../services/bitbucket-client.js'
 import { enrichProjects } from '../services/enrich.js'
 
@@ -36,5 +39,14 @@ export function registerBitbucketIpc() {
   )
   ipcMain.handle('bitbucket:commits', (_event, slug, pagelen) =>
     getCommits(slug, pagelen)
+  )
+  ipcMain.handle('bitbucket:commit-detail', (_event, slug, hash) =>
+    getCommitDetail(slug, hash)
+  )
+  ipcMain.handle('bitbucket:pipelines', (_event, slug, opts) =>
+    getPipelines(slug, opts)
+  )
+  ipcMain.handle('bitbucket:pipeline-steps', (_event, slug, pipelineUuid) =>
+    getPipelineSteps(slug, pipelineUuid)
   )
 }

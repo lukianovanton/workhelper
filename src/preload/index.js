@@ -15,7 +15,13 @@ const api = {
     testConnection: () => ipcRenderer.invoke('bitbucket:test'),
     lastCommit: (slug) => ipcRenderer.invoke('bitbucket:lastCommit', slug),
     commits: (slug, pagelen) =>
-      ipcRenderer.invoke('bitbucket:commits', slug, pagelen)
+      ipcRenderer.invoke('bitbucket:commits', slug, pagelen),
+    commitDetail: (slug, hash) =>
+      ipcRenderer.invoke('bitbucket:commit-detail', slug, hash),
+    pipelines: (slug, opts) =>
+      ipcRenderer.invoke('bitbucket:pipelines', slug, opts),
+    pipelineSteps: (slug, pipelineUuid) =>
+      ipcRenderer.invoke('bitbucket:pipeline-steps', slug, pipelineUuid)
   },
   git: {
     clone: (slug) => ipcRenderer.invoke('git:clone', slug),
