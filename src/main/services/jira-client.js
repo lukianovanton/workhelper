@@ -436,6 +436,11 @@ let cachedAccountIdFor = null
  *     currentUser().
  */
 async function resolveCurrentAccountId(client) {
+  // Manual override из Settings побеждает всё — если пользователь
+  // явно вставил свой accountId, ему доверяем без проверок.
+  const manual = (getConfig().jira?.accountId || '').trim()
+  if (manual) return manual
+
   if (cachedAccountId && cachedAccountIdFor === client.email) {
     return cachedAccountId
   }

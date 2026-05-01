@@ -430,6 +430,18 @@ export default function Settings() {
                         setJiraTestResult(null)
                       }}
                     />
+                    <Field
+                      label="My Atlassian accountId (optional)"
+                      hint="Only fill this in if 'My Tasks' shows empty despite having assigned issues. Find your accountId in the URL of your Jira profile page (host/jira/people/<paste-this-part>). Format usually looks like 5b10ac8d82e05b22cc7d4ef5 or 557058:abc-123."
+                    >
+                      <Input
+                        value={config.jira?.accountId || ''}
+                        onChange={(e) =>
+                          updatePath('jira', 'accountId')(e.target.value)
+                        }
+                        placeholder="5b10ac8d82e05b22cc7d4ef5"
+                      />
+                    </Field>
                     <div className="pt-1 space-y-2">
                       <Button
                         variant="outline"
