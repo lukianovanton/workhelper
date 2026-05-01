@@ -715,7 +715,7 @@ function SectionCardHeader({ title, description, onOpenGuide }) {
   return (
     <CardHeader>
       <div className="flex items-start justify-between gap-3">
-        <div>
+        <div className="space-y-1.5">
           <CardTitle>{title}</CardTitle>
           <CardDescription>{description}</CardDescription>
         </div>
@@ -1033,7 +1033,7 @@ function BinaryPathField({
     ? t('settings.detected', { path: detected })
     : notFoundHint
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-2">
       <Label>{label}</Label>
       <div className="flex gap-2">
         <Input
@@ -1059,7 +1059,7 @@ function BinaryPathField({
 
 function Field({ label, hint, className, children }) {
   return (
-    <div className={'space-y-1.5 ' + (className || '')}>
+    <div className={'space-y-2 ' + (className || '')}>
       <Label>{label}</Label>
       {children}
       {hint && (
@@ -1072,7 +1072,7 @@ function Field({ label, hint, className, children }) {
 function SecretField({ label, hint, status, value, onChange, onClear }) {
   const t = useT()
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-2">
       <Label>{label}</Label>
       <div className="flex gap-2">
         <Input
