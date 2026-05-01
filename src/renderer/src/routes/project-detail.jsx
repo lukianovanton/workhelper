@@ -21,10 +21,23 @@ import {
   Wrench,
   FolderInput,
   Star,
-  StickyNote
+  StickyNote,
+  ChevronRight,
+  ChevronDown,
+  Workflow,
+  AlertCircle,
+  Clock,
+  Pause,
+  CircleSlash,
+  RefreshCw
 } from 'lucide-react'
 import { useProjects } from '@/hooks/use-projects'
 import { useLastCommit, useCommits } from '@/hooks/use-last-commit'
+import {
+  useCommitDetail,
+  usePipelines,
+  usePipelineSteps
+} from '@/hooks/use-bitbucket'
 import { useRunningProcesses } from '@/hooks/use-running-processes'
 import { useGitStatus } from '@/hooks/use-git-status'
 import { useProjectActions } from '@/hooks/use-project-actions'
@@ -157,6 +170,9 @@ function Drawer({ project, dbAvailable, onClose }) {
   const [replaceDialogOpen, setReplaceDialogOpen] = useState(false)
   const [pendingDumpPath, setPendingDumpPath] = useState(null)
   const [setupDialogOpen, setSetupDialogOpen] = useState(false)
+  // Tab внутри drawer'а. Сессионный (per-mount), не персистится —
+  // когда переключаешь проекты, default снова Overview.
+  const [activeTab, setActiveTab] = useState('overview')
 
   const [actionStatus, setActionStatus] = useState(null)
   const flashTimerRef = useRef(null)
@@ -492,7 +508,11 @@ function Drawer({ project, dbAvailable, onClose }) {
         )}
       </header>
 
-      <div className="flex-1 overflow-auto p-6 space-y-4">
+      <DrawerTabs active={activeTab} onChange={setActiveTab} />
+
+      <div className="flex-1 overflow-auto">
+        {activeTab === 'overview' && (
+          <OverviewTab>
         <ChecklistRow
           state={project.local.cloned ? 'on' : 'off'}
           title={project.local.cloned ? 'Cloned' : 'Not cloned'}
@@ -579,6 +599,10 @@ function Drawer({ project, dbAvailable, onClose }) {
           value={notes}
           onChange={(v) => setNote(project.slug, v)}
         />
+          </OverviewTab>
+        )}
+        {activeTab === 'commits' && <CommitsTab project={project} />}
+        {activeTab === 'pipelines' && <PipelinesTab project={project} />}
       </div>
 
       <AlertDialog open={dropDialogOpen} onOpenChange={setDropDialogOpen}>
@@ -649,6 +673,574 @@ function Drawer({ project, dbAvailable, onClose }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+    </div>
+  )
+}
+
+/**
+ * Полоска табов под header'ом drawer'а. Активный таб — нижний
+ * border accent-цветом, без анимации (анимация лишний шум при
+ * частых переключениях). Стик не делаем — табы всё равно
+ * остаются вверху scrollable-контейнера.
+ */
+function DrawerTabs({ active, onChange }) {
+  const tabs = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'commits', label: 'Commits', icon: GitCommit },
+    { id: 'pipelines', label: 'Pipelines', icon: Workflow }
+  ]
+  return (
+    <div className="flex items-center px-4 border-b border-border bg-background/60">
+      {tabs.map((t) => {
+        const Icon = t.icon
+        const on = active === t.id
+        return (
+          <button
+            key={t.id}
+            onClick={() => onChange(t.id)}
+            className={cn(
+              'inline-flex items-center gap-1.5 px-3 py-2 text-sm border-b-2 -mb-px transition-colors',
+              on
+                ? 'border-foreground text-foreground'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            )}
+          >
+            {Icon && <Icon size={13} />}
+            {t.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+/**
+ * Тонкая обёртка с padding и spacing — оставлена как отдельный
+ * компонент, чтобы JSX основного Drawer'а оставался читаемым,
+ * и при необходимости легко добавить scroll-restoration / sticky
+ * sub-header'ы Overview-таба.
+ */
+function OverviewTab({ children }) {
+  return <div className="p-6 space-y-4">{children}</div>
+}
+
+/**
+ * Commits-таб: 30 последних коммитов с раскрытием детали по клику.
+ * Только один коммит раскрыт за раз (accordion-поведение). При
+ * раскрытии лениво грузится getCommitDetail с diffstat.
+ */
+function CommitsTab({ project }) {
+  const slug = project.slug
+  const { data, isLoading, isError, refetch, isFetching } = useCommits(
+    slug,
+    30
+  )
+  const [expandedHash, setExpandedHash] = useState(null)
+
+  const toggle = (hash) =>
+    setExpandedHash((prev) => (prev === hash ? null : hash))
+
+  if (isLoading) {
+    return (
+      <div className="p-6 space-y-3">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="space-y-1.5">
+            <div className="h-3 bg-muted rounded w-3/4 animate-pulse" />
+            <div className="h-3 bg-muted rounded w-1/2 animate-pulse" />
+          </div>
+        ))}
+      </div>
+    )
+  }
+  if (isError) {
+    return <TabErrorState onRetry={refetch} />
+  }
+  if (!data || data.length === 0) {
+    return (
+      <div className="p-6 text-sm text-muted-foreground">
+        No commits found for this repository.
+      </div>
+    )
+  }
+
+  return (
+    <div className="divide-y divide-border/60">
+      <TabToolbar
+        right={
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => refetch()}
+            disabled={isFetching}
+          >
+            {isFetching ? (
+              <Loader2 className="animate-spin" />
+            ) : (
+              <RefreshCw />
+            )}
+            Refresh
+          </Button>
+        }
+      />
+      {data.map((c) => (
+        <CommitRow
+          key={c.hash}
+          slug={slug}
+          commit={c}
+          expanded={expandedHash === c.hash}
+          onToggle={() => toggle(c.hash)}
+        />
+      ))}
+    </div>
+  )
+}
+
+function CommitRow({ slug, commit, expanded, onToggle }) {
+  const detail = useCommitDetail(slug, commit.hash, { enabled: expanded })
+  const Caret = expanded ? ChevronDown : ChevronRight
+  const firstLine = (commit.message || '').split('\n')[0] || '(no message)'
+  return (
+    <div>
+      <button
+        onClick={onToggle}
+        className="w-full text-left px-6 py-2.5 flex items-start gap-2 hover:bg-accent/40 transition-colors"
+      >
+        <Caret
+          size={14}
+          className="mt-0.5 shrink-0 text-muted-foreground"
+        />
+        <code className="text-[10px] font-mono mt-0.5 shrink-0 text-muted-foreground">
+          {commit.hash.slice(0, 7)}
+        </code>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm truncate">{firstLine}</div>
+          <div className="text-[11px] text-muted-foreground mt-0.5 flex items-center gap-2 flex-wrap">
+            <span>{commit.author}</span>
+            <span>·</span>
+            <span>{formatRelative(commit.date)}</span>
+          </div>
+        </div>
+      </button>
+      {expanded && (
+        <div className="px-6 pb-4 pl-[3.25rem] text-sm space-y-3 bg-muted/20">
+          <CommitDetailContent commit={commit} detail={detail} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CommitDetailContent({ commit, detail }) {
+  if (detail.isLoading) {
+    return (
+      <div className="py-3 text-xs text-muted-foreground inline-flex items-center gap-2">
+        <Loader2 size={12} className="animate-spin" /> Loading diff…
+      </div>
+    )
+  }
+  if (detail.isError || !detail.data) {
+    return (
+      <div className="py-3 text-xs text-destructive">
+        Could not load commit details.
+      </div>
+    )
+  }
+  const d = detail.data
+  const ds = d.diffstat
+  return (
+    <>
+      {commit.message && commit.message.trim() && (
+        <pre className="text-xs whitespace-pre-wrap font-sans bg-background/60 border border-border/40 rounded px-3 py-2">
+          {commit.message.trim()}
+        </pre>
+      )}
+      {ds && ds.filesChanged > 0 ? (
+        <div className="space-y-1.5">
+          <div className="text-[11px] text-muted-foreground inline-flex items-center gap-2">
+            <span>
+              {ds.filesChanged} file{ds.filesChanged !== 1 ? 's' : ''}
+            </span>
+            <span className="text-emerald-500">+{ds.linesAdded}</span>
+            <span className="text-destructive">-{ds.linesRemoved}</span>
+            {ds.truncated && (
+              <span className="text-amber-500">
+                · list truncated at 100 files
+              </span>
+            )}
+          </div>
+          <ul className="text-xs font-mono space-y-0.5">
+            {ds.files.map((f, i) => (
+              <li
+                key={f.path + i}
+                className="flex items-center gap-2 hover:bg-accent/30 px-1 -mx-1 rounded"
+              >
+                <FileStatusIcon status={f.status} />
+                <span className="truncate flex-1">{f.path}</span>
+                {f.linesAdded > 0 && (
+                  <span className="text-emerald-500 tabular-nums">
+                    +{f.linesAdded}
+                  </span>
+                )}
+                {f.linesRemoved > 0 && (
+                  <span className="text-destructive tabular-nums">
+                    -{f.linesRemoved}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <div className="text-[11px] text-muted-foreground">
+          No diffstat available (often the case for the initial commit).
+        </div>
+      )}
+      <div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => window.open(d.url, '_blank')}
+        >
+          <ExternalLink size={12} /> View on Bitbucket
+        </Button>
+      </div>
+    </>
+  )
+}
+
+function FileStatusIcon({ status }) {
+  // Bitbucket diffstat statuses: added, removed, modified, renamed
+  const map = {
+    added: { ch: 'A', cls: 'text-emerald-500' },
+    removed: { ch: 'D', cls: 'text-destructive' },
+    modified: { ch: 'M', cls: 'text-sky-500' },
+    renamed: { ch: 'R', cls: 'text-amber-500' }
+  }
+  const m = map[status] || { ch: '·', cls: 'text-muted-foreground' }
+  return (
+    <span
+      title={status}
+      className={cn(
+        'inline-block w-4 text-center text-[10px] font-bold',
+        m.cls
+      )}
+    >
+      {m.ch}
+    </span>
+  )
+}
+
+/**
+ * Pipelines-таб: 20 последних пайплайнов. Auto-poll каждые 15с
+ * включается на уровне хука usePipelines когда есть IN_PROGRESS /
+ * PENDING запись. Steps конкретного пайплайна грузятся лениво по
+ * раскрытию.
+ */
+function PipelinesTab({ project }) {
+  const slug = project.slug
+  const { data, isLoading, isError, refetch, isFetching } =
+    usePipelines(slug, { pagelen: 20 })
+  const [expandedUuid, setExpandedUuid] = useState(null)
+
+  const toggle = (uuid) =>
+    setExpandedUuid((prev) => (prev === uuid ? null : uuid))
+
+  if (isLoading) {
+    return (
+      <div className="p-6 space-y-3">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div key={i} className="space-y-1.5">
+            <div className="h-3 bg-muted rounded w-1/2 animate-pulse" />
+            <div className="h-3 bg-muted rounded w-1/3 animate-pulse" />
+          </div>
+        ))}
+      </div>
+    )
+  }
+  if (isError) {
+    return <TabErrorState onRetry={refetch} />
+  }
+  if (!data || data.length === 0) {
+    return (
+      <div className="p-6 text-sm text-muted-foreground space-y-2">
+        <p>No pipelines found for this repository.</p>
+        <p className="text-xs">
+          If pipelines run on this repo but the list is empty — the API
+          token may be missing the <code>read:pipeline:bitbucket</code>{' '}
+          scope. Recreate the token with that scope added.
+        </p>
+      </div>
+    )
+  }
+
+  const live = data.some(
+    (p) => p.state === 'IN_PROGRESS' || p.state === 'PENDING'
+  )
+
+  return (
+    <div className="divide-y divide-border/60">
+      <TabToolbar
+        left={
+          live ? (
+            <span className="text-[11px] text-sky-400 inline-flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-sky-500 animate-pulse-soft" />
+              Auto-refreshing every 15s
+            </span>
+          ) : null
+        }
+        right={
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => refetch()}
+            disabled={isFetching}
+          >
+            {isFetching ? (
+              <Loader2 className="animate-spin" />
+            ) : (
+              <RefreshCw />
+            )}
+            Refresh
+          </Button>
+        }
+      />
+      {data.map((p) => (
+        <PipelineRow
+          key={p.uuid}
+          slug={slug}
+          pipeline={p}
+          expanded={expandedUuid === p.uuid}
+          onToggle={() => toggle(p.uuid)}
+        />
+      ))}
+    </div>
+  )
+}
+
+function PipelineRow({ slug, pipeline, expanded, onToggle }) {
+  const Caret = expanded ? ChevronDown : ChevronRight
+  return (
+    <div>
+      <button
+        onClick={onToggle}
+        className="w-full text-left px-6 py-2.5 flex items-center gap-3 hover:bg-accent/40 transition-colors"
+      >
+        <Caret size={14} className="shrink-0 text-muted-foreground" />
+        <PipelineStateBadge state={pipeline.state} />
+        <span className="font-mono text-xs shrink-0 tabular-nums">
+          #{pipeline.buildNumber}
+        </span>
+        <div className="flex-1 min-w-0 flex items-center gap-2">
+          {pipeline.branch && (
+            <code className="text-xs truncate text-foreground/80">
+              {pipeline.branch}
+            </code>
+          )}
+        </div>
+        <div className="text-[11px] text-muted-foreground tabular-nums shrink-0 hidden sm:block">
+          {formatDuration(pipeline.durationSeconds)}
+        </div>
+        <div className="text-[11px] text-muted-foreground shrink-0">
+          {formatRelative(pipeline.createdOn)}
+        </div>
+      </button>
+      {expanded && (
+        <div className="px-6 pb-4 pl-[2.25rem] bg-muted/20 space-y-2.5">
+          <div className="text-[11px] text-muted-foreground flex items-center gap-2 flex-wrap">
+            <span>by {pipeline.author}</span>
+            {pipeline.commitHash && (
+              <>
+                <span>·</span>
+                <code className="text-[10px]">
+                  {pipeline.commitHash.slice(0, 7)}
+                </code>
+              </>
+            )}
+          </div>
+          <PipelineSteps slug={slug} pipelineUuid={pipeline.uuid} />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => window.open(pipeline.url, '_blank')}
+          >
+            <ExternalLink size={12} /> View on Bitbucket
+          </Button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function PipelineSteps({ slug, pipelineUuid }) {
+  const { data, isLoading, isError } = usePipelineSteps(slug, pipelineUuid)
+  if (isLoading) {
+    return (
+      <div className="text-[11px] text-muted-foreground inline-flex items-center gap-2">
+        <Loader2 size={12} className="animate-spin" /> Loading steps…
+      </div>
+    )
+  }
+  if (isError) {
+    return (
+      <div className="text-[11px] text-destructive">
+        Could not load steps.
+      </div>
+    )
+  }
+  if (!data || data.length === 0) {
+    return (
+      <div className="text-[11px] text-muted-foreground">
+        No steps reported.
+      </div>
+    )
+  }
+  return (
+    <ul className="text-xs space-y-1">
+      {data.map((s) => (
+        <li
+          key={s.uuid}
+          className="flex items-center gap-2 px-1 -mx-1 rounded hover:bg-accent/30"
+        >
+          <PipelineStateBadge state={s.state} compact />
+          <span className="flex-1 truncate">{s.name}</span>
+          <span className="text-[11px] text-muted-foreground tabular-nums">
+            {formatDuration(s.durationSeconds)}
+          </span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+/**
+ * Унифицированный бейдж статуса для пайплайнов и шагов. Цвет +
+ * иконка + (опц) текст. Используется в drawer'е и на главной
+ * (там — без текста, только точка с tooltip).
+ */
+export function PipelineStateBadge({ state, compact, dotOnly }) {
+  const cfg = pipelineStateConfig(state)
+  if (dotOnly) {
+    return (
+      <span
+        title={cfg.label}
+        className={cn(
+          'inline-block w-2 h-2 rounded-full',
+          cfg.dotCls,
+          cfg.pulse && 'animate-pulse-soft'
+        )}
+      />
+    )
+  }
+  const Icon = cfg.icon
+  return (
+    <span
+      title={cfg.label}
+      className={cn(
+        'inline-flex items-center gap-1 shrink-0',
+        compact ? 'text-[11px]' : 'text-xs',
+        cfg.cls
+      )}
+    >
+      <Icon
+        size={compact ? 11 : 13}
+        className={cfg.pulse ? 'animate-pulse' : ''}
+      />
+      {!compact && <span>{cfg.label}</span>}
+    </span>
+  )
+}
+
+function pipelineStateConfig(state) {
+  switch (state) {
+    case 'SUCCESSFUL':
+      return {
+        label: 'Successful',
+        icon: CheckCircle2,
+        cls: 'text-emerald-500',
+        dotCls: 'bg-emerald-500'
+      }
+    case 'FAILED':
+    case 'ERROR':
+      return {
+        label: state === 'ERROR' ? 'Error' : 'Failed',
+        icon: XCircle,
+        cls: 'text-destructive',
+        dotCls: 'bg-destructive'
+      }
+    case 'IN_PROGRESS':
+      return {
+        label: 'In progress',
+        icon: Loader2,
+        cls: 'text-sky-400',
+        dotCls: 'bg-sky-500',
+        pulse: true
+      }
+    case 'PAUSED':
+      return {
+        label: 'Paused',
+        icon: Pause,
+        cls: 'text-amber-500',
+        dotCls: 'bg-amber-500'
+      }
+    case 'PENDING':
+      return {
+        label: 'Pending',
+        icon: Clock,
+        cls: 'text-amber-400',
+        dotCls: 'bg-amber-400',
+        pulse: true
+      }
+    case 'STOPPED':
+      return {
+        label: 'Stopped',
+        icon: CircleSlash,
+        cls: 'text-muted-foreground',
+        dotCls: 'bg-zinc-500'
+      }
+    case 'EXPIRED':
+      return {
+        label: 'Expired',
+        icon: Clock,
+        cls: 'text-muted-foreground',
+        dotCls: 'bg-zinc-500'
+      }
+    case 'HALTED':
+      return {
+        label: 'Halted',
+        icon: AlertCircle,
+        cls: 'text-amber-500',
+        dotCls: 'bg-amber-500'
+      }
+    default:
+      return {
+        label: state || 'Unknown',
+        icon: CircleDashed,
+        cls: 'text-muted-foreground',
+        dotCls: 'bg-zinc-600'
+      }
+  }
+}
+
+function TabToolbar({ left, right }) {
+  if (!left && !right) return null
+  return (
+    <div className="px-6 py-1.5 flex items-center gap-3 text-xs">
+      {left}
+      <div className="ml-auto">{right}</div>
+    </div>
+  )
+}
+
+function TabErrorState({ onRetry }) {
+  return (
+    <div className="p-6 text-center space-y-3">
+      <AlertCircle size={28} className="mx-auto text-destructive" />
+      <p className="text-sm text-muted-foreground">
+        Could not load — check Bitbucket credentials in Settings.
+      </p>
+      <Button variant="outline" size="sm" onClick={onRetry}>
+        <RefreshCw size={12} /> Retry
+      </Button>
     </div>
   )
 }
@@ -880,10 +1472,14 @@ function RestoreProgress({ slug, state, onClearError }) {
 }
 
 function formatDuration(seconds) {
+  if (seconds == null || Number.isNaN(seconds)) return '—'
   if (seconds < 60) return `${seconds}s`
   const m = Math.floor(seconds / 60)
   const s = seconds % 60
-  return `${m}m ${String(s).padStart(2, '0')}s`
+  if (m < 60) return `${m}m ${String(s).padStart(2, '0')}s`
+  const h = Math.floor(m / 60)
+  const rm = m % 60
+  return rm ? `${h}h ${rm}m` : `${h}h`
 }
 
 
