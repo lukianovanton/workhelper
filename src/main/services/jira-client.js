@@ -381,27 +381,36 @@ function toIssueShape(it) {
 }
 
 /**
- * /rest/api/3/search — JQL-поиск с пагинацией. Bitbucket-style
- * ленту собираем за один проход (Jira пагинирует по startAt+maxResults).
+ * JQL-поиск через новый /rest/api/3/search/jql endpoint. Atlassian
+ * убрала старый /rest/api/3/search в апреле 2026 (CHANGE-2046):
+ * теперь курсорная пагинация по nextPageToken вместо startAt, и
+ * `total` сервер больше не отдаёт — для "approximate count" есть
+ * отдельный endpoint, но для нашего UI достаточно длины первой
+ * страницы.
  *
  * @param {string} jql
- * @param {{ maxResults?: number, startAt?: number }} [opts]
+ * @param {{ maxResults?: number, nextPageToken?: string }} [opts]
  */
 async function searchIssues(jql, opts = {}) {
   const client = buildClient()
   const max = Math.min(opts.maxResults ?? 50, 100)
-  const startAt = opts.startAt ?? 0
   const qs = new URLSearchParams({
     jql,
-    startAt: String(startAt),
     maxResults: String(max),
     fields: ISSUE_FIELDS
   })
-  const data = await client.request(`/rest/api/3/search?${qs.toString()}`)
+  if (opts.nextPageToken) qs.set('nextPageToken', opts.nextPageToken)
+  const data = await client.request(
+    `/rest/api/3/search/jql?${qs.toString()}`
+  )
+  const issues = (data.issues || []).map(toIssueShape)
   return {
-    issues: (data.issues || []).map(toIssueShape),
-    total: typeof data.total === 'number' ? data.total : 0,
-    isLast: (data.startAt || 0) + (data.issues?.length || 0) >= (data.total || 0)
+    issues,
+    // total из API больше не приходит — отдаём длину текущей страницы,
+    // UI на этом счётчике никаких бизнес-решений не строит.
+    total: issues.length,
+    isLast: data.isLast !== false && !data.nextPageToken,
+    nextPageToken: data.nextPageToken || null
   }
 }
 
