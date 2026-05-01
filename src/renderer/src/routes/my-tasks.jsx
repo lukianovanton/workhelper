@@ -357,49 +357,83 @@ export function TaskDetailContent({ detail }) {
   const d = detail.data
   return (
     <>
-      <div className="grid grid-cols-2 gap-3 text-xs">
-        <Field label="Status">
-          <StatusBadge category={d.statusCategory} label={d.status} />
-        </Field>
-        <Field label="Project">
-          <span className="font-mono">{d.project.key}</span>{' '}
-          <span className="text-muted-foreground">— {d.project.name}</span>
-        </Field>
-        <Field label="Assignee">
-          {d.assignee ? d.assignee.displayName : '—'}
-        </Field>
-        <Field label="Reporter">
-          {d.reporter ? d.reporter.displayName : '—'}
-        </Field>
-        <Field label="Priority">{d.priority || '—'}</Field>
-        <Field label="Type">{d.issueType}</Field>
-        <Field label="Updated">{formatRelative(d.updated)}</Field>
-        <Field label="Created">{formatRelative(d.created)}</Field>
-        {d.duedate && <Field label="Due">{d.duedate}</Field>}
-        {d.labels.length > 0 && (
-          <Field label="Labels" full>
-            <div className="flex flex-wrap gap-1.5 mt-1">
-              {d.labels.map((l) => (
-                <span
-                  key={l}
-                  className="text-[10px] px-1.5 py-0.5 rounded-sm bg-muted/50 font-mono"
-                >
-                  {l}
-                </span>
-              ))}
-            </div>
-          </Field>
+      {/* Шапочные chip'ы — статус, тип, приоритет на одной строке.
+          Сразу видно главное о таске одним взглядом. */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <StatusBadge category={d.statusCategory} label={d.status} />
+        {d.issueType && (
+          <span className="text-[10px] px-1.5 py-0.5 rounded-sm bg-muted/50 text-muted-foreground border border-border/40 inline-flex items-center gap-1">
+            {d.issueTypeIconUrl && (
+              <img
+                src={d.issueTypeIconUrl}
+                alt=""
+                className="w-3 h-3"
+              />
+            )}
+            {d.issueType}
+          </span>
+        )}
+        {d.priority && (
+          <span className="text-[10px] px-1.5 py-0.5 rounded-sm bg-muted/50 text-muted-foreground border border-border/40 inline-flex items-center gap-1">
+            {d.priorityIconUrl && (
+              <img
+                src={d.priorityIconUrl}
+                alt=""
+                className="w-3 h-3"
+              />
+            )}
+            {d.priority}
+          </span>
         )}
       </div>
 
+      {/* Project — короткая инлайн-строчка, не отдельная плита */}
+      <div className="text-xs text-muted-foreground">
+        in{' '}
+        <code className="font-mono text-foreground/80">{d.project.key}</code>
+        {' '}— {d.project.name}
+      </div>
+
+      {/* People row — Assignee и Reporter с initials-аватарами */}
+      <div className="flex items-center gap-5 flex-wrap">
+        <PersonChip role="Assignee" person={d.assignee} />
+        <PersonChip role="Reporter" person={d.reporter} />
+      </div>
+
+      {/* Times + due — одной серой строкой внизу metadata */}
+      <div className="text-[11px] text-muted-foreground">
+        Updated {formatRelative(d.updated)} · Created{' '}
+        {formatRelative(d.created)}
+        {d.duedate && (
+          <>
+            {' '}
+            · <span className="text-amber-400">Due {d.duedate}</span>
+          </>
+        )}
+      </div>
+
+      {/* Labels — если есть */}
+      {d.labels.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {d.labels.map((l) => (
+            <span
+              key={l}
+              className="text-[10px] px-1.5 py-0.5 rounded-sm bg-muted/50 font-mono text-muted-foreground"
+            >
+              {l}
+            </span>
+          ))}
+        </div>
+      )}
+
       {d.description && (
-        <section className="space-y-2">
+        <section className="space-y-1.5">
           <h3 className="text-[11px] uppercase tracking-wide text-muted-foreground">
             Description
           </h3>
-          <pre className="text-xs whitespace-pre-wrap font-sans bg-muted/30 border border-border/40 rounded px-3 py-2">
+          <div className="text-xs whitespace-pre-wrap bg-muted/20 border border-border/40 rounded-md px-3 py-2.5 leading-relaxed">
             {d.description}
-          </pre>
+          </div>
         </section>
       )}
 
@@ -410,16 +444,21 @@ export function TaskDetailContent({ detail }) {
           </h3>
           <ul className="space-y-3">
             {d.comments.map((c) => (
-              <li
-                key={c.id}
-                className="border-l-2 border-border pl-3 space-y-1"
-              >
-                <div className="text-[11px] text-muted-foreground flex items-center gap-2">
-                  <strong className="text-foreground/80">{c.author}</strong>
-                  <span>·</span>
-                  <span>{formatRelative(c.created)}</span>
+              <li key={c.id} className="flex gap-2.5">
+                <Avatar name={c.author} size={24} />
+                <div className="flex-1 min-w-0">
+                  <div className="text-[11px] flex items-center gap-1.5">
+                    <strong className="text-foreground/85">
+                      {c.author}
+                    </strong>
+                    <span className="text-muted-foreground">
+                      · {formatRelative(c.created)}
+                    </span>
+                  </div>
+                  <div className="text-xs whitespace-pre-wrap mt-0.5 leading-relaxed">
+                    {c.body}
+                  </div>
                 </div>
-                <div className="text-xs whitespace-pre-wrap">{c.body}</div>
               </li>
             ))}
           </ul>
@@ -429,14 +468,83 @@ export function TaskDetailContent({ detail }) {
   )
 }
 
-function Field({ label, children, full }) {
-  return (
-    <div className={cn(full && 'col-span-2')}>
-      <div className="text-[10px] uppercase tracking-wide text-muted-foreground/70">
-        {label}
+/**
+ * Чип "Assignee: <name>" или "Reporter: <name>" с initials-аватаром.
+ * Если person отсутствует — рендерим заглушку с прочерком.
+ */
+function PersonChip({ role, person }) {
+  if (!person) {
+    return (
+      <div className="inline-flex items-center gap-1.5">
+        <Avatar name={null} size={20} />
+        <div className="leading-tight">
+          <div className="text-[10px] text-muted-foreground/80 uppercase tracking-wide">
+            {role}
+          </div>
+          <div className="text-xs text-muted-foreground">—</div>
+        </div>
       </div>
-      <div className="mt-0.5">{children}</div>
+    )
+  }
+  return (
+    <div className="inline-flex items-center gap-1.5">
+      <Avatar name={person.displayName} size={20} />
+      <div className="leading-tight">
+        <div className="text-[10px] text-muted-foreground/80 uppercase tracking-wide">
+          {role}
+        </div>
+        <div className="text-xs">{person.displayName}</div>
+      </div>
     </div>
+  )
+}
+
+// Палитра для initials-аватаров: 8 неярких заливок, чтобы один и
+// тот же юзер всегда был одного цвета (хешируем имя), но разные
+// люди в комментах визуально отличались.
+const AVATAR_COLORS = [
+  'bg-sky-500/20 text-sky-300',
+  'bg-emerald-500/20 text-emerald-300',
+  'bg-amber-500/20 text-amber-300',
+  'bg-rose-500/20 text-rose-300',
+  'bg-violet-500/20 text-violet-300',
+  'bg-cyan-500/20 text-cyan-300',
+  'bg-orange-500/20 text-orange-300',
+  'bg-pink-500/20 text-pink-300'
+]
+
+/**
+ * Initials-аватарка. Берёт первые буквы первого и (если есть)
+ * второго слова имени, заглавными. Цвет выбирается детерминированно
+ * по hash имени — один и тот же юзер всегда одного цвета.
+ */
+function Avatar({ name, size = 24 }) {
+  if (!name) {
+    return (
+      <span
+        style={{ width: size, height: size }}
+        className="inline-flex items-center justify-center rounded-full bg-muted/60 text-muted-foreground shrink-0"
+      >
+        <span className="text-[10px]">?</span>
+      </span>
+    )
+  }
+  const parts = name.split(/\s+/).filter(Boolean)
+  const initials = (parts[0]?.[0] || '') + (parts[1]?.[0] || '')
+  const cleaned = initials.toUpperCase() || '?'
+  const hash =
+    [...name].reduce((acc, c) => acc + c.charCodeAt(0), 0) %
+    AVATAR_COLORS.length
+  return (
+    <span
+      style={{ width: size, height: size }}
+      className={cn(
+        'inline-flex items-center justify-center rounded-full font-medium shrink-0',
+        AVATAR_COLORS[hash]
+      )}
+    >
+      <span className="text-[10px]">{cleaned}</span>
+    </span>
   )
 }
 
