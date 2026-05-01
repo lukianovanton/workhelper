@@ -38,6 +38,20 @@ const DEFAULTS = {
   },
   presence: {
     enabled: false
+  },
+  jira: {
+    /**
+     * Корневой URL Jira Cloud, без слеша на конце. Для self-hosted
+     * Server/DC формат другой, но REST API совместим.
+     */
+    host: '',
+    /**
+     * Atlassian email для Basic-авторизации REST API. Если пусто —
+     * jira-client фолбэчится на bitbucket.username (тот же
+     * Atlassian-аккаунт у большинства пользователей). Поле оставлено
+     * на случай отдельных Atlassian-аккаунтов.
+     */
+    email: ''
   }
 }
 

@@ -8,7 +8,7 @@
  * - safeStorage.isEncryptionAvailable() требует, чтобы app был ready;
  *   IPC-хендлеры вызываются после whenReady так что условие всегда выполнено
  *
- * Поддерживаемые ключи: 'bitbucketApiToken', 'dbPassword'.
+ * Поддерживаемые ключи: 'bitbucketApiToken', 'dbPassword', 'jiraApiToken'.
  */
 
 import { safeStorage } from 'electron'
@@ -19,7 +19,11 @@ const store = new Store({
   clearInvalidConfig: true
 })
 
-const VALID_KEYS = new Set(['bitbucketApiToken', 'dbPassword'])
+const VALID_KEYS = new Set([
+  'bitbucketApiToken',
+  'dbPassword',
+  'jiraApiToken'
+])
 
 function assertKey(key) {
   if (!VALID_KEYS.has(key)) {
@@ -28,7 +32,7 @@ function assertKey(key) {
 }
 
 /**
- * @param {'bitbucketApiToken'|'dbPassword'} key
+ * @param {'bitbucketApiToken'|'dbPassword'|'jiraApiToken'} key
  * @param {string} value
  */
 export function setSecret(key, value) {
@@ -47,7 +51,7 @@ export function setSecret(key, value) {
 }
 
 /**
- * @param {'bitbucketApiToken'|'dbPassword'} key
+ * @param {'bitbucketApiToken'|'dbPassword'|'jiraApiToken'} key
  * @returns {string|null}
  */
 export function getSecret(key) {
@@ -65,7 +69,7 @@ export function getSecret(key) {
 }
 
 /**
- * @param {'bitbucketApiToken'|'dbPassword'} key
+ * @param {'bitbucketApiToken'|'dbPassword'|'jiraApiToken'} key
  */
 export function clearSecret(key) {
   assertKey(key)
@@ -75,11 +79,12 @@ export function clearSecret(key) {
 /**
  * Возвращает карту key → boolean (есть ли значение). Не раскрывает значения.
  *
- * @returns {{ bitbucketApiToken: boolean, dbPassword: boolean }}
+ * @returns {{ bitbucketApiToken: boolean, dbPassword: boolean, jiraApiToken: boolean }}
  */
 export function secretsStatus() {
   return {
     bitbucketApiToken: store.has('bitbucketApiToken'),
-    dbPassword: store.has('dbPassword')
+    dbPassword: store.has('dbPassword'),
+    jiraApiToken: store.has('jiraApiToken')
   }
 }

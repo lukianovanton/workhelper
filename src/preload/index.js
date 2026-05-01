@@ -121,6 +121,17 @@ const api = {
     list: () => ipcRenderer.invoke('presence:list'),
     isEnabled: () => ipcRenderer.invoke('presence:isEnabled'),
     setEnabled: (on) => ipcRenderer.invoke('presence:setEnabled', on)
+  },
+  jira: {
+    testConnection: () => ipcRenderer.invoke('jira:test'),
+    projects: () => ipcRenderer.invoke('jira:projects'),
+    projectsRefresh: () => ipcRenderer.invoke('jira:projects:refresh'),
+    myIssues: (opts) => ipcRenderer.invoke('jira:my-issues', opts),
+    projectIssues: (projectKey, opts) =>
+      ipcRenderer.invoke('jira:project-issues', projectKey, opts),
+    issueDetail: (issueKey) =>
+      ipcRenderer.invoke('jira:issue-detail', issueKey),
+    issueUrl: (issueKey) => ipcRenderer.invoke('jira:issue-url', issueKey)
   }
 }
 

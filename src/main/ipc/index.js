@@ -8,6 +8,7 @@ import { registerProcessIpc } from './process.ipc.js'
 import { registerSetupIpc } from './setup.ipc.js'
 import { registerAppIpc } from './app.ipc.js'
 import { registerPresenceIpc } from './presence.ipc.js'
+import { registerJiraIpc } from './jira.ipc.js'
 
 /**
  * Регистрация всех IPC-хендлеров. Вызывается из main/index.js
@@ -24,4 +25,5 @@ export function registerAllIpc() {
   registerSetupIpc()
   registerAppIpc()
   registerPresenceIpc()
+  registerJiraIpc()
 }
