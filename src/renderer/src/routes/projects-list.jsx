@@ -38,6 +38,7 @@ import {
 } from '@/hooks/use-jira'
 import { PipelineStateBadge } from '@/routes/project-detail'
 import { WorkspaceNav } from '@/routes/my-tasks'
+import { useT } from '@/i18n'
 import { api } from '@/api'
 
 const SORT_STORAGE_KEY = 'projects-sort'
@@ -107,24 +108,25 @@ function compareProjects(a, b, column) {
 // противоречивых комбинаций вроде Installed + Not installed.
 const NAV_SECTIONS = /** @type {const} */ ([
   {
-    title: 'Status',
+    titleKey: 'projects.nav.status',
     items: [
-      { id: 'all', label: 'All' },
-      { id: 'installed', label: 'Installed' },
-      { id: 'not-installed', label: 'Not installed' },
-      { id: 'running', label: 'Running' }
+      { id: 'all', labelKey: 'projects.nav.all' },
+      { id: 'installed', labelKey: 'projects.nav.installed' },
+      { id: 'not-installed', labelKey: 'projects.nav.notInstalled' },
+      { id: 'running', labelKey: 'projects.nav.running' }
     ]
   },
   {
-    title: 'Type',
+    titleKey: 'projects.nav.type',
     items: [
-      { id: 'projects', label: 'Projects' },
-      { id: 'templates', label: 'Templates' }
+      { id: 'projects', labelKey: 'projects.nav.projects' },
+      { id: 'templates', labelKey: 'projects.nav.templates' }
     ]
   }
 ])
 
 export default function ProjectsList() {
+  const t = useT()
   const { projects, warnings, isLoading, isFetching, error, refresh } =
     useProjects()
   const { bySlug: runningBySlug } = useRunningProcesses()
@@ -381,10 +383,10 @@ export default function ProjectsList() {
     <div className="flex h-screen w-screen">
       <aside className="w-60 border-r border-border bg-card flex flex-col">
         <div className="p-4 border-b border-border">
-          <h1 className="text-lg font-semibold">Project Hub</h1>
+          <h1 className="text-lg font-semibold">{t('app.title')}</h1>
           {projects && (
             <p className="text-xs text-muted-foreground mt-0.5">
-              {projects.length} repos in workspace
+              {t('app.reposInWorkspace', { count: projects.length })}
             </p>
           )}
         </div>
@@ -392,13 +394,13 @@ export default function ProjectsList() {
           <WorkspaceNav active="projects" />
           {NAV_SECTIONS.map((section, sectionIdx) => (
             <div
-              key={section.title}
+              key={section.titleKey}
               className={cn(
                 'space-y-1 pt-3 mt-3 border-t border-border'
               )}
             >
               <div className="px-3 pb-1 text-[10px] uppercase tracking-wider text-muted-foreground/70">
-                {section.title}
+                {t(section.titleKey)}
               </div>
               {section.items.map((f) => {
                 const active = isFilterActive(f.id)
@@ -415,7 +417,7 @@ export default function ProjectsList() {
                         : 'hover:bg-accent/60'
                     )}
                   >
-                    <span>{f.label}</span>
+                    <span>{t(f.labelKey)}</span>
                     <span className="text-xs text-muted-foreground tabular-nums">
                       {counts[f.id] ?? 0}
                     </span>
@@ -428,7 +430,7 @@ export default function ProjectsList() {
           {recent.length > 0 && projects && (
             <div className="pt-3 mt-3 border-t border-border">
               <div className="px-3 pb-1 text-[10px] uppercase tracking-wider text-muted-foreground/70">
-                Recent
+                {t('projects.recent')}
               </div>
               {recent.slice(0, 5).map((r) => {
                 const p = projects.find((x) => x.slug === r.slug)
@@ -460,7 +462,7 @@ export default function ProjectsList() {
             className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-accent text-sm"
           >
             <SettingsIcon size={14} />
-            Settings
+            {t('app.settings')}
           </Link>
         </div>
       </aside>
@@ -475,7 +477,7 @@ export default function ProjectsList() {
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by slug, name, description…"
+              placeholder={t('projects.search.placeholder')}
               className="pl-9"
             />
           </div>
@@ -492,21 +494,21 @@ export default function ProjectsList() {
               ) : (
                 <RefreshCw />
               )}
-              Refresh
+              {t('common.refresh')}
             </Button>
           </div>
         </header>
 
         {selected.size > 0 && (
           <div className="px-6 py-2 border-b border-amber-500/30 bg-amber-500/10 text-amber-300 text-xs flex items-center gap-3">
-            <span>{selected.size} selected</span>
+            <span>{t('projects.selected', { count: selected.size })}</span>
             <Button
               variant="outline"
               size="sm"
               onClick={onBulkPull}
               disabled={bulkBusy}
             >
-              <GitPullRequest /> Pull
+              <GitPullRequest /> {t('projects.bulk.pull')}
             </Button>
             <Button
               variant="outline"
@@ -514,7 +516,7 @@ export default function ProjectsList() {
               onClick={onBulkStop}
               disabled={bulkBusy}
             >
-              <Square /> Stop
+              <Square /> {t('projects.bulk.stop')}
             </Button>
             <Button
               variant="ghost"
@@ -522,7 +524,7 @@ export default function ProjectsList() {
               onClick={clearSelected}
               className="ml-auto"
             >
-              <XSquare /> Clear
+              <XSquare /> {t('common.clear')}
             </Button>
           </div>
         )}
@@ -533,13 +535,13 @@ export default function ProjectsList() {
           <div className="px-6 py-1.5 border-b border-border/60 text-xs flex items-center gap-2">
             <Filter size={11} className="text-sky-400" />
             <span className="text-muted-foreground">
-              Column filters active
+              {t('projects.columnFiltersActive')}
             </span>
             <button
               onClick={clearColumnFilters}
               className="ml-auto text-sky-400 hover:text-sky-300 underline-offset-2 hover:underline"
             >
-              Clear
+              {t('projects.columnFilters.clear')}
             </button>
           </div>
         )}
@@ -605,6 +607,7 @@ function ProjectsTable({
   taskCountBySlug,
   onOpen
 }) {
+  const t = useT()
   const compact = density === 'compact'
   // Compact ощутимо плотнее: уменьшаем не только padding, но и шрифт
   // тела + сжимаем подзаголовок (description под name) до nowrap.
@@ -617,16 +620,16 @@ function ProjectsTable({
   if (total === 0) {
     return (
       <EmptyState
-        title="No repositories"
-        message="Bitbucket workspace returned an empty list."
+        title={t('projects.empty.title')}
+        message={t('projects.empty.message')}
       />
     )
   }
   if (projects.length === 0) {
     return (
       <EmptyState
-        title="No matches"
-        message="Adjust filter or search to see results."
+        title={t('projects.noMatches.title')}
+        message={t('projects.noMatches.message', { count: total })}
       />
     )
   }
@@ -637,16 +640,18 @@ function ProjectsTable({
         <tr className="text-left text-xs text-muted-foreground">
           <th className={cn('font-normal w-8', cellPad)}></th>
           <th className={cn('font-normal w-8', cellPad)}></th>
-          <th className={cn('font-normal w-20', cellPad)}>Status</th>
+          <th className={cn('font-normal w-20', cellPad)}>
+            {t('projects.column.status')}
+          </th>
           <ColumnHeader
             sortId="slug"
             sort={sort}
             onSort={onSort}
             className={cn('w-32', cellPad)}
-            label="Slug"
+            label={t('projects.column.slug')}
             filter={
               <TextColumnFilter
-                title="Filter by slug"
+                title={t('projects.filter.slug')}
                 value={columnFilters.slug}
                 onChange={(v) => setColumnFilter('slug', v)}
               />
@@ -658,10 +663,10 @@ function ProjectsTable({
             sort={sort}
             onSort={onSort}
             className={cellPad}
-            label="Name"
+            label={t('projects.column.name')}
             filter={
               <TextColumnFilter
-                title="Filter by name"
+                title={t('projects.filter.name')}
                 value={columnFilters.name}
                 onChange={(v) => setColumnFilter('name', v)}
               />
@@ -670,7 +675,7 @@ function ProjectsTable({
           />
           <ColumnHeader
             className={cn('w-24', cellPad)}
-            label="Kind"
+            label={t('projects.column.kind')}
             filter={
               <KindColumnFilter
                 value={columnFilters.kind}
@@ -686,17 +691,17 @@ function ProjectsTable({
             className={cn('w-24', cellPad)}
             align="right"
             popoverAlign="right"
-            label="DB size"
+            label={t('projects.column.dbSize')}
             filter={
               <BucketColumnFilter
                 value={columnFilters.dbSize}
                 onChange={(v) => setColumnFilter('dbSize', v)}
                 options={[
-                  { value: 'any', label: 'Any' },
-                  { value: 'empty', label: 'Empty / not exists' },
-                  { value: 'small', label: 'Small (<10 MB)' },
-                  { value: 'medium', label: 'Medium (10–100 MB)' },
-                  { value: 'large', label: 'Large (≥100 MB)' }
+                  { value: 'any', label: t('projects.dbSize.any') },
+                  { value: 'empty', label: t('projects.dbSize.empty') },
+                  { value: 'small', label: t('projects.dbSize.small') },
+                  { value: 'medium', label: t('projects.dbSize.medium') },
+                  { value: 'large', label: t('projects.dbSize.large') }
                 ]}
               />
             }
@@ -708,17 +713,17 @@ function ProjectsTable({
             onSort={onSort}
             className={cn('w-32', cellPad)}
             popoverAlign="right"
-            label="Last commit"
+            label={t('projects.column.lastCommit')}
             filter={
               <BucketColumnFilter
                 value={columnFilters.updated}
                 onChange={(v) => setColumnFilter('updated', v)}
                 options={[
-                  { value: 'any', label: 'Any time' },
-                  { value: 'week', label: 'Last 7 days' },
-                  { value: 'month', label: 'Last 30 days' },
-                  { value: 'quarter', label: 'Last 90 days' },
-                  { value: 'older', label: 'Older than 90 days' }
+                  { value: 'any', label: t('projects.lastCommit.any') },
+                  { value: 'week', label: t('projects.lastCommit.week') },
+                  { value: 'month', label: t('projects.lastCommit.month') },
+                  { value: 'quarter', label: t('projects.lastCommit.quarter') },
+                  { value: 'older', label: t('projects.lastCommit.older') }
                 ]}
               />
             }
@@ -776,6 +781,7 @@ function ProjectRow({
   descCls,
   taskCount
 }) {
+  const t = useT()
   const [hovered, setHovered] = useState(false)
   const [hoverDelayed, setHoverDelayed] = useState(false)
   useEffect(() => {
@@ -783,8 +789,8 @@ function ProjectRow({
       setHoverDelayed(false)
       return
     }
-    const t = setTimeout(() => setHoverDelayed(true), 500)
-    return () => clearTimeout(t)
+    const timer = setTimeout(() => setHoverDelayed(true), 500)
+    return () => clearTimeout(timer)
   }, [hovered])
   const enabled = favorite || hoverDelayed
   const { data: pipelines } = usePipelines(p.slug, {
@@ -816,7 +822,9 @@ function ProjectRow({
             e.stopPropagation()
             onToggleFavorite()
           }}
-          title={favorite ? 'Unpin' : 'Pin to top'}
+          title={
+            favorite ? t('projects.row.unpin') : t('projects.row.pin')
+          }
           className={cn(
             'transition-colors',
             favorite
@@ -835,7 +843,7 @@ function ProjectRow({
           <Highlight text={p.slug} match={search} />
           {taskCount > 0 && (
             <span
-              title={`${taskCount} open Jira task${taskCount === 1 ? '' : 's'} assigned to you`}
+              title={t('projects.row.taskCount', { count: taskCount })}
               className="inline-flex items-center gap-0.5 text-[10px] px-1 py-px rounded bg-sky-500/15 text-sky-300 font-sans tabular-nums"
             >
               <ListTodo size={9} />
@@ -883,10 +891,11 @@ function ProjectRow({
  * dim-кружок, чтобы не было визуальных скачков по ширине строки.
  */
 function PipelineCell({ pipeline, enabled }) {
+  const t = useT()
   if (!enabled) {
     return (
       <span
-        title="Hover to load last pipeline"
+        title={t('projects.pipeline.hoverToLoad')}
         className="inline-block w-2 h-2 rounded-full bg-zinc-800"
       />
     )
@@ -894,12 +903,14 @@ function PipelineCell({ pipeline, enabled }) {
   if (!pipeline) {
     return (
       <span
-        title="No pipelines"
+        title={t('projects.pipeline.noPipelines')}
         className="inline-block w-2 h-2 rounded-full bg-zinc-800/50"
       />
     )
   }
-  const tooltip = `Last pipeline: ${pipeline.state}${
+  const tooltip = `${t('projects.pipeline.lastPipeline', {
+    state: pipeline.state
+  })}${
     pipeline.createdOn ? ' · ' + formatRelative(pipeline.createdOn) : ''
   }${pipeline.buildNumber ? ' · #' + pipeline.buildNumber : ''}`
   return (
@@ -946,6 +957,7 @@ function ColumnHeader({
   filter,
   active
 }) {
+  const t = useT()
   // По умолчанию popover открывается от того же края, что и колонка
   // выровнена. Для крайних правых колонок (DB size, Last commit) это
   // спасает от вылета поповера за окно.
@@ -980,7 +992,7 @@ function ColumnHeader({
             align={popAlign}
             trigger={
               <button
-                title="Filter"
+                title={t('projects.filter.title.tooltip')}
                 className={cn(
                   'p-0.5 rounded hover:bg-accent transition-colors',
                   active
@@ -1005,6 +1017,7 @@ function ColumnHeader({
  * Trigger принимает любой клик-handlable элемент.
  */
 function PresenceWidget() {
+  const t = useT()
   const navigate = useNavigate()
   const { sessions, enabled, me, others } = usePresence()
   const totalOnline = enabled ? sessions.length : 0
@@ -1013,8 +1026,8 @@ function PresenceWidget() {
     <button
       title={
         enabled
-          ? `${totalOnline} online`
-          : 'Presence disabled. Enable in Settings.'
+          ? t('presence.tooltip.online', { count: totalOnline })
+          : t('presence.tooltip.disabled')
       }
       className={cn(
         'inline-flex items-center gap-1.5 px-2.5 h-8 rounded-md border text-xs transition-colors',
@@ -1032,17 +1045,17 @@ function PresenceWidget() {
     <Popover trigger={trigger} align="right">
       <div className="min-w-[260px] space-y-2">
         <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-          Online · {totalOnline}
+          {t('presence.online', { count: totalOnline })}
         </div>
         {!enabled && (
           <div className="text-xs text-muted-foreground space-y-2">
-            <div>Presence disabled. Enable in Settings.</div>
+            <div>{t('presence.disabled.line')}</div>
             <Button
               variant="outline"
               size="sm"
               onClick={() => navigate('/settings')}
             >
-              Open Settings
+              {t('common.openSettings')}
             </Button>
           </div>
         )}
@@ -1050,13 +1063,13 @@ function PresenceWidget() {
           <div className="space-y-2">
             <PresenceItem session={me} />
             <div className="text-xs text-muted-foreground pt-1 border-t border-border/50">
-              No one else online.
+              {t('presence.noOthers')}
             </div>
           </div>
         )}
         {enabled && others.length === 0 && !me && (
           <div className="text-xs text-muted-foreground">
-            Starting up… no broadcasts yet.
+            {t('presence.starting')}
           </div>
         )}
         {enabled && others.length > 0 && (
@@ -1082,6 +1095,7 @@ function PresenceWidget() {
 }
 
 function PresenceItem({ session }) {
+  const t = useT()
   return (
     <div>
       <div className="text-sm font-medium flex items-center gap-1.5 flex-wrap">
@@ -1089,7 +1103,7 @@ function PresenceItem({ session }) {
         <span className="text-muted-foreground">/</span>
         <span>{session.user}</span>
         {session.isMe && (
-          <span className="text-[10px] text-sky-400">(you)</span>
+          <span className="text-[10px] text-sky-400">{t('common.you')}</span>
         )}
       </div>
       <div className="text-[11px] text-muted-foreground flex items-center gap-2 flex-wrap mt-0.5">
@@ -1101,7 +1115,11 @@ function PresenceItem({ session }) {
           </>
         )}
         <span>·</span>
-        <span>since {formatRelative(session.startedAt)}</span>
+        <span>
+          {t('presence.since', {
+            time: formatRelative(session.startedAt)
+          })}
+        </span>
       </div>
     </div>
   )
@@ -1153,6 +1171,7 @@ function Popover({ trigger, children, align = 'left' }) {
 }
 
 function TextColumnFilter({ title, value, onChange }) {
+  const t = useT()
   return (
     <div className="space-y-2">
       <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
@@ -1162,7 +1181,7 @@ function TextColumnFilter({ title, value, onChange }) {
         autoFocus
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder="contains…"
+        placeholder={t('projects.filter.contains')}
         className="h-7 text-xs"
       />
       {value && (
@@ -1170,7 +1189,7 @@ function TextColumnFilter({ title, value, onChange }) {
           onClick={() => onChange('')}
           className="text-[11px] text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
         >
-          <XIcon size={10} /> Clear
+          <XIcon size={10} /> {t('common.clear')}
         </button>
       )}
     </div>
@@ -1178,7 +1197,11 @@ function TextColumnFilter({ title, value, onChange }) {
 }
 
 function KindColumnFilter({ value, onChange }) {
-  const opts = ['project', 'template']
+  const t = useT()
+  const opts = [
+    { id: 'project', label: t('projects.kind.project') },
+    { id: 'template', label: t('projects.kind.template') }
+  ]
   const toggle = (k) => {
     const next = new Set(value)
     if (next.has(k)) next.delete(k)
@@ -1188,20 +1211,20 @@ function KindColumnFilter({ value, onChange }) {
   return (
     <div className="space-y-1.5">
       <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-        Filter by kind
+        {t('projects.filter.kind')}
       </div>
-      {opts.map((k) => (
+      {opts.map((opt) => (
         <label
-          key={k}
+          key={opt.id}
           className="flex items-center gap-2 text-xs cursor-pointer"
         >
           <input
             type="checkbox"
-            checked={value.has(k)}
-            onChange={() => toggle(k)}
+            checked={value.has(opt.id)}
+            onChange={() => toggle(opt.id)}
             className="rounded border-input"
           />
-          <span className="capitalize">{k}</span>
+          <span>{opt.label}</span>
         </label>
       ))}
       {value.size > 0 && (
@@ -1209,7 +1232,7 @@ function KindColumnFilter({ value, onChange }) {
           onClick={() => onChange(new Set())}
           className="text-[11px] text-muted-foreground hover:text-foreground inline-flex items-center gap-1 mt-1"
         >
-          <XIcon size={10} /> Clear
+          <XIcon size={10} /> {t('common.clear')}
         </button>
       )}
     </div>
@@ -1259,6 +1282,7 @@ function SortHeader({ id, sort, onSort, children, className, align = 'left' }) {
 }
 
 function StatusDots({ project, runtime }) {
+  const t = useT()
   const running = !!runtime
   const dots = [
     {
@@ -1266,22 +1290,22 @@ function StatusDots({ project, runtime }) {
       onColor: 'bg-emerald-500',
       offColor: 'bg-muted-foreground/25',
       title: project.local.cloned
-        ? `Cloned at ${project.local.path}`
-        : 'Not cloned'
+        ? t('projects.statusDots.cloned', { path: project.local.path })
+        : t('projects.statusDots.notCloned')
     },
     {
       on: project.db.exists,
       onColor: 'bg-emerald-500',
       offColor: 'bg-muted-foreground/25',
       title: project.db.exists
-        ? `Database ${project.db.name} exists`
-        : `Database ${project.db.name} not found`
+        ? t('projects.statusDots.dbExists', { name: project.db.name })
+        : t('projects.statusDots.dbNotFound', { name: project.db.name })
     },
     {
       on: false,
       onColor: 'bg-amber-500',
       offColor: 'bg-muted-foreground/15',
-      title: 'Dirty (live status only in drawer for now)'
+      title: t('projects.statusDots.dirty')
     },
     {
       on: running,
@@ -1289,8 +1313,11 @@ function StatusDots({ project, runtime }) {
       offColor: 'bg-muted-foreground/15',
       pulse: running,
       title: running
-        ? `Running on :${runtime?.port ?? '?'} (PID ${runtime?.pid})`
-        : 'Not running'
+        ? t('projects.statusDots.running', {
+            port: runtime?.port ?? '?',
+            pid: runtime?.pid
+          })
+        : t('projects.statusDots.notRunning')
     }
   ]
   return (
@@ -1312,7 +1339,7 @@ function StatusDots({ project, runtime }) {
             e.stopPropagation()
             window.open(runtime.url, '_blank')
           }}
-          title={`Open ${runtime.url}`}
+          title={t('projects.row.openInBrowser', { url: runtime.url })}
           className="ml-1 text-muted-foreground hover:text-sky-500 transition-colors"
         >
           <ExternalLink size={11} />
@@ -1323,6 +1350,7 @@ function StatusDots({ project, runtime }) {
 }
 
 function KindBadge({ kind, projectKey }) {
+  const t = useT()
   const isTemplate = kind === 'template'
   const tone = isTemplate
     ? 'bg-amber-500/15 text-amber-400 border-amber-500/30'
@@ -1337,7 +1365,7 @@ function KindBadge({ kind, projectKey }) {
       )}
     >
       <Icon size={11} />
-      {kind}
+      {isTemplate ? t('projects.kind.template') : t('projects.kind.project')}
     </span>
   )
 }
@@ -1348,11 +1376,12 @@ function KindBadge({ kind, projectKey }) {
  * клик по :port → внешний браузер, клик по ✕ → stop.
  */
 function RunningBar({ running, onOpen, onStop }) {
+  const t = useT()
   if (!running || running.length === 0) return null
   return (
     <div className="px-6 py-2 border-b border-sky-500/30 bg-sky-500/10 flex items-center gap-2 flex-wrap text-xs">
       <span className="text-sky-400 font-medium">
-        Running ({running.length}):
+        {t('projects.runningBar.label', { count: running.length })}
       </span>
       {running.map((r) => (
         <span
@@ -1362,7 +1391,7 @@ function RunningBar({ running, onOpen, onStop }) {
           <button
             onClick={() => onOpen(r.slug)}
             className="font-mono text-sky-300 hover:text-sky-100"
-            title={`Open ${r.slug} drawer`}
+            title={t('projects.runningBar.openDrawer', { slug: r.slug })}
           >
             {r.slug}
           </button>
@@ -1372,7 +1401,7 @@ function RunningBar({ running, onOpen, onStop }) {
                 e.stopPropagation()
                 window.open(r.url, '_blank')
               }}
-              title={`Open ${r.url}`}
+              title={t('projects.row.openInBrowser', { url: r.url })}
               className="text-sky-400 hover:text-sky-200"
             >
               :{r.port ?? '?'}
@@ -1386,7 +1415,7 @@ function RunningBar({ running, onOpen, onStop }) {
               e.stopPropagation()
               onStop(r.slug)
             }}
-            title="Stop"
+            title={t('projects.bulk.stop')}
             className="ml-1 text-muted-foreground hover:text-destructive"
           >
             <Square size={10} className="inline" />
@@ -1434,6 +1463,7 @@ function ListLoading() {
 }
 
 function ListError({ error }) {
+  const t = useT()
   const message = error?.message || String(error)
   const isConfig =
     /credentials/i.test(message) || /workspace not set/i.test(message)
@@ -1441,7 +1471,7 @@ function ListError({ error }) {
     <div className="h-full flex items-center justify-center p-8">
       <div className="max-w-md text-center space-y-3">
         <AlertCircle className="mx-auto text-destructive" size={32} />
-        <h3 className="font-medium">Couldn't load projects</h3>
+        <h3 className="font-medium">{t('projects.error.title')}</h3>
         <p className="text-sm text-muted-foreground">{message}</p>
         {isConfig && (
           <Link
@@ -1449,7 +1479,7 @@ function ListError({ error }) {
             className="inline-flex items-center gap-2 text-sm text-primary underline-offset-4 hover:underline"
           >
             <SettingsIcon size={14} />
-            Open Settings
+            {t('common.openSettings')}
           </Link>
         )}
       </div>
