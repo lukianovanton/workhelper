@@ -100,30 +100,6 @@ export default function ProjectDetail() {
     if (slug) touchRecent(slug)
   }, [slug, touchRecent])
 
-  // J/K (или ↑/↓) навигация между проектами не закрывая drawer.
-  // Реагирует на keydown глобально, кроме случая когда фокус в input/textarea.
-  useEffect(() => {
-    if (!projects || !slug) return
-    const onKey = (e) => {
-      if (e.target?.tagName === 'INPUT' || e.target?.tagName === 'TEXTAREA')
-        return
-      if (e.metaKey || e.ctrlKey || e.altKey) return
-      const idx = projects.findIndex((p) => p.slug === slug)
-      if (idx === -1) return
-      let nextIdx = null
-      if (e.key === 'j' || e.key === 'ArrowDown') nextIdx = idx + 1
-      else if (e.key === 'k' || e.key === 'ArrowUp') nextIdx = idx - 1
-      if (nextIdx == null) return
-      const next = projects[(nextIdx + projects.length) % projects.length]
-      if (next) {
-        e.preventDefault()
-        navigate(`/projects/${next.slug}`)
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [projects, slug, navigate])
-
   if (projectsLoading)
     return <DrawerShell onClose={() => navigate('/projects')} loading />
   if (!project)
