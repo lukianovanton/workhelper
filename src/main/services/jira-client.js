@@ -305,31 +305,9 @@ export async function listProjects(forceRefresh = false) {
   return fresh
 }
 
-/**
- * Резолв ADF (Atlassian Document Format) → plain text. Jira Cloud
- * хранит description / comment.body как ADF-дерево. Парсим только
- * текстовые узлы — для предпросмотра в UI этого достаточно. Полный
- * рендер отложим, если понадобится таблицы / mention'ы / картинки.
- */
-function adfToPlain(node) {
-  if (!node) return ''
-  if (typeof node === 'string') return node
-  if (node.type === 'text' && typeof node.text === 'string') return node.text
-  if (Array.isArray(node.content)) {
-    const isBlock =
-      node.type === 'paragraph' ||
-      node.type === 'heading' ||
-      node.type === 'listItem' ||
-      node.type === 'bulletList' ||
-      node.type === 'orderedList' ||
-      node.type === 'codeBlock' ||
-      node.type === 'blockquote'
-    return (
-      node.content.map(adfToPlain).join('') + (isBlock ? '\n' : '')
-    )
-  }
-  return ''
-}
+// ADF (Atlassian Document Format) больше не плющим в plain text —
+// renderer получает raw tree и сам рендерит узлы (links, lists,
+// inlineCard и т.п.). См. AdfRenderer в renderer'е.
 
 const ISSUE_FIELDS = [
   'summary',
@@ -602,14 +580,17 @@ export async function getIssueDetail(issueKey) {
   }
 
   const base = toIssueShape(it)
-  const desc = it.fields?.description
-  const description = desc ? adfToPlain(desc).trim() : ''
+  // description / comment.body — отдаём raw ADF tree (или null).
+  // Renderer сам решает как его отрисовать (AdfRenderer); у нас в
+  // main процессе нет нормального React-инструментария для рендера,
+  // и хочется сохранить mark'и / inlineCard / mention.
+  const description = it.fields?.description || null
   const comments = (it.fields?.comment?.comments || [])
     .slice(-5)
     .map((c) => ({
       id: String(c.id || ''),
       author: c.author?.displayName || 'unknown',
-      body: c.body ? adfToPlain(c.body).trim() : '',
+      body: c.body || null,
       created: c.created || ''
     }))
 

@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { useMyJiraIssues, useJiraIssueDetail } from '@/hooks/use-jira'
+import { AdfRenderer } from '@/components/adf-renderer'
 import { api } from '@/api'
 
 /**
@@ -433,8 +434,8 @@ export function TaskDetailContent({ detail }) {
           <h3 className="text-[11px] uppercase tracking-wide text-muted-foreground">
             Description
           </h3>
-          <div className="text-xs whitespace-pre-wrap bg-muted/20 border border-border/40 rounded-md px-3 py-2.5 leading-relaxed">
-            {d.description}
+          <div className="text-xs bg-muted/20 border border-border/40 rounded-md px-3 py-2.5 leading-relaxed">
+            <AdfRenderer node={d.description} />
           </div>
         </section>
       )}
@@ -457,8 +458,8 @@ export function TaskDetailContent({ detail }) {
                       · {formatRelative(c.created)}
                     </span>
                   </div>
-                  <div className="text-xs whitespace-pre-wrap mt-0.5 leading-relaxed">
-                    {c.body}
+                  <div className="text-xs mt-0.5 leading-relaxed">
+                    <AdfRenderer node={c.body} />
                   </div>
                 </div>
               </li>
