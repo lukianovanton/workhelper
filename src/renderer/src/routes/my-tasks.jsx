@@ -394,11 +394,13 @@ export function TaskDetailContent({ detail }) {
         {' '}— {d.project.name}
       </div>
 
-      {/* People row — Assignee и Reporter с initials-аватарами */}
-      <div className="flex items-center gap-5 flex-wrap">
-        <PersonChip role="Assignee" person={d.assignee} />
-        <PersonChip role="Reporter" person={d.reporter} />
-      </div>
+      {/* People — отдельной строкой каждая роль, формат как у
+          комментариев: avatar | name · role. Так визуально однородно
+          с комментариями ниже и не выглядит «по центру вертикально». */}
+      <ul className="space-y-1.5">
+        <PersonRow role="Assignee" person={d.assignee} />
+        <PersonRow role="Reporter" person={d.reporter} />
+      </ul>
 
       {/* Times + due — одной серой строкой внизу metadata */}
       <div className="text-[11px] text-muted-foreground">
@@ -469,33 +471,28 @@ export function TaskDetailContent({ detail }) {
 }
 
 /**
- * Чип "Assignee: <name>" или "Reporter: <name>" с initials-аватаром.
- * Если person отсутствует — рендерим заглушку с прочерком.
+ * Одна строка людей: avatar слева, потом имя + роль через ·.
+ * Layout идентичен строке комментария (avatar 24, gap-2.5, info
+ * справа), чтобы Assignee/Reporter и комментарии визуально
+ * выстраивались в одну колонку.
  */
-function PersonChip({ role, person }) {
-  if (!person) {
-    return (
-      <div className="inline-flex items-center gap-1.5">
-        <Avatar name={null} size={20} />
-        <div className="leading-tight">
-          <div className="text-[10px] text-muted-foreground/80 uppercase tracking-wide">
-            {role}
-          </div>
-          <div className="text-xs text-muted-foreground">—</div>
-        </div>
-      </div>
-    )
-  }
+function PersonRow({ role, person }) {
   return (
-    <div className="inline-flex items-center gap-1.5">
-      <Avatar name={person.displayName} size={20} />
-      <div className="leading-tight">
-        <div className="text-[10px] text-muted-foreground/80 uppercase tracking-wide">
-          {role}
-        </div>
-        <div className="text-xs">{person.displayName}</div>
+    <li className="flex items-center gap-2.5">
+      <Avatar name={person?.displayName || null} size={24} />
+      <div className="text-xs leading-tight">
+        {person ? (
+          <>
+            <strong className="text-foreground/90">
+              {person.displayName}
+            </strong>
+            <span className="text-muted-foreground"> · {role}</span>
+          </>
+        ) : (
+          <span className="text-muted-foreground">{role} — unassigned</span>
+        )}
       </div>
-    </div>
+    </li>
   )
 }
 
