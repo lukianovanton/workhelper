@@ -5,8 +5,11 @@ import {
   getLastCommit,
   getCommits,
   getCommitDetail,
+  getCommitFileDiff,
   getPipelines,
-  getPipelineSteps
+  getPipelineSteps,
+  getPipelineStepLog,
+  getBranches
 } from '../services/bitbucket-client.js'
 import { enrichProjects } from '../services/enrich.js'
 
@@ -37,11 +40,15 @@ export function registerBitbucketIpc() {
   ipcMain.handle('bitbucket:lastCommit', (_event, slug) =>
     getLastCommit(slug)
   )
-  ipcMain.handle('bitbucket:commits', (_event, slug, pagelen) =>
-    getCommits(slug, pagelen)
+  ipcMain.handle('bitbucket:commits', (_event, slug, opts) =>
+    getCommits(slug, opts)
   )
   ipcMain.handle('bitbucket:commit-detail', (_event, slug, hash) =>
     getCommitDetail(slug, hash)
+  )
+  ipcMain.handle(
+    'bitbucket:commit-file-diff',
+    (_event, slug, hash, path) => getCommitFileDiff(slug, hash, path)
   )
   ipcMain.handle('bitbucket:pipelines', (_event, slug, opts) =>
     getPipelines(slug, opts)
@@ -49,4 +56,10 @@ export function registerBitbucketIpc() {
   ipcMain.handle('bitbucket:pipeline-steps', (_event, slug, pipelineUuid) =>
     getPipelineSteps(slug, pipelineUuid)
   )
+  ipcMain.handle(
+    'bitbucket:pipeline-step-log',
+    (_event, slug, pipelineUuid, stepUuid) =>
+      getPipelineStepLog(slug, pipelineUuid, stepUuid)
+  )
+  ipcMain.handle('bitbucket:branches', (_event, slug) => getBranches(slug))
 }

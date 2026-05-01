@@ -37,7 +37,10 @@ import { useLastCommit, useCommits } from '@/hooks/use-last-commit'
 import {
   useCommitDetail,
   usePipelines,
-  usePipelineSteps
+  usePipelineSteps,
+  useBranches,
+  useCommitFileDiff,
+  usePipelineStepLog
 } from '@/hooks/use-bitbucket'
 import { useRunningProcesses } from '@/hooks/use-running-processes'
 import { useGitStatus } from '@/hooks/use-git-status'
@@ -174,6 +177,25 @@ function Drawer({ project, dbAvailable, onClose }) {
   // Tab внутри drawer'а. Сессионный (per-mount), не персистится —
   // когда переключаешь проекты, default снова Overview.
   const [activeTab, setActiveTab] = useState('overview')
+
+  // Выбранная ветка — общая для Commits и Pipelines табов. null =
+  // «все ветки» (Bitbucket вернёт коммиты/пайплайны без фильтра).
+  // При первом загруженном списке веток мы автоматически выставляем
+  // default ветку (mainbranch.name). Дальше пользователь сам рулит;
+  // touched защищает от перезаписи следующими refetch'ами.
+  const [selectedBranch, setSelectedBranch] = useState(null)
+  const [branchTouched, setBranchTouched] = useState(false)
+  const branchesQuery = useBranches(project.slug)
+  const defaultBranch = branchesQuery.data?.defaultBranch || null
+  useEffect(() => {
+    if (!branchTouched && defaultBranch) {
+      setSelectedBranch(defaultBranch)
+    }
+  }, [defaultBranch, branchTouched])
+  const onBranchChange = (b) => {
+    setSelectedBranch(b)
+    setBranchTouched(true)
+  }
 
   const [actionStatus, setActionStatus] = useState(null)
   const flashTimerRef = useRef(null)
@@ -606,8 +628,22 @@ function Drawer({ project, dbAvailable, onClose }) {
         />
           </OverviewTab>
         )}
-        {activeTab === 'commits' && <CommitsTab project={project} />}
-        {activeTab === 'pipelines' && <PipelinesTab project={project} />}
+        {activeTab === 'commits' && (
+          <CommitsTab
+            project={project}
+            branch={selectedBranch}
+            branchesQuery={branchesQuery}
+            onBranchChange={onBranchChange}
+          />
+        )}
+        {activeTab === 'pipelines' && (
+          <PipelinesTab
+            project={project}
+            branch={selectedBranch}
+            branchesQuery={branchesQuery}
+            onBranchChange={onBranchChange}
+          />
+        )}
       </div>
 
       <AlertDialog open={dropDialogOpen} onOpenChange={setDropDialogOpen}>
@@ -791,49 +827,61 @@ function OverviewTab({ children }) {
  * Только один коммит раскрыт за раз (accordion-поведение). При
  * раскрытии лениво грузится getCommitDetail с diffstat.
  */
-function CommitsTab({ project }) {
+function CommitsTab({ project, branch, branchesQuery, onBranchChange }) {
   const slug = project.slug
-  const { data, isLoading, isError, refetch } = useCommits(slug, 30)
+  const { data, isLoading, isError, refetch } = useCommits(slug, {
+    pagelen: 30,
+    branch
+  })
   const [expandedHash, setExpandedHash] = useState(null)
 
   const toggle = (hash) =>
     setExpandedHash((prev) => (prev === hash ? null : hash))
 
-  if (isLoading) {
-    return (
-      <div className="p-6 space-y-3">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="space-y-1.5">
-            <div className="h-3 bg-muted rounded w-3/4 animate-pulse" />
-            <div className="h-3 bg-muted rounded w-1/2 animate-pulse" />
-          </div>
-        ))}
-      </div>
-    )
-  }
-  if (isError) {
-    return <TabErrorState onRetry={refetch} />
-  }
-  if (!data || data.length === 0) {
-    return (
-      <div className="p-6 text-sm text-muted-foreground">
-        No commits found for this repository.
-      </div>
-    )
-  }
-
   return (
-    <div className="divide-y divide-border/60">
-      {data.map((c) => (
-        <CommitRow
-          key={c.hash}
-          slug={slug}
-          commit={c}
-          expanded={expandedHash === c.hash}
-          onToggle={() => toggle(c.hash)}
-        />
-      ))}
-    </div>
+    <>
+      <BranchPicker
+        branchesQuery={branchesQuery}
+        value={branch}
+        onChange={onBranchChange}
+      />
+      {isLoading ? (
+        <div className="p-6 space-y-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="space-y-1.5">
+              <div className="h-3 bg-muted rounded w-3/4 animate-pulse" />
+              <div className="h-3 bg-muted rounded w-1/2 animate-pulse" />
+            </div>
+          ))}
+        </div>
+      ) : isError ? (
+        <TabErrorState onRetry={refetch} />
+      ) : !data || data.length === 0 ? (
+        <div className="p-6 text-sm text-muted-foreground">
+          No commits found
+          {branch ? (
+            <>
+              {' '}on branch <code className="font-mono">{branch}</code>
+            </>
+          ) : (
+            ''
+          )}
+          .
+        </div>
+      ) : (
+        <div className="divide-y divide-border/60">
+          {data.map((c) => (
+            <CommitRow
+              key={c.hash}
+              slug={slug}
+              commit={c}
+              expanded={expandedHash === c.hash}
+              onToggle={() => toggle(c.hash)}
+            />
+          ))}
+        </div>
+      )}
+    </>
   )
 }
 
@@ -865,14 +913,22 @@ function CommitRow({ slug, commit, expanded, onToggle }) {
       </button>
       {expanded && (
         <div className="px-6 pb-4 pl-[3.25rem] text-sm space-y-3 bg-muted/20">
-          <CommitDetailContent commit={commit} detail={detail} />
+          <CommitDetailContent
+            slug={slug}
+            commit={commit}
+            detail={detail}
+          />
         </div>
       )}
     </div>
   )
 }
 
-function CommitDetailContent({ commit, detail }) {
+function CommitDetailContent({ slug, commit, detail }) {
+  // Раскрытый файл — для inline-diff. Только один открыт за раз;
+  // повторный клик по тому же закрывает.
+  const [openedFile, setOpenedFile] = useState(null)
+
   if (detail.isLoading) {
     return (
       <div className="py-3 text-xs text-muted-foreground inline-flex items-center gap-2">
@@ -911,25 +967,53 @@ function CommitDetailContent({ commit, detail }) {
             )}
           </div>
           <ul className="text-xs font-mono space-y-0.5">
-            {ds.files.map((f, i) => (
-              <li
-                key={f.path + i}
-                className="flex items-center gap-2 hover:bg-accent/30 px-1 -mx-1 rounded"
-              >
-                <FileStatusIcon status={f.status} />
-                <span className="truncate flex-1">{f.path}</span>
-                {f.linesAdded > 0 && (
-                  <span className="text-emerald-500 tabular-nums">
-                    +{f.linesAdded}
-                  </span>
-                )}
-                {f.linesRemoved > 0 && (
-                  <span className="text-destructive tabular-nums">
-                    -{f.linesRemoved}
-                  </span>
-                )}
-              </li>
-            ))}
+            {ds.files.map((f, i) => {
+              const open = openedFile === f.path
+              return (
+                <li key={f.path + i}>
+                  <button
+                    onClick={() =>
+                      setOpenedFile(open ? null : f.path)
+                    }
+                    className={cn(
+                      'w-full flex items-center gap-2 px-1 -mx-1 rounded text-left transition-colors',
+                      open ? 'bg-accent/40' : 'hover:bg-accent/30'
+                    )}
+                  >
+                    {open ? (
+                      <ChevronDown
+                        size={11}
+                        className="text-muted-foreground shrink-0"
+                      />
+                    ) : (
+                      <ChevronRight
+                        size={11}
+                        className="text-muted-foreground shrink-0"
+                      />
+                    )}
+                    <FileStatusIcon status={f.status} />
+                    <span className="truncate flex-1">{f.path}</span>
+                    {f.linesAdded > 0 && (
+                      <span className="text-emerald-500 tabular-nums">
+                        +{f.linesAdded}
+                      </span>
+                    )}
+                    {f.linesRemoved > 0 && (
+                      <span className="text-destructive tabular-nums">
+                        -{f.linesRemoved}
+                      </span>
+                    )}
+                  </button>
+                  {open && (
+                    <FileDiffViewer
+                      slug={slug}
+                      hash={commit.hash}
+                      path={f.path}
+                    />
+                  )}
+                </li>
+              )
+            })}
           </ul>
         </div>
       ) : (
@@ -937,16 +1021,82 @@ function CommitDetailContent({ commit, detail }) {
           No diffstat available (often the case for the initial commit).
         </div>
       )}
-      <div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => window.open(d.url, '_blank')}
-        >
-          <ExternalLink size={12} /> View on Bitbucket
-        </Button>
-      </div>
+      <a
+        href={d.url}
+        onClick={(e) => {
+          e.preventDefault()
+          window.open(d.url, '_blank')
+        }}
+        className="text-[11px] text-muted-foreground hover:text-foreground inline-flex items-center gap-1 underline-offset-2 hover:underline"
+      >
+        Open on Bitbucket <ExternalLink size={10} />
+      </a>
     </>
+  )
+}
+
+/**
+ * Inline-просмотр unified-diff одного файла. Подсветка по
+ * первому символу строки: + emerald, - destructive, @@ sky,
+ * остальное — base. Ничего не парсим — один проход по
+ * .split('\n'). Pre-обёртка с max-height и собственным
+ * горизонтальным скроллом, чтобы длинные строки не ломали layout.
+ */
+function FileDiffViewer({ slug, hash, path }) {
+  const { data, isLoading, isError } = useCommitFileDiff(
+    slug,
+    hash,
+    path,
+    { enabled: true }
+  )
+  if (isLoading) {
+    return (
+      <div className="py-2 pl-5 text-[11px] text-muted-foreground inline-flex items-center gap-2">
+        <Loader2 size={11} className="animate-spin" /> Loading diff…
+      </div>
+    )
+  }
+  if (isError) {
+    return (
+      <div className="py-2 pl-5 text-[11px] text-destructive">
+        Could not load diff.
+      </div>
+    )
+  }
+  if (!data || !data.trim()) {
+    return (
+      <div className="py-2 pl-5 text-[11px] text-muted-foreground">
+        Empty diff (binary file or no textual changes).
+      </div>
+    )
+  }
+  const lines = data.split('\n')
+  return (
+    <pre className="ml-5 mt-1 mb-2 max-h-96 overflow-auto bg-background/80 border border-border/40 rounded text-[11px] leading-snug">
+      <code className="block">
+        {lines.map((line, idx) => (
+          <DiffLine key={idx} line={line} />
+        ))}
+      </code>
+    </pre>
+  )
+}
+
+function DiffLine({ line }) {
+  let cls = 'text-foreground/80'
+  if (line.startsWith('+++') || line.startsWith('---')) {
+    cls = 'text-muted-foreground'
+  } else if (line.startsWith('@@')) {
+    cls = 'text-sky-400 bg-sky-500/10'
+  } else if (line.startsWith('+')) {
+    cls = 'text-emerald-400 bg-emerald-500/10'
+  } else if (line.startsWith('-')) {
+    cls = 'text-destructive bg-destructive/10'
+  } else if (line.startsWith('diff ') || line.startsWith('index ')) {
+    cls = 'text-muted-foreground'
+  }
+  return (
+    <span className={cn('block whitespace-pre px-2', cls)}>{line || ' '}</span>
   )
 }
 
@@ -978,56 +1128,69 @@ function FileStatusIcon({ status }) {
  * PENDING запись. Steps конкретного пайплайна грузятся лениво по
  * раскрытию.
  */
-function PipelinesTab({ project }) {
+function PipelinesTab({ project, branch, branchesQuery, onBranchChange }) {
   const slug = project.slug
   const { data, isLoading, isError, refetch } = usePipelines(slug, {
-    pagelen: 20
+    pagelen: 20,
+    branch
   })
   const [expandedUuid, setExpandedUuid] = useState(null)
 
   const toggle = (uuid) =>
     setExpandedUuid((prev) => (prev === uuid ? null : uuid))
 
-  if (isLoading) {
-    return (
-      <div className="p-6 space-y-3">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <div key={i} className="space-y-1.5">
-            <div className="h-3 bg-muted rounded w-1/2 animate-pulse" />
-            <div className="h-3 bg-muted rounded w-1/3 animate-pulse" />
-          </div>
-        ))}
-      </div>
-    )
-  }
-  if (isError) {
-    return <TabErrorState onRetry={refetch} />
-  }
-  if (!data || data.length === 0) {
-    return (
-      <div className="p-6 text-sm text-muted-foreground space-y-2">
-        <p>No pipelines found for this repository.</p>
-        <p className="text-xs">
-          If pipelines run on this repo but the list is empty — the API
-          token may be missing the <code>read:pipeline:bitbucket</code>{' '}
-          scope. Recreate the token with that scope added.
-        </p>
-      </div>
-    )
-  }
-
   return (
-    <div className="divide-y divide-border/60">
-      {data.map((p) => (
-        <PipelineRow
-          key={p.uuid}
-          slug={slug}
-          pipeline={p}
-          expanded={expandedUuid === p.uuid}
-          onToggle={() => toggle(p.uuid)}
-        />
-      ))}
-    </div>
+    <>
+      <BranchPicker
+        branchesQuery={branchesQuery}
+        value={branch}
+        onChange={onBranchChange}
+      />
+      {isLoading ? (
+        <div className="p-6 space-y-3">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="space-y-1.5">
+              <div className="h-3 bg-muted rounded w-1/2 animate-pulse" />
+              <div className="h-3 bg-muted rounded w-1/3 animate-pulse" />
+            </div>
+          ))}
+        </div>
+      ) : isError ? (
+        <TabErrorState onRetry={refetch} />
+      ) : !data || data.length === 0 ? (
+        <div className="p-6 text-sm text-muted-foreground space-y-2">
+          <p>
+            No pipelines found
+            {branch ? (
+              <>
+                {' '}on branch <code className="font-mono">{branch}</code>
+              </>
+            ) : (
+              ''
+            )}
+            .
+          </p>
+          <p className="text-xs">
+            If pipelines run on this repo but the list is empty — the
+            API token may be missing the{' '}
+            <code>read:pipeline:bitbucket</code> scope. Recreate the
+            token with that scope added.
+          </p>
+        </div>
+      ) : (
+        <div className="divide-y divide-border/60">
+          {data.map((p) => (
+            <PipelineRow
+              key={p.uuid}
+              slug={slug}
+              pipeline={p}
+              expanded={expandedUuid === p.uuid}
+              onToggle={() => toggle(p.uuid)}
+            />
+          ))}
+        </div>
+      )}
+    </>
   )
 }
 
@@ -1072,13 +1235,16 @@ function PipelineRow({ slug, pipeline, expanded, onToggle }) {
             )}
           </div>
           <PipelineSteps slug={slug} pipelineUuid={pipeline.uuid} />
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => window.open(pipeline.url, '_blank')}
+          <a
+            href={pipeline.url}
+            onClick={(e) => {
+              e.preventDefault()
+              window.open(pipeline.url, '_blank')
+            }}
+            className="text-[11px] text-muted-foreground hover:text-foreground inline-flex items-center gap-1 underline-offset-2 hover:underline"
           >
-            <ExternalLink size={12} /> View on Bitbucket
-          </Button>
+            Open on Bitbucket <ExternalLink size={10} />
+          </a>
         </div>
       )}
     </div>
@@ -1087,6 +1253,9 @@ function PipelineRow({ slug, pipeline, expanded, onToggle }) {
 
 function PipelineSteps({ slug, pipelineUuid }) {
   const { data, isLoading, isError } = usePipelineSteps(slug, pipelineUuid)
+  // Раскрытый step — для inline-log. Только один открыт за раз.
+  const [openedStepUuid, setOpenedStepUuid] = useState(null)
+
   if (isLoading) {
     return (
       <div className="text-[11px] text-muted-foreground inline-flex items-center gap-2">
@@ -1110,19 +1279,105 @@ function PipelineSteps({ slug, pipelineUuid }) {
   }
   return (
     <ul className="text-xs space-y-1">
-      {data.map((s) => (
-        <li
-          key={s.uuid}
-          className="flex items-center gap-2 px-1 -mx-1 rounded hover:bg-accent/30"
-        >
-          <PipelineStateBadge state={s.state} compact />
-          <span className="flex-1 truncate">{s.name}</span>
-          <span className="text-[11px] text-muted-foreground tabular-nums">
-            {formatDuration(s.durationSeconds)}
-          </span>
-        </li>
-      ))}
+      {data.map((s) => {
+        const open = openedStepUuid === s.uuid
+        // Лог пока активного step'а пока не стримим — пусть
+        // пользователь подождёт завершения. Раскрывать таких
+        // тоже не разрешаем, чтобы не отдавать пустой "no log
+        // yet" каждый раз.
+        const liveStep =
+          s.state === 'IN_PROGRESS' ||
+          s.state === 'PENDING' ||
+          s.state === 'PAUSED'
+        return (
+          <li key={s.uuid}>
+            <button
+              onClick={() =>
+                liveStep
+                  ? null
+                  : setOpenedStepUuid(open ? null : s.uuid)
+              }
+              disabled={liveStep}
+              title={
+                liveStep
+                  ? 'Logs available once the step finishes'
+                  : open
+                  ? 'Hide log'
+                  : 'Show log'
+              }
+              className={cn(
+                'w-full flex items-center gap-2 px-1 -mx-1 rounded text-left transition-colors',
+                liveStep
+                  ? 'cursor-default opacity-90'
+                  : open
+                  ? 'bg-accent/40'
+                  : 'hover:bg-accent/30'
+              )}
+            >
+              {!liveStep &&
+                (open ? (
+                  <ChevronDown
+                    size={11}
+                    className="text-muted-foreground shrink-0"
+                  />
+                ) : (
+                  <ChevronRight
+                    size={11}
+                    className="text-muted-foreground shrink-0"
+                  />
+                ))}
+              <PipelineStateBadge state={s.state} compact />
+              <span className="flex-1 truncate">{s.name}</span>
+              <span className="text-[11px] text-muted-foreground tabular-nums">
+                {formatDuration(s.durationSeconds)}
+              </span>
+            </button>
+            {open && !liveStep && (
+              <StepLogViewer
+                slug={slug}
+                pipelineUuid={pipelineUuid}
+                stepUuid={s.uuid}
+              />
+            )}
+          </li>
+        )
+      })}
     </ul>
+  )
+}
+
+function StepLogViewer({ slug, pipelineUuid, stepUuid }) {
+  const { data, isLoading, isError } = usePipelineStepLog(
+    slug,
+    pipelineUuid,
+    stepUuid,
+    { enabled: true }
+  )
+  if (isLoading) {
+    return (
+      <div className="py-2 pl-5 text-[11px] text-muted-foreground inline-flex items-center gap-2">
+        <Loader2 size={11} className="animate-spin" /> Loading log…
+      </div>
+    )
+  }
+  if (isError) {
+    return (
+      <div className="py-2 pl-5 text-[11px] text-destructive">
+        Could not load log.
+      </div>
+    )
+  }
+  if (!data || !data.trim()) {
+    return (
+      <div className="py-2 pl-5 text-[11px] text-muted-foreground">
+        No log output for this step.
+      </div>
+    )
+  }
+  return (
+    <pre className="ml-5 mt-1 mb-2 max-h-96 overflow-auto bg-zinc-950 border border-border/40 rounded text-[11px] leading-snug text-zinc-200 px-2 py-1.5 whitespace-pre">
+      {data}
+    </pre>
   )
 }
 
@@ -1233,6 +1488,54 @@ function pipelineStateConfig(state) {
         dotCls: 'bg-zinc-600'
       }
   }
+}
+
+/**
+ * Selector ветки для Commits/Pipelines табов. Native <select> —
+ * простой, accessible, не нуждается ни в каких popover-зависимостях.
+ * Опция "All branches" (value="") = null в state, тогда хуки идут
+ * без branch-фильтра.
+ *
+ * Default-ветка помечена в скобках. Если список ещё грузится —
+ * select disabled, но текущее значение (которое уже могло быть
+ * автоустановлено родителем) показывается.
+ */
+function BranchPicker({ branchesQuery, value, onChange }) {
+  const branches = branchesQuery.data?.branches || []
+  const defaultBranch = branchesQuery.data?.defaultBranch || null
+  const loading = branchesQuery.isLoading
+  // Если выбрана ветка, которой ещё нет в списке (например пока
+  // грузится /refs/branches), всё равно показываем её как option,
+  // чтобы select не сбросило в "All branches" визуально.
+  const showOrphan = value && !branches.includes(value)
+  return (
+    <div className="px-6 py-2 border-b border-border/40 flex items-center gap-2 text-xs">
+      <span className="text-muted-foreground shrink-0">Branch:</span>
+      <select
+        value={value || ''}
+        onChange={(e) => onChange(e.target.value || null)}
+        disabled={loading}
+        className={cn(
+          'bg-background border border-input rounded px-2 py-1 text-xs font-mono',
+          'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
+          'min-w-[10rem] max-w-[18rem] truncate',
+          loading && 'opacity-60'
+        )}
+      >
+        <option value="">All branches</option>
+        {showOrphan && <option value={value}>{value}</option>}
+        {branches.map((b) => (
+          <option key={b} value={b}>
+            {b}
+            {b === defaultBranch ? ' (default)' : ''}
+          </option>
+        ))}
+      </select>
+      {loading && (
+        <Loader2 size={11} className="animate-spin text-muted-foreground" />
+      )}
+    </div>
+  )
 }
 
 function TabErrorState({ onRetry }) {

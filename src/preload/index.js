@@ -14,14 +14,24 @@ const api = {
     refresh: () => ipcRenderer.invoke('bitbucket:refresh'),
     testConnection: () => ipcRenderer.invoke('bitbucket:test'),
     lastCommit: (slug) => ipcRenderer.invoke('bitbucket:lastCommit', slug),
-    commits: (slug, pagelen) =>
-      ipcRenderer.invoke('bitbucket:commits', slug, pagelen),
+    commits: (slug, opts) =>
+      ipcRenderer.invoke('bitbucket:commits', slug, opts),
     commitDetail: (slug, hash) =>
       ipcRenderer.invoke('bitbucket:commit-detail', slug, hash),
+    commitFileDiff: (slug, hash, path) =>
+      ipcRenderer.invoke('bitbucket:commit-file-diff', slug, hash, path),
     pipelines: (slug, opts) =>
       ipcRenderer.invoke('bitbucket:pipelines', slug, opts),
     pipelineSteps: (slug, pipelineUuid) =>
-      ipcRenderer.invoke('bitbucket:pipeline-steps', slug, pipelineUuid)
+      ipcRenderer.invoke('bitbucket:pipeline-steps', slug, pipelineUuid),
+    pipelineStepLog: (slug, pipelineUuid, stepUuid) =>
+      ipcRenderer.invoke(
+        'bitbucket:pipeline-step-log',
+        slug,
+        pipelineUuid,
+        stepUuid
+      ),
+    branches: (slug) => ipcRenderer.invoke('bitbucket:branches', slug)
   },
   git: {
     clone: (slug) => ipcRenderer.invoke('git:clone', slug),

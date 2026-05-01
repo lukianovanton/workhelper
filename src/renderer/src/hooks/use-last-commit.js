@@ -15,17 +15,27 @@ export function useLastCommit(slug) {
 
 /**
  * Lazy-fetch последних N коммитов. Дёргается при открытии drawer
- * для секций «Recent commits» / Commits-tab. Тот же кэш-ключ
- * ['commits', slug, n] — переживает закрытие/открытие drawer.
+ * для секций «Recent commits» / Commits-tab.
  *
- * Default pagelen=30 совпадает со спекой Чекпоинта 13 для Commits-tab.
- * LastCommitSection / превью продолжает звать с pagelen=5 — ключ кэша
- * у них раздельный, конфликта нет.
+ * Параметры: { pagelen, branch }. Без branch Bitbucket отдаёт
+ * коммиты всех веток в хронологии — для Recent-preview это ОК.
+ * В Commits-tab прокидываем выбранную ветку и тогда видны только
+ * её коммиты.
+ *
+ * Старый positional-вызов useCommits(slug, 5) тоже работает —
+ * число интерпретируется как pagelen. Так LastCommitSection
+ * продолжает работать без изменений.
+ *
+ * @param {string} slug
+ * @param {{ pagelen?: number, branch?: string | null } | number} [opts]
  */
-export function useCommits(slug, pagelen = 30) {
+export function useCommits(slug, opts = {}) {
+  const o = typeof opts === 'number' ? { pagelen: opts } : opts || {}
+  const pagelen = o.pagelen ?? 30
+  const branch = o.branch || null
   return useQuery({
-    queryKey: ['commits', slug, pagelen],
-    queryFn: () => api.bitbucket.commits(slug, pagelen),
+    queryKey: ['commits', slug, pagelen, branch],
+    queryFn: () => api.bitbucket.commits(slug, { pagelen, branch }),
     enabled: typeof slug === 'string' && slug.length > 0,
     staleTime: FIVE_MIN,
     retry: false

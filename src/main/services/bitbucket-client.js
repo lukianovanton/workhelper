@@ -67,15 +67,17 @@ function buildClient() {
   /**
    * @param {string} pathOrUrl относительный путь от /2.0 или абсолютный URL
    *                           (для пагинации по next)
+   * @param {{ asText?: boolean }} [opts] asText=true для diff/log
+   *                                       эндпоинтов, которые отдают text/plain
    */
-  async function request(pathOrUrl) {
+  async function request(pathOrUrl, opts = {}) {
     const url = pathOrUrl.startsWith('http')
       ? pathOrUrl
       : `${API_BASE}${pathOrUrl}`
 
     const res = await fetch(url, {
       headers: {
-        Accept: 'application/json',
+        Accept: opts.asText ? 'text/plain, */*' : 'application/json',
         Authorization: auth
       }
     })
@@ -116,7 +118,7 @@ function buildClient() {
         'http'
       )
     }
-    return res.json()
+    return opts.asText ? res.text() : res.json()
   }
 
   return { request, workspace, username }
@@ -261,14 +263,18 @@ export async function listProjects(forceRefresh = false) {
  * drawer), НЕ в составе list — чтобы не делать 70+ доп. запросов
  * на каждый рефреш и не упираться в rate-limit.
  *
- * Возвращает обогащённую форму: author — display name (string,
- * для обратной совместимости с LastCommitSection), плюс
- * authorAccountId (понадобится в Jira-фазе для парсинга
- * привязки коммита к юзеру) и parents (для chains/merge-commit
- * визуализации).
+ * Если передан opts.branch — фильтруем по ветке через путь
+ * /commits/{branch}; без branch Bitbucket отдаёт коммиты всех
+ * веток в хронологическом порядке (это редко то, что хочет
+ * пользователь — обычно интересна одна ветка).
+ *
+ * Author — display name (string, для обратной совместимости с
+ * LastCommitSection), плюс authorAccountId (Jira-фаза) и
+ * parents (chains/merge-commit визуализация).
  *
  * @param {string} slug
- * @param {number} [pagelen=30]
+ * @param {{ pagelen?: number, branch?: string | null } | number} [opts]
+ *   Также допускается positional number — для обратной совместимости.
  * @returns {Promise<Array<{
  *   hash: string,
  *   message: string,
@@ -278,15 +284,22 @@ export async function listProjects(forceRefresh = false) {
  *   parents: string[]
  * }>>}
  */
-export async function getCommits(slug, pagelen = 30) {
+export async function getCommits(slug, opts = {}) {
   if (!slug || typeof slug !== 'string') return []
+  const o = typeof opts === 'number' ? { pagelen: opts } : opts || {}
+  const pagelen = o.pagelen ?? 30
+  const branch = o.branch || null
   const client = buildClient()
   const fields = encodeURIComponent(
     'values.hash,values.message,values.date,values.author.user.display_name,values.author.user.account_id,values.author.raw,values.parents.hash'
   )
-  const path = `/repositories/${encodeURIComponent(
-    client.workspace
-  )}/${encodeURIComponent(slug)}/commits?pagelen=${pagelen}&fields=${fields}`
+  const ws = encodeURIComponent(client.workspace)
+  const s = encodeURIComponent(slug)
+  const path = branch
+    ? `/repositories/${ws}/${s}/commits/${encodeURIComponent(
+        branch
+      )}?pagelen=${pagelen}&fields=${fields}`
+    : `/repositories/${ws}/${s}/commits?pagelen=${pagelen}&fields=${fields}`
 
   let data
   try {
@@ -297,6 +310,104 @@ export async function getCommits(slug, pagelen = 30) {
   }
 
   return (data.values || []).map(toCommitShape)
+}
+
+/**
+ * Список веток репо + name дефолтной ветки. Двумя параллельными
+ * запросами: /refs/branches (имена) и /repositories/{slug} с
+ * fields=mainbranch.name (default). Кэшируем 5 минут на уровне
+ * хука — branches меняются редко.
+ *
+ * Если branches пагинированы (>100 веток) — обходим до конца.
+ *
+ * @param {string} slug
+ * @returns {Promise<{ defaultBranch: string | null, branches: string[] }>}
+ */
+export async function getBranches(slug) {
+  if (!slug || typeof slug !== 'string') {
+    return { defaultBranch: null, branches: [] }
+  }
+  const client = buildClient()
+  const ws = encodeURIComponent(client.workspace)
+  const s = encodeURIComponent(slug)
+
+  const branchesPromise = (async () => {
+    /** @type {string[]} */
+    const out = []
+    let url =
+      `/repositories/${ws}/${s}/refs/branches?pagelen=100&sort=name&fields=values.name,next`
+    while (url) {
+      let data
+      try {
+        data = await client.request(url)
+      } catch (e) {
+        if (e.status === 404 || e.status === 403) break
+        throw e
+      }
+      for (const v of data.values || []) {
+        if (v?.name) out.push(v.name)
+      }
+      url = data.next || null
+    }
+    return out
+  })()
+
+  const defaultPromise = (async () => {
+    try {
+      const data = await client.request(
+        `/repositories/${ws}/${s}?fields=mainbranch.name`
+      )
+      return data?.mainbranch?.name || null
+    } catch (e) {
+      if (e.status === 404 || e.status === 403) return null
+      throw e
+    }
+  })()
+
+  const [branches, defaultBranch] = await Promise.all([
+    branchesPromise,
+    defaultPromise
+  ])
+
+  // Главную ветку поднимаем наверх для удобства селектора
+  if (defaultBranch && branches.includes(defaultBranch)) {
+    const idx = branches.indexOf(defaultBranch)
+    branches.splice(idx, 1)
+    branches.unshift(defaultBranch)
+  }
+
+  return { defaultBranch, branches }
+}
+
+/**
+ * Содержимое unified-diff для одного файла в коммите. Bitbucket
+ * умеет фильтровать /diff/{hash}?path=<file> и тогда возвращает
+ * только нужный кусок — ни один лишний байт не качается.
+ *
+ * Возвращает строку diff'а (text/plain) либо пустую строку для
+ * 404/403 — чтобы UI показывал «нет данных» вместо ошибки.
+ *
+ * @param {string} slug
+ * @param {string} hash
+ * @param {string} path
+ * @returns {Promise<string>}
+ */
+export async function getCommitFileDiff(slug, hash, path) {
+  if (!slug || !hash || !path) return ''
+  const client = buildClient()
+  const ws = encodeURIComponent(client.workspace)
+  const s = encodeURIComponent(slug)
+  const h = encodeURIComponent(hash)
+  const p = encodeURIComponent(path)
+  try {
+    return await client.request(
+      `/repositories/${ws}/${s}/diff/${h}?path=${p}`,
+      { asText: true }
+    )
+  } catch (e) {
+    if (e.status === 404 || e.status === 403) return ''
+    throw e
+  }
 }
 
 function toCommitShape(c) {
@@ -424,8 +535,11 @@ function normalizePipelineState(state) {
  * Список последних пайплайнов репо. По умолчанию 20 — больше
  * UI всё равно не показывает, а Bitbucket режет pagelen<=100.
  *
+ * Если передан opts.branch — фильтруем по target.ref_name. Без
+ * branch отдаём пайплайны всех веток.
+ *
  * @param {string} slug
- * @param {{ pagelen?: number }} [opts]
+ * @param {{ pagelen?: number, branch?: string | null }} [opts]
  * @returns {Promise<Array<{
  *   uuid: string,
  *   buildNumber: number,
@@ -441,13 +555,17 @@ function normalizePipelineState(state) {
 export async function getPipelines(slug, opts = {}) {
   if (!slug || typeof slug !== 'string') return []
   const pagelen = opts.pagelen ?? 20
+  const branch = opts.branch || null
   const client = buildClient()
   const ws = encodeURIComponent(client.workspace)
   const s = encodeURIComponent(slug)
   const fields = encodeURIComponent(
     'values.uuid,values.build_number,values.state,values.created_on,values.completed_on,values.duration_in_seconds,values.target.ref_name,values.target.commit.hash,values.creator.display_name'
   )
-  const path = `/repositories/${ws}/${s}/pipelines/?pagelen=${pagelen}&sort=-created_on&fields=${fields}`
+  const branchQs = branch
+    ? `&target.ref_name=${encodeURIComponent(branch)}`
+    : ''
+  const path = `/repositories/${ws}/${s}/pipelines/?pagelen=${pagelen}&sort=-created_on${branchQs}&fields=${fields}`
 
   let data
   try {
@@ -517,6 +635,36 @@ export async function getPipelineSteps(slug, pipelineUuid) {
         ? step.duration_in_seconds
         : null
   }))
+}
+
+/**
+ * Лог выполнения одного step'а пайплайна (text/plain). Может быть
+ * мегабайтами для длинных деплоев — рендер в renderer'е делает
+ * scrollable pre с max-height. Если step ещё не завершился /
+ * лога нет (404) — возвращаем пустую строку, UI отрисует
+ * "no log yet".
+ *
+ * @param {string} slug
+ * @param {string} pipelineUuid
+ * @param {string} stepUuid
+ * @returns {Promise<string>}
+ */
+export async function getPipelineStepLog(slug, pipelineUuid, stepUuid) {
+  if (!slug || !pipelineUuid || !stepUuid) return ''
+  const client = buildClient()
+  const ws = encodeURIComponent(client.workspace)
+  const s = encodeURIComponent(slug)
+  const u = encodeURIComponent(pipelineUuid)
+  const su = encodeURIComponent(stepUuid)
+  try {
+    return await client.request(
+      `/repositories/${ws}/${s}/pipelines/${u}/steps/${su}/log`,
+      { asText: true }
+    )
+  } catch (e) {
+    if (e.status === 404 || e.status === 403) return ''
+    throw e
+  }
 }
 
 /**
