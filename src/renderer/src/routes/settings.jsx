@@ -40,7 +40,54 @@ import {
   DialogDescription
 } from '@/components/ui/dialog'
 import { BitbucketSetupGuide } from '@/components/setup-guides/bitbucket'
+import { JiraSetupGuide } from '@/components/setup-guides/jira'
+import { PathsSetupGuide } from '@/components/setup-guides/paths'
+import { DatabaseSetupGuide } from '@/components/setup-guides/database'
+import { DotnetSetupGuide } from '@/components/setup-guides/dotnet'
+import { PresenceSetupGuide } from '@/components/setup-guides/presence'
+import { AppearanceSetupGuide } from '@/components/setup-guides/appearance'
 import { api } from '@/api'
+
+// Реестр всех setup-гайдов: вместо отдельного Dialog на секцию у
+// нас один централизованный, переключающий контент по id. Так
+// проще добавить ещё гайдов и не размножать boilerplate.
+const SETUP_GUIDES = {
+  bitbucket: {
+    title: 'Bitbucket setup guide',
+    description: '4 steps to authenticate against Bitbucket Cloud. ~2 minutes.',
+    Component: BitbucketSetupGuide
+  },
+  jira: {
+    title: 'Jira setup guide',
+    description: '3 steps; reuses your Atlassian email from the Bitbucket section.',
+    Component: JiraSetupGuide
+  },
+  paths: {
+    title: 'Paths setup guide',
+    description: 'Where projects clone, where dumps live, how VS Code is launched.',
+    Component: PathsSetupGuide
+  },
+  database: {
+    title: 'Database setup guide',
+    description: 'Local MySQL connection used for size, restore, drop/create.',
+    Component: DatabaseSetupGuide
+  },
+  dotnet: {
+    title: '.NET setup guide',
+    description: 'Optional run arguments for dotnet run. Most users leave empty.',
+    Component: DotnetSetupGuide
+  },
+  presence: {
+    title: 'Presence setup guide',
+    description: 'How to see colleagues running WorkHelper on your network.',
+    Component: PresenceSetupGuide
+  },
+  appearance: {
+    title: 'Appearance setup guide',
+    description: 'Display preferences for this machine.',
+    Component: AppearanceSetupGuide
+  }
+}
 
 // Persistent: при возврате в Settings показывается тот же раздел,
 // который был открыт. localStorage, не часть config.json.
@@ -319,26 +366,11 @@ export default function Settings() {
             {activeSection === 'atlassian' && (
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
                 <Card>
-                  <CardHeader>
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <CardTitle>Bitbucket</CardTitle>
-                        <CardDescription>
-                          Email, workspace, username and API token for
-                          the Cloud REST API.
-                        </CardDescription>
-                      </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setGuideOpen('bitbucket')}
-                        title="Open the full setup walkthrough"
-                      >
-                        <BookOpen size={13} />
-                        Setup guide
-                      </Button>
-                    </div>
-                  </CardHeader>
+                  <SectionCardHeader
+                    title="Bitbucket"
+                    description="Email, workspace, username and API token for the Cloud REST API."
+                    onOpenGuide={() => setGuideOpen('bitbucket')}
+                  />
                   <CardContent className="space-y-4">
                     <Field
                       label="Email"
@@ -415,25 +447,15 @@ export default function Settings() {
                 </Card>
 
                 <Card>
-                  <CardHeader>
-                    <CardTitle>Jira</CardTitle>
-                    <CardDescription>
-                      Same Atlassian account as Bitbucket. Jira needs
-                      its own API token. <strong>Use the classic API
-                      token</strong>, not "API token with scopes" —
-                      scoped tokens have a known Atlassian bug where
-                      JQL <code>currentUser()</code> returns nothing
-                      under Bearer auth, leaving "My Tasks" empty.
-                      Classic tokens use Basic auth and just work.
-                      Create at id.atlassian.com → Security → API
-                      tokens → <strong>Create API token</strong> (the
-                      one above "Create API token with scopes").
-                    </CardDescription>
-                  </CardHeader>
+                  <SectionCardHeader
+                    title="Jira"
+                    description="Reuses your Atlassian email; needs its own API token."
+                    onOpenGuide={() => setGuideOpen('jira')}
+                  />
                   <CardContent className="space-y-4">
                     <Field
                       label="Host"
-                      hint="Jira Cloud URL without trailing slash (e.g. https://yourcompany.atlassian.net)"
+                      hint="Your Jira Cloud URL (https://<company>.atlassian.net)."
                     >
                       <Input
                         value={config.jira?.host || ''}
@@ -445,6 +467,7 @@ export default function Settings() {
                     </Field>
                     <SecretField
                       label="API token"
+                      hint="Use a classic token (no scopes). See guide for why."
                       status={secretsStatus.jiraApiToken}
                       value={jiraApiToken}
                       onChange={setJiraApiToken}
@@ -466,15 +489,6 @@ export default function Settings() {
                         Test connection
                       </Button>
                       <JiraTestResult result={jiraTestResult} />
-                      <p className="text-[11px] text-muted-foreground">
-                        Test reads stored credentials — Save first if
-                        you've changed fields above. If you're using a
-                        scoped token instead of a classic one, the
-                        required Jira scopes are{' '}
-                        <code>read:jira-work</code> +{' '}
-                        <code>read:jira-user</code> — but be aware of
-                        the currentUser() bug noted above.
-                      </p>
                     </div>
                   </CardContent>
                 </Card>
@@ -483,17 +497,15 @@ export default function Settings() {
 
             {activeSection === 'paths' && (
               <Card>
-                <CardHeader>
-                  <CardTitle>Paths</CardTitle>
-                  <CardDescription>
-                    Where projects live, where SQL dumps are kept, and how to
-                    call VS Code.
-                  </CardDescription>
-                </CardHeader>
+                <SectionCardHeader
+                  title="Paths"
+                  description="Where projects clone, where SQL dumps live, how VS Code is launched."
+                  onOpenGuide={() => setGuideOpen('paths')}
+                />
                 <CardContent className="space-y-4">
                   <Field
                     label="Projects folder"
-                    hint="Each repo lives at projectsRoot/slug.toLowerCase()"
+                    hint="Each repo clones to <root>/<slug>."
                   >
                     <Input
                       value={config.paths.projectsRoot}
@@ -503,7 +515,10 @@ export default function Settings() {
                       placeholder="C:\\Projects"
                     />
                   </Field>
-                  <Field label="Dumps folder">
+                  <Field
+                    label="Dumps folder"
+                    hint="Where SQL dumps live; auto-detected by name pattern."
+                  >
                     <Input
                       value={config.paths.dumpsRoot}
                       onChange={(e) =>
@@ -528,15 +543,11 @@ export default function Settings() {
 
             {activeSection === 'database' && (
               <Card>
-                <CardHeader>
-                  <CardTitle>Database</CardTitle>
-                  <CardDescription>
-                    Local MySQL — used in MVP-1 for read-only enrich
-                    (db.exists, db.size). <code>mysql</code> CLI is only
-                    needed for MVP-2 dump restore; leave path empty until
-                    then.
-                  </CardDescription>
-                </CardHeader>
+                <SectionCardHeader
+                  title="Database"
+                  description="Local MySQL connection — size detection, restore, drop/create."
+                  onOpenGuide={() => setGuideOpen('database')}
+                />
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-3 gap-4">
                     <Field label="Host" className="col-span-2">
@@ -585,14 +596,14 @@ export default function Settings() {
                     placeholder="C:\\path\\to\\mysql.exe"
                     notFoundHint={
                       config.database.mysqlExecutable
-                        ? 'not found — restore will be blocked in MVP-2'
-                        : 'leave empty for MVP-1'
+                        ? 'not found — restore will be blocked'
+                        : 'optional — only needed for restoring dumps'
                     }
                     onChange={(v) =>
                       updatePath('database', 'mysqlExecutable')(v)
                     }
                   />
-                  <div className="pt-2 space-y-2">
+                  <div className="pt-1 space-y-2">
                     <Button
                       variant="outline"
                       size="sm"
@@ -603,10 +614,6 @@ export default function Settings() {
                       Test connection
                     </Button>
                     <DbTestResult result={dbTestResult} />
-                    <p className="text-xs text-muted-foreground">
-                      Test reads stored credentials — Save first if you've
-                      changed fields above.
-                    </p>
                   </div>
                 </CardContent>
               </Card>
@@ -614,18 +621,15 @@ export default function Settings() {
 
             {activeSection === 'dotnet' && (
               <Card>
-                <CardHeader>
-                  <CardTitle>.NET</CardTitle>
-                  <CardDescription>
-                    Extra arguments for <code>dotnet run</code>. The runnable
-                    subpath is auto-detected per project (see spec 9.5);
-                    per-project overrides are an advanced feature.
-                  </CardDescription>
-                </CardHeader>
+                <SectionCardHeader
+                  title=".NET"
+                  description="Optional dotnet run arguments. Most users leave this empty."
+                  onOpenGuide={() => setGuideOpen('dotnet')}
+                />
                 <CardContent className="space-y-4">
                   <Field
                     label="Run arguments"
-                    hint="Space-separated, passed to dotnet run after `--`"
+                    hint="Space-separated, passed to dotnet run after --"
                   >
                     <Input
                       value={(config.dotnet.runArgs || []).join(' ')}
@@ -648,34 +652,79 @@ export default function Settings() {
             )}
 
             {activeSection === 'presence' && (
-              <PresenceCard config={config} updatePath={updatePath} />
+              <PresenceCard
+                config={config}
+                updatePath={updatePath}
+                onOpenGuide={() => setGuideOpen('presence')}
+              />
             )}
 
-            {activeSection === 'appearance' && <AppearanceCard />}
+            {activeSection === 'appearance' && (
+              <AppearanceCard
+                onOpenGuide={() => setGuideOpen('appearance')}
+              />
+            )}
           </div>
         </main>
       </div>
 
       <Dialog
-        open={guideOpen === 'bitbucket'}
+        open={!!guideOpen}
         onOpenChange={(o) => !o && setGuideOpen(null)}
       >
         <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Bitbucket setup guide</DialogTitle>
-            <DialogDescription>
-              4 steps to authenticate WorkHelper against Bitbucket
-              Cloud. Estimated time: ~2 minutes.
-            </DialogDescription>
-          </DialogHeader>
-          <BitbucketSetupGuide />
+          {guideOpen && SETUP_GUIDES[guideOpen] && (
+            <>
+              <DialogHeader>
+                <DialogTitle>
+                  {SETUP_GUIDES[guideOpen].title}
+                </DialogTitle>
+                <DialogDescription>
+                  {SETUP_GUIDES[guideOpen].description}
+                </DialogDescription>
+              </DialogHeader>
+              {(() => {
+                const G = SETUP_GUIDES[guideOpen].Component
+                return <G />
+              })()}
+            </>
+          )}
         </DialogContent>
       </Dialog>
     </div>
   )
 }
 
-function PresenceCard({ config, updatePath }) {
+/**
+ * Заголовок-обёртка для всех Settings-карточек: title + description
+ * слева, кнопка "Setup guide" справа. Сделана отдельно, чтобы
+ * добавление guide-кнопки в новую карточку было одной строчкой.
+ */
+function SectionCardHeader({ title, description, onOpenGuide }) {
+  return (
+    <CardHeader>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <CardTitle>{title}</CardTitle>
+          <CardDescription>{description}</CardDescription>
+        </div>
+        {onOpenGuide && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onOpenGuide}
+            title="Open the full setup walkthrough"
+          >
+            <BookOpen size={13} />
+            Setup guide
+          </Button>
+        )}
+      </div>
+    </CardHeader>
+  )
+}
+
+function PresenceCard({ config, updatePath, onOpenGuide }) {
   const enabled = !!config.presence?.enabled
 
   const onToggle = async (next) => {
@@ -691,26 +740,12 @@ function PresenceCard({ config, updatePath }) {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Presence</CardTitle>
-        <CardDescription>
-          See which colleagues are online in WorkHelper. Requires{' '}
-          <a
-            href="https://tailscale.com/"
-            onClick={(e) => {
-              e.preventDefault()
-              window.open('https://tailscale.com/', '_blank')
-            }}
-            className="underline-offset-2 hover:underline text-foreground"
-          >
-            Tailscale
-          </a>
-          {' '}or being on the same LAN. Shares hostname, Windows
-          username, local IP and app version with other users on the
-          same network. Off by default.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
+      <SectionCardHeader
+        title="Presence"
+        description="See which colleagues have WorkHelper open on the same network."
+        onOpenGuide={onOpenGuide}
+      />
+      <CardContent className="space-y-2">
         <label className="flex items-center gap-2 text-sm select-none cursor-pointer">
           <input
             type="checkbox"
@@ -720,12 +755,16 @@ function PresenceCard({ config, updatePath }) {
           />
           Enable presence
         </label>
+        <p className="text-xs text-muted-foreground">
+          Off by default. Shares hostname, username, local IP and
+          version with others on your network or Tailnet.
+        </p>
       </CardContent>
     </Card>
   )
 }
 
-function AppearanceCard() {
+function AppearanceCard({ onOpenGuide }) {
   const theme = usePrefsStore((s) => s.theme)
   const setTheme = usePrefsStore((s) => s.setTheme)
   const density = usePrefsStore((s) => s.density)
@@ -737,13 +776,11 @@ function AppearanceCard() {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Appearance</CardTitle>
-        <CardDescription>
-          Display preferences for this machine. Stored locally, not in
-          config.json.
-        </CardDescription>
-      </CardHeader>
+      <SectionCardHeader
+        title="Appearance"
+        description="Display preferences for this machine. Stored locally."
+        onOpenGuide={onOpenGuide}
+      />
       <CardContent className="space-y-4">
         <Field label="Theme">
           <SegmentedRadio

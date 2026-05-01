@@ -1,23 +1,10 @@
-import { ExternalLink } from 'lucide-react'
+import { GuideShell, Section, Step, ExtLink } from './_shared'
 
-/**
- * Полный setup-гайд для Bitbucket-секции в Settings. Маленькая
- * inline-подсказка под полями оставлена короткой ради сканируемости;
- * этот компонент — большой walkthrough в модалке для новичка,
- * которому нужно за 5 минут собрать все 4 значения с нуля.
- *
- * Структура — нумерованные шаги с прямыми клик-ссылками на нужные
- * страницы Atlassian (open в системном браузере). Скриншотов пока
- * нет — добавим позже файлами в /assets и подключим через <img>.
- */
 export function BitbucketSetupGuide() {
   return (
-    <div className="space-y-6 text-sm leading-relaxed">
-      <section className="space-y-2">
-        <h3 className="text-sm font-semibold text-foreground">
-          What you'll need
-        </h3>
-        <ul className="list-disc pl-5 space-y-1 text-muted-foreground">
+    <GuideShell>
+      <Section title="What you'll need">
+        <ul className="list-disc pl-5 space-y-1">
           <li>
             <strong className="text-foreground">Atlassian email</strong>{' '}
             — the one you sign in with at bitbucket.org
@@ -35,7 +22,7 @@ export function BitbucketSetupGuide() {
             created on id.atlassian.com (one minute of work)
           </li>
         </ul>
-      </section>
+      </Section>
 
       <Step number={1} title="Create the API token">
         <p>
@@ -54,7 +41,7 @@ export function BitbucketSetupGuide() {
           full account access and just work; scoped tokens have a few
           Atlassian quirks (especially in Jira) we'd rather avoid.
         </p>
-        <ul className="list-disc pl-5 space-y-1 text-muted-foreground">
+        <ul className="list-disc pl-5 space-y-1">
           <li>Give the token a name like "WorkHelper"</li>
           <li>Click <strong className="text-foreground">Create</strong></li>
           <li>
@@ -95,10 +82,10 @@ export function BitbucketSetupGuide() {
 
       <Step number={4} title="Plug everything into Settings">
         <p>Back in WorkHelper, fill in the Bitbucket card:</p>
-        <ul className="list-disc pl-5 space-y-1 text-muted-foreground">
+        <ul className="list-disc pl-5 space-y-1">
           <li>
             <strong className="text-foreground">Email</strong>: your
-            Atlassian email (the same one you log in with)
+            Atlassian email
           </li>
           <li>
             <strong className="text-foreground">Workspace</strong>: the
@@ -124,11 +111,8 @@ export function BitbucketSetupGuide() {
         </p>
       </Step>
 
-      <section className="space-y-2 pt-1 border-t border-border/40">
-        <h3 className="text-sm font-semibold text-foreground">
-          Troubleshooting
-        </h3>
-        <ul className="list-disc pl-5 space-y-1.5 text-muted-foreground">
+      <Section title="Troubleshooting" className="pt-1 border-t border-border/40">
+        <ul className="list-disc pl-5 space-y-1.5">
           <li>
             <strong className="text-foreground">
               "Authentication failed (401)"
@@ -159,7 +143,7 @@ export function BitbucketSetupGuide() {
           </li>
           <li>
             <strong className="text-foreground">
-              Token leaks / shared device
+              Token leaked / shared device
             </strong>
             : revoke it on{' '}
             <ExtLink href="https://id.atlassian.com/manage-profile/security/api-tokens">
@@ -170,36 +154,7 @@ export function BitbucketSetupGuide() {
             shared box should still be revoked.
           </li>
         </ul>
-      </section>
-    </div>
-  )
-}
-
-function Step({ number, title, children }) {
-  return (
-    <section className="space-y-2">
-      <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-        <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-sky-500/20 text-sky-300 text-[11px] tabular-nums">
-          {number}
-        </span>
-        {title}
-      </h3>
-      <div className="space-y-2 pl-7 text-muted-foreground">{children}</div>
-    </section>
-  )
-}
-
-function ExtLink({ href, children }) {
-  return (
-    <button
-      onClick={(e) => {
-        e.preventDefault()
-        window.open(href, '_blank')
-      }}
-      className="text-sky-400 hover:underline inline-flex items-center gap-1 align-baseline"
-    >
-      {children}
-      <ExternalLink size={11} />
-    </button>
+      </Section>
+    </GuideShell>
   )
 }
