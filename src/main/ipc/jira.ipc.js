@@ -5,7 +5,12 @@ import {
   getMyIssues,
   getProjectIssues,
   getIssueDetail,
-  buildIssueUrl
+  buildIssueUrl,
+  addComment,
+  setAssignee,
+  getTransitions,
+  applyTransition,
+  searchUsers
 } from '../services/jira-client.js'
 
 /**
@@ -33,4 +38,17 @@ export function registerJiraIpc() {
   ipcMain.handle('jira:issue-url', (_event, issueKey) =>
     buildIssueUrl(issueKey)
   )
+  ipcMain.handle('jira:add-comment', (_event, issueKey, body) =>
+    addComment(issueKey, body)
+  )
+  ipcMain.handle('jira:set-assignee', (_event, issueKey, accountId) =>
+    setAssignee(issueKey, accountId)
+  )
+  ipcMain.handle('jira:transitions', (_event, issueKey) =>
+    getTransitions(issueKey)
+  )
+  ipcMain.handle('jira:apply-transition', (_event, issueKey, transitionId) =>
+    applyTransition(issueKey, transitionId)
+  )
+  ipcMain.handle('jira:user-search', (_event, query) => searchUsers(query))
 }

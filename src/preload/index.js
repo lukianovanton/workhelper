@@ -131,7 +131,16 @@ const api = {
       ipcRenderer.invoke('jira:project-issues', projectKey, opts),
     issueDetail: (issueKey) =>
       ipcRenderer.invoke('jira:issue-detail', issueKey),
-    issueUrl: (issueKey) => ipcRenderer.invoke('jira:issue-url', issueKey)
+    issueUrl: (issueKey) => ipcRenderer.invoke('jira:issue-url', issueKey),
+    addComment: (issueKey, body) =>
+      ipcRenderer.invoke('jira:add-comment', issueKey, body),
+    setAssignee: (issueKey, accountId) =>
+      ipcRenderer.invoke('jira:set-assignee', issueKey, accountId),
+    transitions: (issueKey) =>
+      ipcRenderer.invoke('jira:transitions', issueKey),
+    applyTransition: (issueKey, transitionId) =>
+      ipcRenderer.invoke('jira:apply-transition', issueKey, transitionId),
+    searchUsers: (query) => ipcRenderer.invoke('jira:user-search', query)
   }
 }
 

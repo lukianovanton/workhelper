@@ -93,7 +93,7 @@ function buildClient() {
 
   /**
    * @param {string} pathOrUrl относительный путь от корня host или абсолютный URL
-   * @param {{ asText?: boolean }} [opts]
+   * @param {{ asText?: boolean, method?: string, body?: any }} [opts]
    */
   async function request(pathOrUrl, opts = {}) {
     const url = pathOrUrl.startsWith('http')
@@ -101,24 +101,35 @@ function buildClient() {
       : `${host}${pathOrUrl}`
 
     const accept = opts.asText ? 'text/plain, */*' : 'application/json'
-    let res = await fetch(url, {
-      headers: { Accept: accept, Authorization: preferredAuth }
-    })
+    const method = opts.method || 'GET'
+    const hasBody = opts.body != null
+    const buildInit = (auth) => {
+      const init = {
+        method,
+        headers: { Accept: accept, Authorization: auth }
+      }
+      if (hasBody) {
+        init.headers['Content-Type'] = 'application/json'
+        init.body =
+          typeof opts.body === 'string'
+            ? opts.body
+            : JSON.stringify(opts.body)
+      }
+      return init
+    }
+
+    let res = await fetch(url, buildInit(preferredAuth))
     // Fallback: если Basic вернул 401, попробуем Bearer (или
     // наоборот). Помогает при scoped Atlassian-токенах, которые на
     // Jira REST API ходят только Bearer'ом.
     if (res.status === 401 && preferredAuth === basicAuth) {
-      const retry = await fetch(url, {
-        headers: { Accept: accept, Authorization: bearerAuth }
-      })
+      const retry = await fetch(url, buildInit(bearerAuth))
       if (retry.status !== 401) {
         preferredAuth = bearerAuth
         res = retry
       }
     } else if (res.status === 401 && preferredAuth === bearerAuth) {
-      const retry = await fetch(url, {
-        headers: { Accept: accept, Authorization: basicAuth }
-      })
+      const retry = await fetch(url, buildInit(basicAuth))
       if (retry.status !== 401) {
         preferredAuth = basicAuth
         res = retry
@@ -161,7 +172,18 @@ function buildClient() {
         'http'
       )
     }
-    return opts.asText ? res.text() : res.json()
+    // 204 No Content (типично для PUT /assignee, POST /transitions) —
+    // тело пустое, парсить .json() сломается. Возвращаем null.
+    if (res.status === 204) return null
+    if (opts.asText) return res.text()
+    // Некоторые POST'ы возвращают пустое тело без 204 — guarding.
+    const text = await res.text()
+    if (!text) return null
+    try {
+      return JSON.parse(text)
+    } catch {
+      return text
+    }
   }
 
   return { request, host, email }
@@ -612,4 +634,144 @@ export function buildIssueUrl(issueKey) {
   const host = (config.jira?.host || '').replace(/\/+$/, '')
   if (!host) return ''
   return `${host}/browse/${encodeURIComponent(issueKey)}`
+}
+
+/**
+ * Превращает plain string в минимальный валидный ADF document —
+ * используется для POST /comment, где Jira принимает body только в
+ * ADF-формате. Каждая строка превращается в отдельный paragraph;
+ * пустые строки пропускаем.
+ */
+function plainToAdf(text) {
+  const t = (text || '').toString()
+  const lines = t.split(/\r?\n/)
+  const content = []
+  for (const line of lines) {
+    if (!line) {
+      content.push({ type: 'paragraph', content: [] })
+      continue
+    }
+    content.push({
+      type: 'paragraph',
+      content: [{ type: 'text', text: line }]
+    })
+  }
+  return { type: 'doc', version: 1, content }
+}
+
+/**
+ * Добавить комментарий к issue. Принимаем plain string из UI и
+ * автоматически конвертируем в ADF — пользователю не нужно знать
+ * про Atlassian-формат.
+ *
+ * @param {string} issueKey
+ * @param {string} bodyText
+ */
+export async function addComment(issueKey, bodyText) {
+  if (!issueKey) throw new JiraError('issueKey required', 0, 'config')
+  const trimmed = (bodyText || '').trim()
+  if (!trimmed) throw new JiraError('Comment body is empty', 0, 'config')
+  const client = buildClient()
+  return client.request(
+    `/rest/api/3/issue/${encodeURIComponent(issueKey)}/comment`,
+    {
+      method: 'POST',
+      body: { body: plainToAdf(trimmed) }
+    }
+  )
+}
+
+/**
+ * Сменить assignee'а. accountId === null отвязывает (unassigned).
+ *
+ * @param {string} issueKey
+ * @param {string|null} accountId
+ */
+export async function setAssignee(issueKey, accountId) {
+  if (!issueKey) throw new JiraError('issueKey required', 0, 'config')
+  const client = buildClient()
+  return client.request(
+    `/rest/api/3/issue/${encodeURIComponent(issueKey)}/assignee`,
+    {
+      method: 'PUT',
+      body: { accountId: accountId || null }
+    }
+  )
+}
+
+/**
+ * Список доступных переходов из текущего статуса. Возвращает
+ * нормализованный shape: id, name, целевой статус.
+ *
+ * @param {string} issueKey
+ */
+export async function getTransitions(issueKey) {
+  if (!issueKey) return []
+  const client = buildClient()
+  let data
+  try {
+    data = await client.request(
+      `/rest/api/3/issue/${encodeURIComponent(issueKey)}/transitions`
+    )
+  } catch (e) {
+    if (e.status === 403 || e.status === 404) return []
+    throw e
+  }
+  return (data?.transitions || []).map((t) => ({
+    id: String(t.id),
+    name: t.name || '',
+    toStatus: t.to?.name || '',
+    toStatusCategory: t.to?.statusCategory?.key || ''
+  }))
+}
+
+/**
+ * Применить переход (изменить статус). transitionId — id из
+ * getTransitions. Сервер сам решает что показывать на screen'е,
+ * мы не передаём fields.
+ *
+ * @param {string} issueKey
+ * @param {string} transitionId
+ */
+export async function applyTransition(issueKey, transitionId) {
+  if (!issueKey || !transitionId) {
+    throw new JiraError('issueKey and transitionId required', 0, 'config')
+  }
+  const client = buildClient()
+  return client.request(
+    `/rest/api/3/issue/${encodeURIComponent(issueKey)}/transitions`,
+    {
+      method: 'POST',
+      body: { transition: { id: String(transitionId) } }
+    }
+  )
+}
+
+/**
+ * Поиск пользователей для assignee-picker'а. query — частичное
+ * совпадение по имени или email. maxResults=20 достаточно для UX
+ * в маленьком dropdown'е.
+ *
+ * @param {string} query
+ */
+export async function searchUsers(query) {
+  const q = (query || '').trim()
+  if (q.length < 2) return []
+  const client = buildClient()
+  let data
+  try {
+    data = await client.request(
+      `/rest/api/3/user/search?query=${encodeURIComponent(q)}&maxResults=20`
+    )
+  } catch (e) {
+    if (e.status === 403 || e.status === 404) return []
+    throw e
+  }
+  return (Array.isArray(data) ? data : [])
+    .filter((u) => u?.accountId)
+    .map((u) => ({
+      accountId: u.accountId,
+      displayName: u.displayName || '',
+      emailAddress: u.emailAddress || ''
+    }))
 }

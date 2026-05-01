@@ -1398,7 +1398,7 @@ function TaskRowExpandable({
       </button>
       {expanded && (
         <div className="px-6 pb-4 pl-[2.25rem] bg-muted/20 space-y-3 text-sm">
-          <TaskDetailContent detail={detail} />
+          <TaskDetailContent issueKey={issue.key} detail={detail} />
           <OpenInJiraLink issueKey={issue.key} />
         </div>
       )}

@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { api } from '@/api'
 
@@ -101,6 +101,97 @@ export function useJiraProjectForSlug(slug) {
     isLoading: projectsQuery.isLoading,
     isError: projectsQuery.isError
   }
+}
+
+/**
+ * Доступные переходы статуса для конкретной задачи. Отдельный
+ * запрос (Atlassian не возвращает их вместе с issue detail).
+ * Lazy: dropdown открывается по клику на статус-бейдж, тогда
+ * родитель ставит enabled=true.
+ */
+export function useJiraTransitions(issueKey, opts = {}) {
+  return useQuery({
+    queryKey: ['jira', 'transitions', issueKey],
+    queryFn: () => api.jira.transitions(issueKey),
+    enabled:
+      opts.enabled !== false &&
+      typeof issueKey === 'string' &&
+      issueKey.length > 0,
+    staleTime: 60 * 1000,
+    retry: false
+  })
+}
+
+/**
+ * Поиск юзеров для assignee-picker'а. Запускается с минимум 2
+ * символами; до этого возвращает [] чтобы не дёргать сервер.
+ */
+export function useJiraUserSearch(query, opts = {}) {
+  const q = (query || '').trim()
+  return useQuery({
+    queryKey: ['jira', 'user-search', q.toLowerCase()],
+    queryFn: () => api.jira.searchUsers(q),
+    enabled: opts.enabled !== false && q.length >= 2,
+    staleTime: 30 * 1000,
+    retry: false
+  })
+}
+
+/**
+ * Универсальный invalidator для одной issue. После любого write'а
+ * (комментарий / assignee / transition) обновляем issue-detail и
+ * связанные списки, чтобы UI тут же увидел изменение.
+ */
+function buildInvalidate(queryClient, issueKey) {
+  return () => {
+    queryClient.invalidateQueries({
+      queryKey: ['jira', 'issue-detail', issueKey]
+    })
+    queryClient.invalidateQueries({
+      queryKey: ['jira', 'transitions', issueKey]
+    })
+    queryClient.invalidateQueries({ queryKey: ['jira', 'my-issues'] })
+    queryClient.invalidateQueries({
+      queryKey: ['jira', 'project-issues']
+    })
+  }
+}
+
+/**
+ * Добавить комментарий к задаче.
+ */
+export function useAddJiraComment(issueKey) {
+  const queryClient = useQueryClient()
+  const invalidate = buildInvalidate(queryClient, issueKey)
+  return useMutation({
+    mutationFn: (body) => api.jira.addComment(issueKey, body),
+    onSuccess: invalidate
+  })
+}
+
+/**
+ * Сменить assignee. accountId === null отвязывает (unassigned).
+ */
+export function useSetJiraAssignee(issueKey) {
+  const queryClient = useQueryClient()
+  const invalidate = buildInvalidate(queryClient, issueKey)
+  return useMutation({
+    mutationFn: (accountId) => api.jira.setAssignee(issueKey, accountId),
+    onSuccess: invalidate
+  })
+}
+
+/**
+ * Применить transition (изменить статус).
+ */
+export function useApplyJiraTransition(issueKey) {
+  const queryClient = useQueryClient()
+  const invalidate = buildInvalidate(queryClient, issueKey)
+  return useMutation({
+    mutationFn: (transitionId) =>
+      api.jira.applyTransition(issueKey, transitionId),
+    onSuccess: invalidate
+  })
 }
 
 /**

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   Loader2,
@@ -11,13 +11,25 @@ import {
   ExternalLink,
   X as XIcon,
   ArrowLeftRight,
-  AlertCircle
+  AlertCircle,
+  ChevronDown,
+  Send,
+  Pencil,
+  Check
 } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
-import { useMyJiraIssues, useJiraIssueDetail } from '@/hooks/use-jira'
+import {
+  useMyJiraIssues,
+  useJiraIssueDetail,
+  useJiraTransitions,
+  useJiraUserSearch,
+  useAddJiraComment,
+  useSetJiraAssignee,
+  useApplyJiraTransition
+} from '@/hooks/use-jira'
 import { AdfRenderer } from '@/components/adf-renderer'
 import { api } from '@/api'
 
@@ -334,13 +346,13 @@ function TaskDrawer({ issueKey, onClose }) {
         </Button>
       </header>
       <div className="flex-1 overflow-auto p-6 space-y-4 text-sm">
-        <TaskDetailContent detail={detail} />
+        <TaskDetailContent issueKey={issueKey} detail={detail} />
       </div>
     </aside>
   )
 }
 
-export function TaskDetailContent({ detail }) {
+export function TaskDetailContent({ issueKey, detail }) {
   if (detail.isLoading) {
     return (
       <div className="text-xs text-muted-foreground inline-flex items-center gap-2">
@@ -359,9 +371,14 @@ export function TaskDetailContent({ detail }) {
   return (
     <>
       {/* Шапочные chip'ы — статус, тип, приоритет на одной строке.
-          Сразу видно главное о таске одним взглядом. */}
+          Сразу видно главное о таске одним взглядом. Status кликабелен
+          и открывает список доступных переходов (transitions). */}
       <div className="flex items-center gap-2 flex-wrap">
-        <StatusBadge category={d.statusCategory} label={d.status} />
+        <StatusPicker
+          issueKey={issueKey}
+          category={d.statusCategory}
+          label={d.status}
+        />
         {d.issueType && (
           <span className="text-[10px] px-1.5 py-0.5 rounded-sm bg-muted/50 text-muted-foreground border border-border/40 inline-flex items-center gap-1">
             {d.issueTypeIconUrl && (
@@ -397,9 +414,11 @@ export function TaskDetailContent({ detail }) {
 
       {/* People — отдельной строкой каждая роль, формат как у
           комментариев: avatar | name · role. Так визуально однородно
-          с комментариями ниже и не выглядит «по центру вертикально». */}
+          с комментариями ниже и не выглядит «по центру вертикально».
+          Assignee кликабельный — открывает поиск пользователей,
+          Reporter read-only (Jira не позволяет менять). */}
       <ul className="space-y-1.5">
-        <PersonRow role="Assignee" person={d.assignee} />
+        <AssigneePicker issueKey={issueKey} person={d.assignee} />
         <PersonRow role="Reporter" person={d.reporter} />
       </ul>
 
@@ -440,34 +459,319 @@ export function TaskDetailContent({ detail }) {
         </section>
       )}
 
-      {d.comments.length > 0 && (
-        <section className="space-y-2">
-          <h3 className="text-[11px] uppercase tracking-wide text-muted-foreground">
-            Comments ({d.comments.length})
-          </h3>
-          <ul className="space-y-3">
-            {d.comments.map((c) => (
-              <li key={c.id} className="flex gap-2.5">
-                <Avatar name={c.author} size={24} />
-                <div className="flex-1 min-w-0">
-                  <div className="text-[11px] flex items-center gap-1.5">
-                    <strong className="text-foreground/85">
-                      {c.author}
-                    </strong>
-                    <span className="text-muted-foreground">
-                      · {formatRelative(c.created)}
-                    </span>
+      <section className="space-y-2">
+        {d.comments.length > 0 && (
+          <>
+            <h3 className="text-[11px] uppercase tracking-wide text-muted-foreground">
+              Comments ({d.comments.length})
+            </h3>
+            <ul className="space-y-3">
+              {d.comments.map((c) => (
+                <li key={c.id} className="flex gap-2.5">
+                  <Avatar name={c.author} size={24} />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[11px] flex items-center gap-1.5">
+                      <strong className="text-foreground/85">
+                        {c.author}
+                      </strong>
+                      <span className="text-muted-foreground">
+                        · {formatRelative(c.created)}
+                      </span>
+                    </div>
+                    <div className="text-xs mt-0.5 leading-relaxed">
+                      <AdfRenderer node={c.body} />
+                    </div>
                   </div>
-                  <div className="text-xs mt-0.5 leading-relaxed">
-                    <AdfRenderer node={c.body} />
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+        <CommentForm issueKey={issueKey} />
+      </section>
     </>
+  )
+}
+
+/**
+ * Хук для click-outside детекции — закрывает popup'ы когда
+ * пользователь кликнул вне их. Возвращает ref, который надо
+ * прикрепить к контейнеру попапа. Reserve — так минимально
+ * инвазивно встраивается в существующие компоненты.
+ */
+function useClickOutside(callback) {
+  const ref = useRef(null)
+  useEffect(() => {
+    const onDoc = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) callback()
+    }
+    const onKey = (e) => {
+      if (e.key === 'Escape') callback()
+    }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [callback])
+  return ref
+}
+
+/**
+ * Status badge + dropdown с доступными transitions. Клик по бейджу
+ * открывает список переходов (load lazy). Клик по transition'у
+ * применяет его и закрывает popup; query'и invalidate'ятся в хуке.
+ */
+function StatusPicker({ issueKey, category, label }) {
+  const [open, setOpen] = useState(false)
+  const transitions = useJiraTransitions(issueKey, { enabled: open })
+  const apply = useApplyJiraTransition(issueKey)
+  const ref = useClickOutside(() => setOpen(false))
+  const onPick = async (transitionId) => {
+    try {
+      await apply.mutateAsync(transitionId)
+      setOpen(false)
+    } catch {
+      // ошибка остаётся в apply.error — отрендерим в popup
+    }
+  }
+  return (
+    <span ref={ref} className="relative inline-flex">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        disabled={apply.isPending}
+        className="inline-flex items-center gap-1 cursor-pointer disabled:opacity-60"
+        title="Change status"
+      >
+        <StatusBadge category={category} label={label} />
+        {apply.isPending ? (
+          <Loader2 size={11} className="animate-spin text-muted-foreground" />
+        ) : (
+          <ChevronDown
+            size={11}
+            className="text-muted-foreground"
+          />
+        )}
+      </button>
+      {open && (
+        <div className="absolute top-full left-0 mt-1 z-30 min-w-[200px] bg-popover border border-border rounded-md shadow-lg p-1">
+          {transitions.isLoading ? (
+            <div className="px-3 py-2 text-xs text-muted-foreground inline-flex items-center gap-2">
+              <Loader2 size={12} className="animate-spin" /> Loading…
+            </div>
+          ) : transitions.isError ? (
+            <div className="px-3 py-2 text-xs text-destructive">
+              Could not load transitions.
+            </div>
+          ) : !transitions.data || transitions.data.length === 0 ? (
+            <div className="px-3 py-2 text-xs text-muted-foreground">
+              No transitions available.
+            </div>
+          ) : (
+            transitions.data.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => onPick(t.id)}
+                disabled={apply.isPending}
+                className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-accent flex items-center justify-between gap-2"
+              >
+                <span>{t.name}</span>
+                {t.toStatus && t.toStatus !== t.name && (
+                  <span className="text-[10px] text-muted-foreground">
+                    → {t.toStatus}
+                  </span>
+                )}
+              </button>
+            ))
+          )}
+          {apply.error && (
+            <div className="px-2 py-1 text-[11px] text-destructive">
+              {apply.error.message}
+            </div>
+          )}
+        </div>
+      )}
+    </span>
+  )
+}
+
+/**
+ * Assignee row с возможностью переассайнить. Клик по строке
+ * открывает search-as-you-type. Кнопка "Unassign" — отвязать.
+ */
+function AssigneePicker({ issueKey, person }) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const userSearch = useJiraUserSearch(query, { enabled: open })
+  const setAssignee = useSetJiraAssignee(issueKey)
+  const ref = useClickOutside(() => {
+    setOpen(false)
+    setQuery('')
+  })
+  const onPick = async (accountId) => {
+    try {
+      await setAssignee.mutateAsync(accountId)
+      setOpen(false)
+      setQuery('')
+    } catch {
+      // ошибка осядет в setAssignee.error
+    }
+  }
+  return (
+    <li ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        disabled={setAssignee.isPending}
+        className="flex items-center gap-2.5 w-full text-left rounded -mx-1 px-1 py-0.5 hover:bg-accent/40 disabled:opacity-60"
+        title="Change assignee"
+      >
+        <Avatar name={person?.displayName || null} size={24} />
+        <div className="text-xs leading-tight flex-1">
+          {person ? (
+            <>
+              <strong className="text-foreground/90">
+                {person.displayName}
+              </strong>
+              <span className="text-muted-foreground"> · Assignee</span>
+            </>
+          ) : (
+            <span className="text-muted-foreground">
+              Assignee — unassigned
+            </span>
+          )}
+        </div>
+        {setAssignee.isPending ? (
+          <Loader2 size={11} className="animate-spin text-muted-foreground" />
+        ) : (
+          <Pencil
+            size={11}
+            className="text-muted-foreground/50 group-hover:text-foreground"
+          />
+        )}
+      </button>
+      {open && (
+        <div className="absolute top-full left-0 mt-1 z-30 w-[20rem] bg-popover border border-border rounded-md shadow-lg p-2 space-y-1">
+          <Input
+            autoFocus
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search by name or email…"
+            className="h-8 text-xs"
+          />
+          <div className="max-h-64 overflow-auto">
+            {query.trim().length < 2 ? (
+              <div className="px-2 py-1.5 text-[11px] text-muted-foreground">
+                Type at least 2 characters.
+              </div>
+            ) : userSearch.isLoading ? (
+              <div className="px-2 py-1.5 text-[11px] text-muted-foreground inline-flex items-center gap-2">
+                <Loader2 size={11} className="animate-spin" /> Searching…
+              </div>
+            ) : userSearch.isError ? (
+              <div className="px-2 py-1.5 text-[11px] text-destructive">
+                Search failed.
+              </div>
+            ) : !userSearch.data || userSearch.data.length === 0 ? (
+              <div className="px-2 py-1.5 text-[11px] text-muted-foreground">
+                No matches.
+              </div>
+            ) : (
+              userSearch.data.map((u) => (
+                <button
+                  key={u.accountId}
+                  onClick={() => onPick(u.accountId)}
+                  disabled={setAssignee.isPending}
+                  className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-accent flex items-center gap-2"
+                >
+                  <Avatar name={u.displayName} size={20} />
+                  <div className="flex-1 min-w-0">
+                    <div className="truncate">{u.displayName}</div>
+                    {u.emailAddress && (
+                      <div className="text-[10px] text-muted-foreground truncate">
+                        {u.emailAddress}
+                      </div>
+                    )}
+                  </div>
+                  {person?.accountId === u.accountId && (
+                    <Check size={11} className="text-emerald-400" />
+                  )}
+                </button>
+              ))
+            )}
+          </div>
+          {person && (
+            <button
+              onClick={() => onPick(null)}
+              disabled={setAssignee.isPending}
+              className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-destructive/10 text-destructive border-t border-border/50 mt-1 pt-2"
+            >
+              Unassign
+            </button>
+          )}
+          {setAssignee.error && (
+            <div className="px-2 py-1 text-[11px] text-destructive">
+              {setAssignee.error.message}
+            </div>
+          )}
+        </div>
+      )}
+    </li>
+  )
+}
+
+/**
+ * Форма добавления комментария. Cmd/Ctrl+Enter отправляет.
+ */
+function CommentForm({ issueKey }) {
+  const [text, setText] = useState('')
+  const addComment = useAddJiraComment(issueKey)
+  const trimmed = text.trim()
+  const send = async () => {
+    if (!trimmed || addComment.isPending) return
+    try {
+      await addComment.mutateAsync(trimmed)
+      setText('')
+    } catch {
+      // ошибка останется в addComment.error
+    }
+  }
+  return (
+    <div className="space-y-1.5 pt-1">
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault()
+            send()
+          }
+        }}
+        placeholder="Add a comment… (Ctrl+Enter to send)"
+        rows={3}
+        className="w-full bg-background border border-input rounded-md px-3 py-2 text-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-y"
+      />
+      <div className="flex items-center justify-end gap-2">
+        {addComment.error && (
+          <span className="text-[11px] text-destructive flex-1 truncate">
+            {addComment.error.message}
+          </span>
+        )}
+        <Button
+          size="sm"
+          onClick={send}
+          disabled={!trimmed || addComment.isPending}
+          className="h-7"
+        >
+          {addComment.isPending ? (
+            <Loader2 className="animate-spin" />
+          ) : (
+            <Send size={12} />
+          )}
+          Send
+        </Button>
+      </div>
+    </div>
   )
 }
 
