@@ -31,6 +31,7 @@ import {
   CircleSlash,
   RefreshCw
 } from 'lucide-react'
+import { useQueryClient, useIsFetching } from '@tanstack/react-query'
 import { useProjects } from '@/hooks/use-projects'
 import { useLastCommit, useCommits } from '@/hooks/use-last-commit'
 import {
@@ -508,7 +509,11 @@ function Drawer({ project, dbAvailable, onClose }) {
         )}
       </header>
 
-      <DrawerTabs active={activeTab} onChange={setActiveTab} />
+      <DrawerTabs
+        active={activeTab}
+        onChange={setActiveTab}
+        slug={project.slug}
+      />
 
       <div className="flex-1 overflow-auto">
         {activeTab === 'overview' && (
@@ -682,8 +687,46 @@ function Drawer({ project, dbAvailable, onClose }) {
  * border accent-цветом, без анимации (анимация лишний шум при
  * частых переключениях). Стик не делаем — табы всё равно
  * остаются вверху scrollable-контейнера.
+ *
+ * На правом краю — icon-only refresh, который контекстен активному
+ * табу: на Commits invalidate'ит ['commits',slug,...] и
+ * ['commit-detail',slug,...], на Pipelines — ['pipelines',slug,...]
+ * и ['pipeline-steps',slug,...]. Overview без refresh — там данные
+ * уже live (process events, fs/db poll).
+ *
+ * Иконка крутится во время любого fetch'а под этим slug + табом —
+ * включая авто-poll пайплайнов. Это и заменяет отдельный hint
+ * "auto-refreshing every 15s": видно что сейчас идёт запрос.
  */
-function DrawerTabs({ active, onChange }) {
+function DrawerTabs({ active, onChange, slug }) {
+  const queryClient = useQueryClient()
+  const isFetching =
+    useIsFetching({
+      predicate: (q) => {
+        const key = q.queryKey[0]
+        if (q.queryKey[1] !== slug) return false
+        if (active === 'commits') {
+          return key === 'commits' || key === 'commit-detail'
+        }
+        if (active === 'pipelines') {
+          return key === 'pipelines' || key === 'pipeline-steps'
+        }
+        return false
+      }
+    }) > 0
+
+  const refresh = () => {
+    if (active === 'commits') {
+      queryClient.invalidateQueries({ queryKey: ['commits', slug] })
+      queryClient.invalidateQueries({ queryKey: ['commit-detail', slug] })
+    } else if (active === 'pipelines') {
+      queryClient.invalidateQueries({ queryKey: ['pipelines', slug] })
+      queryClient.invalidateQueries({ queryKey: ['pipeline-steps', slug] })
+    }
+  }
+
+  const showRefresh = active === 'commits' || active === 'pipelines'
+
   const tabs = [
     { id: 'overview', label: 'Overview' },
     { id: 'commits', label: 'Commits', icon: GitCommit },
@@ -710,6 +753,25 @@ function DrawerTabs({ active, onChange }) {
           </button>
         )
       })}
+      {showRefresh && (
+        <button
+          onClick={refresh}
+          disabled={isFetching}
+          title={isFetching ? 'Refreshing…' : 'Refresh'}
+          className={cn(
+            'ml-auto p-1.5 rounded transition-colors',
+            isFetching
+              ? 'text-sky-400'
+              : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+          )}
+        >
+          {isFetching ? (
+            <Loader2 size={13} className="animate-spin" />
+          ) : (
+            <RefreshCw size={13} />
+          )}
+        </button>
+      )}
     </div>
   )
 }
@@ -731,10 +793,7 @@ function OverviewTab({ children }) {
  */
 function CommitsTab({ project }) {
   const slug = project.slug
-  const { data, isLoading, isError, refetch, isFetching } = useCommits(
-    slug,
-    30
-  )
+  const { data, isLoading, isError, refetch } = useCommits(slug, 30)
   const [expandedHash, setExpandedHash] = useState(null)
 
   const toggle = (hash) =>
@@ -765,23 +824,6 @@ function CommitsTab({ project }) {
 
   return (
     <div className="divide-y divide-border/60">
-      <TabToolbar
-        right={
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => refetch()}
-            disabled={isFetching}
-          >
-            {isFetching ? (
-              <Loader2 className="animate-spin" />
-            ) : (
-              <RefreshCw />
-            )}
-            Refresh
-          </Button>
-        }
-      />
       {data.map((c) => (
         <CommitRow
           key={c.hash}
@@ -938,8 +980,9 @@ function FileStatusIcon({ status }) {
  */
 function PipelinesTab({ project }) {
   const slug = project.slug
-  const { data, isLoading, isError, refetch, isFetching } =
-    usePipelines(slug, { pagelen: 20 })
+  const { data, isLoading, isError, refetch } = usePipelines(slug, {
+    pagelen: 20
+  })
   const [expandedUuid, setExpandedUuid] = useState(null)
 
   const toggle = (uuid) =>
@@ -973,37 +1016,8 @@ function PipelinesTab({ project }) {
     )
   }
 
-  const live = data.some(
-    (p) => p.state === 'IN_PROGRESS' || p.state === 'PENDING'
-  )
-
   return (
     <div className="divide-y divide-border/60">
-      <TabToolbar
-        left={
-          live ? (
-            <span className="text-[11px] text-sky-400 inline-flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-sky-500 animate-pulse-soft" />
-              Auto-refreshing every 15s
-            </span>
-          ) : null
-        }
-        right={
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => refetch()}
-            disabled={isFetching}
-          >
-            {isFetching ? (
-              <Loader2 className="animate-spin" />
-            ) : (
-              <RefreshCw />
-            )}
-            Refresh
-          </Button>
-        }
-      />
       {data.map((p) => (
         <PipelineRow
           key={p.uuid}
@@ -1219,16 +1233,6 @@ function pipelineStateConfig(state) {
         dotCls: 'bg-zinc-600'
       }
   }
-}
-
-function TabToolbar({ left, right }) {
-  if (!left && !right) return null
-  return (
-    <div className="px-6 py-1.5 flex items-center gap-3 text-xs">
-      {left}
-      <div className="ml-auto">{right}</div>
-    </div>
-  )
 }
 
 function TabErrorState({ onRetry }) {
