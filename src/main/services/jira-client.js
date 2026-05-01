@@ -481,20 +481,41 @@ async function resolveCurrentAccountId(client) {
  * Без project-фильтра в JQL: Jira сам ограничит результат
  * проектами, к которым у юзера есть доступ.
  *
+ * Каскад фильтров (от точного к универсальному):
+ *  1. assignee = "<accountId>"  — если успели резолвнуть accountId
+ *     (через /myself или /user/search). Самый надёжный.
+ *  2. assignee = currentUser()  — fallback, который работает не во
+ *     всех конфигурациях scoped-токенов через Bearer auth. Но если
+ *     первый вариант 4xx (e.g. accountId не подходит для этого
+ *     пользователя по какой-то причине), пробуем хотя бы это.
+ *
  * @param {{ maxResults?: number }} [opts]
  */
 export async function getMyIssues(opts = {}) {
   const client = buildClient()
   const accountId = await resolveCurrentAccountId(client)
-  // Если accountId известен — подставляем его напрямую. Это надёжнее
-  // currentUser() через scoped Bearer-auth, у которой бывает баг
-  // «возвращает 0 вместо реальных тасков».
-  const assigneeFilter = accountId
-    ? `assignee = "${accountId}"`
-    : 'assignee = currentUser()'
+  const tail = ' AND statusCategory != Done ORDER BY updated DESC'
+  const max = opts.maxResults ?? 50
+
+  if (accountId) {
+    try {
+      return await searchIssues(
+        `assignee = "${accountId}"${tail}`,
+        { maxResults: max },
+        client
+      )
+    } catch (e) {
+      // 403/400 на этой JQL означают что либо accountId формат не
+      // тот, либо scope не позволяет фильтровать по чужому. Падаем
+      // обратно на currentUser() — будет либо empty (известный баг
+      // currentUser() через Bearer), либо реальные таски.
+      if (e.status !== 403 && e.status !== 400) throw e
+    }
+  }
+
   return searchIssues(
-    `${assigneeFilter} AND statusCategory != Done ORDER BY updated DESC`,
-    { maxResults: opts.maxResults ?? 50 },
+    `assignee = currentUser()${tail}`,
+    { maxResults: max },
     client
   )
 }
