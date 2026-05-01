@@ -30,6 +30,8 @@ import { usePrefsStore } from '@/store/prefs.store.js'
 import { toast } from '@/store/toast.store.js'
 import { Checkbox } from '@/components/ui/checkbox'
 import { usePresence } from '@/hooks/use-presence'
+import { usePipelines } from '@/hooks/use-bitbucket'
+import { PipelineStateBadge } from '@/routes/project-detail'
 import { api } from '@/api'
 
 const SORT_STORAGE_KEY = 'projects-sort'
@@ -689,77 +691,172 @@ function ProjectsTable({
         </tr>
       </thead>
       <tbody>
-        {projects.map((p) => {
-          const fav = !!favorites[p.slug]
-          return (
-            <tr
-              key={p.slug}
-              onClick={() => onOpen(p.slug)}
-              className={cn(
-                'border-b border-border/60 cursor-pointer hover:bg-accent/40',
-                openSlug === p.slug && 'bg-accent/60'
-              )}
-            >
-              <td className={cn(cellPad, 'text-center')}>
-                <Checkbox
-                  checked={selected.has(p.slug)}
-                  onCheckedChange={() => toggleSelected(p.slug)}
-                  onClick={(e) => e.stopPropagation()}
-                />
-              </td>
-              <td className={cn(cellPad, 'text-center')}>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    toggleFavorite(p.slug)
-                  }}
-                  title={fav ? 'Unpin' : 'Pin to top'}
-                  className={cn(
-                    'transition-colors',
-                    fav
-                      ? 'text-amber-400 hover:text-amber-300'
-                      : 'text-muted-foreground/30 hover:text-amber-400'
-                  )}
-                >
-                  <Star
-                    size={14}
-                    className={fav ? 'fill-current' : ''}
-                  />
-                </button>
-              </td>
-              <td className={cellPad}>
-                <StatusDots
-                  project={p}
-                  runtime={runningBySlug.get(p.slug) || null}
-                />
-              </td>
-              <td className={cn(cellPad, 'font-mono text-xs')}>
-                <Highlight text={p.slug} match={search} />
-              </td>
-              <td className={cellPad}>
-                <div className={nameTextCls}>
-                  <Highlight text={p.name} match={search} />
-                </div>
-                {p.description && (
-                  <div className={descCls}>
-                    <Highlight text={p.description} match={search} />
-                  </div>
-                )}
-              </td>
-              <td className={cellPad}>
-                <KindBadge kind={p.kind} projectKey={p.bitbucket.projectKey} />
-              </td>
-              <td className={cn(cellPad, 'text-right text-xs text-muted-foreground tabular-nums')}>
-                {formatBytes(p.db.sizeBytes)}
-              </td>
-              <td className={cn(cellPad, 'text-xs text-muted-foreground')}>
-                {formatRelative(p.bitbucket.updatedOn)}
-              </td>
-            </tr>
-          )
-        })}
+        {projects.map((p) => (
+          <ProjectRow
+            key={p.slug}
+            p={p}
+            openSlug={openSlug}
+            runtime={runningBySlug.get(p.slug) || null}
+            favorite={!!favorites[p.slug]}
+            onToggleFavorite={() => toggleFavorite(p.slug)}
+            selected={selected.has(p.slug)}
+            onToggleSelected={() => toggleSelected(p.slug)}
+            onOpen={() => onOpen(p.slug)}
+            search={search}
+            cellPad={cellPad}
+            nameTextCls={nameTextCls}
+            descCls={descCls}
+          />
+        ))}
       </tbody>
     </table>
+  )
+}
+
+/**
+ * Строка таблицы, вынесенная отдельно, чтобы держать per-row
+ * useState/useEffect для hover-debounce и lazy-fetch последнего
+ * пайплайна. Pipelines status для обычной строки грузится
+ * только когда:
+ *   1) проект starred (deterministic prefetch — для тех репо,
+ *      на которые пользователь смотрит чаще всего), либо
+ *   2) пользователь навёл мышь и подержал её 500 мс.
+ *
+ * Так избегаем взрыва 70+ pipelines-запросов при первой загрузке.
+ */
+function ProjectRow({
+  p,
+  openSlug,
+  runtime,
+  favorite,
+  onToggleFavorite,
+  selected,
+  onToggleSelected,
+  onOpen,
+  search,
+  cellPad,
+  nameTextCls,
+  descCls
+}) {
+  const [hovered, setHovered] = useState(false)
+  const [hoverDelayed, setHoverDelayed] = useState(false)
+  useEffect(() => {
+    if (!hovered) {
+      setHoverDelayed(false)
+      return
+    }
+    const t = setTimeout(() => setHoverDelayed(true), 500)
+    return () => clearTimeout(t)
+  }, [hovered])
+  const enabled = favorite || hoverDelayed
+  const { data: pipelines } = usePipelines(p.slug, {
+    pagelen: 1,
+    enabled
+  })
+  const lastPipeline = pipelines?.[0] || null
+
+  return (
+    <tr
+      onClick={onOpen}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      className={cn(
+        'border-b border-border/60 cursor-pointer hover:bg-accent/40',
+        openSlug === p.slug && 'bg-accent/60'
+      )}
+    >
+      <td className={cn(cellPad, 'text-center')}>
+        <Checkbox
+          checked={selected}
+          onCheckedChange={onToggleSelected}
+          onClick={(e) => e.stopPropagation()}
+        />
+      </td>
+      <td className={cn(cellPad, 'text-center')}>
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            onToggleFavorite()
+          }}
+          title={favorite ? 'Unpin' : 'Pin to top'}
+          className={cn(
+            'transition-colors',
+            favorite
+              ? 'text-amber-400 hover:text-amber-300'
+              : 'text-muted-foreground/30 hover:text-amber-400'
+          )}
+        >
+          <Star size={14} className={favorite ? 'fill-current' : ''} />
+        </button>
+      </td>
+      <td className={cellPad}>
+        <StatusDots project={p} runtime={runtime} />
+      </td>
+      <td className={cn(cellPad, 'font-mono text-xs')}>
+        <Highlight text={p.slug} match={search} />
+      </td>
+      <td className={cellPad}>
+        <div className={nameTextCls}>
+          <Highlight text={p.name} match={search} />
+        </div>
+        {p.description && (
+          <div className={descCls}>
+            <Highlight text={p.description} match={search} />
+          </div>
+        )}
+      </td>
+      <td className={cellPad}>
+        <KindBadge kind={p.kind} projectKey={p.bitbucket.projectKey} />
+      </td>
+      <td
+        className={cn(
+          cellPad,
+          'text-right text-xs text-muted-foreground tabular-nums'
+        )}
+      >
+        {formatBytes(p.db.sizeBytes)}
+      </td>
+      <td className={cn(cellPad, 'text-xs text-muted-foreground')}>
+        <div className="flex items-center gap-2">
+          <span className="flex-1">
+            {formatRelative(p.bitbucket.updatedOn)}
+          </span>
+          <PipelineCell pipeline={lastPipeline} enabled={enabled} />
+        </div>
+      </td>
+    </tr>
+  )
+}
+
+/**
+ * Точка статуса последнего пайплайна с tooltip. Если запрос ещё
+ * не разрешён (enabled=false до hover/star) — рендерим placeholder
+ * dim-кружок, чтобы не было визуальных скачков по ширине строки.
+ */
+function PipelineCell({ pipeline, enabled }) {
+  if (!enabled) {
+    return (
+      <span
+        title="Hover to load last pipeline"
+        className="inline-block w-2 h-2 rounded-full bg-zinc-800"
+      />
+    )
+  }
+  if (!pipeline) {
+    return (
+      <span
+        title="No pipelines"
+        className="inline-block w-2 h-2 rounded-full bg-zinc-800/50"
+      />
+    )
+  }
+  const tooltip = `Last pipeline: ${pipeline.state}${
+    pipeline.createdOn ? ' · ' + formatRelative(pipeline.createdOn) : ''
+  }${pipeline.buildNumber ? ' · #' + pipeline.buildNumber : ''}`
+  return (
+    <span title={tooltip}>
+      <PipelineStateBadge state={pipeline.state} dotOnly />
+    </span>
   )
 }
 
