@@ -57,6 +57,27 @@ export function useProjectJiraIssues(projectKey, opts = {}) {
 }
 
 /**
+ * Закрытые таски проекта — для секции "Recently done" в
+ * Tasks-табе. Долгий staleTime (5 мин): закрытые таски не
+ * меняются часто, а опросом дёргать не хочется.
+ */
+export function useProjectClosedJiraIssues(projectKey, opts = {}) {
+  return useQuery({
+    queryKey: ['jira', 'project-closed', projectKey],
+    queryFn: () =>
+      api.jira.projectClosedIssues(projectKey, {
+        maxResults: opts.maxResults ?? 10
+      }),
+    enabled:
+      opts.enabled !== false &&
+      typeof projectKey === 'string' &&
+      projectKey.length > 0,
+    staleTime: FIVE_MIN,
+    retry: false
+  })
+}
+
+/**
  * Деталь одной задачи (description + последние 5 комментариев).
  * Lazy: enabled управляется родителем (раскрытие в списке /
  * открытие detail-drawer'а).
@@ -159,6 +180,9 @@ function buildInvalidate(queryClient, issueKey) {
     queryClient.invalidateQueries({ queryKey: ['jira', 'my-issues'] })
     queryClient.invalidateQueries({
       queryKey: ['jira', 'project-issues']
+    })
+    queryClient.invalidateQueries({
+      queryKey: ['jira', 'project-closed']
     })
   }
 }

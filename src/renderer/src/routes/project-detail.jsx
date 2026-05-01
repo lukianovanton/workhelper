@@ -30,7 +30,8 @@ import {
   Pause,
   CircleSlash,
   RefreshCw,
-  ListTodo
+  ListTodo,
+  Calendar
 } from 'lucide-react'
 import { useQueryClient, useIsFetching } from '@tanstack/react-query'
 import { useProjects } from '@/hooks/use-projects'
@@ -46,6 +47,8 @@ import {
 import {
   useJiraProjectForSlug,
   useProjectJiraIssues,
+  useProjectClosedJiraIssues,
+  useMyJiraIssues,
   useJiraIssueDetail,
   findSlugMentions
 } from '@/hooks/use-jira'
@@ -53,7 +56,8 @@ import {
   TaskDetailContent,
   OpenInJiraLink,
   StatusBadge,
-  SlugMismatchBadge
+  SlugMismatchBadge,
+  Avatar
 } from '@/routes/my-tasks'
 import { useRunningProcesses } from '@/hooks/use-running-processes'
 import { useGitStatus } from '@/hooks/use-git-status'
@@ -1276,13 +1280,42 @@ function TasksTab({ project, initialIssue }) {
     () => (allBitbucketProjects || []).map((p) => p.slug),
     [allBitbucketProjects]
   )
-  const issuesQuery = useProjectJiraIssues(matchedJira?.key, {
+  const openIssuesQuery = useProjectJiraIssues(matchedJira?.key, {
     enabled: !!matchedJira
   })
-  // initialIssue из query (?issue=PZJA-1) — раскрываем сразу при
-  // mount'е таба, чтобы deep-link из My Tasks приводил пользователя
-  // прямо к нужной задаче в раскрытом виде.
+  // useMyJiraIssues — общий по всем проектам кэш (тот же что в My
+  // Tasks page). Фильтруем клиентом по project.key чтобы получить
+  // мои таски именно этого проекта без отдельного API-вызова.
+  const myIssuesQuery = useMyJiraIssues({ maxResults: 100 })
+  const closedIssuesQuery = useProjectClosedJiraIssues(matchedJira?.key, {
+    enabled: !!matchedJira
+  })
   const [expandedKey, setExpandedKey] = useState(initialIssue || null)
+  const [showClosed, setShowClosed] = useState(false)
+
+  // Группировка: my / others / done. Mine берём из useMyJiraIssues
+  // (фильтр по project.key); остальные открытые — это
+  // openIssuesQuery без mine; done — отдельный запрос на 10
+  // последних. Mine pinned сверху, потому что это "что мне делать".
+  const groups = useMemo(() => {
+    const open = openIssuesQuery.data?.issues || []
+    const mineGlobal = myIssuesQuery.data?.issues || []
+    const mineForProject = matchedJira
+      ? mineGlobal.filter((i) => i.project?.key === matchedJira.key)
+      : []
+    const myKeys = new Set(mineForProject.map((i) => i.key))
+    const others = open.filter((i) => !myKeys.has(i.key))
+    return {
+      mine: mineForProject,
+      others,
+      done: closedIssuesQuery.data?.issues || []
+    }
+  }, [
+    openIssuesQuery.data,
+    myIssuesQuery.data,
+    closedIssuesQuery.data,
+    matchedJira
+  ])
 
   if (projectsLoading) {
     return (
@@ -1292,7 +1325,6 @@ function TasksTab({ project, initialIssue }) {
       </div>
     )
   }
-
   if (!matchedJira) {
     return (
       <div className="p-6 text-sm text-muted-foreground space-y-2 max-w-md">
@@ -1308,10 +1340,7 @@ function TasksTab({ project, initialIssue }) {
       </div>
     )
   }
-
-  const issues = issuesQuery.data?.issues || []
-
-  if (issuesQuery.isLoading) {
+  if (openIssuesQuery.isLoading) {
     return (
       <div className="p-6 space-y-3">
         {Array.from({ length: 5 }).map((_, i) => (
@@ -1323,20 +1352,28 @@ function TasksTab({ project, initialIssue }) {
       </div>
     )
   }
-  if (issuesQuery.isError) {
-    return <TabErrorState onRetry={issuesQuery.refetch} />
+  if (openIssuesQuery.isError) {
+    return <TabErrorState onRetry={openIssuesQuery.refetch} />
   }
-  if (issues.length === 0) {
-    return (
-      <div className="p-6 text-sm text-muted-foreground space-y-2">
-        <p>
-          No open tasks in{' '}
-          <code className="font-mono">{matchedJira.key}</code> —{' '}
-          {matchedJira.name}.
-        </p>
-      </div>
-    )
-  }
+
+  const onToggle = (k) =>
+    setExpandedKey((prev) => (prev === k ? null : k))
+  const renderRow = (it) => (
+    <TaskRowExpandable
+      key={it.key}
+      issue={it}
+      currentSlug={slug}
+      knownSlugs={knownSlugs}
+      expanded={expandedKey === it.key}
+      onToggle={() => onToggle(it.key)}
+    />
+  )
+
+  const totalVisible =
+    groups.mine.length +
+    groups.others.length +
+    (showClosed ? groups.done.length : 0)
+  const noOpen = groups.mine.length === 0 && groups.others.length === 0
 
   return (
     <div>
@@ -1347,20 +1384,87 @@ function TasksTab({ project, initialIssue }) {
         </code>{' '}
         — {matchedJira.name}
       </div>
-      <div className="divide-y divide-border/60">
-        {issues.map((it) => (
-          <TaskRowExpandable
-            key={it.key}
-            issue={it}
-            currentSlug={slug}
-            knownSlugs={knownSlugs}
-            expanded={expandedKey === it.key}
-            onToggle={() =>
-              setExpandedKey((prev) => (prev === it.key ? null : it.key))
-            }
-          />
-        ))}
+
+      {noOpen && (
+        <div className="px-6 py-4 text-sm text-muted-foreground">
+          No open tasks in this project.
+        </div>
+      )}
+
+      {groups.mine.length > 0 && (
+        <TaskGroup
+          label="Assigned to you"
+          accentCls="text-sky-300"
+          count={groups.mine.length}
+        >
+          {groups.mine.map(renderRow)}
+        </TaskGroup>
+      )}
+
+      {groups.others.length > 0 && (
+        <TaskGroup
+          label="Other open tasks"
+          accentCls="text-muted-foreground"
+          count={groups.others.length}
+        >
+          {groups.others.map(renderRow)}
+        </TaskGroup>
+      )}
+
+      {groups.done.length > 0 && (
+        <div>
+          <button
+            onClick={() => setShowClosed((v) => !v)}
+            className="w-full text-left px-6 py-2 text-[11px] uppercase tracking-wide text-muted-foreground bg-muted/10 border-y border-border/40 flex items-center gap-2 hover:bg-muted/20 transition-colors"
+          >
+            {showClosed ? (
+              <ChevronDown size={11} />
+            ) : (
+              <ChevronRight size={11} />
+            )}
+            <span>Recently done</span>
+            <span className="text-[10px] tabular-nums">
+              ({groups.done.length})
+            </span>
+          </button>
+          {showClosed && (
+            <div className="divide-y divide-border/60 opacity-80">
+              {groups.done.map(renderRow)}
+            </div>
+          )}
+        </div>
+      )}
+
+      {totalVisible === 0 && groups.done.length > 0 && !showClosed && (
+        <div className="px-6 py-2 text-[11px] text-muted-foreground">
+          {groups.done.length} closed task
+          {groups.done.length === 1 ? '' : 's'} hidden — expand
+          "Recently done" above to see them.
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Заголовок-разделитель группы тасков. Просто sticky-style
+ * uppercase плашка с подсчётом, под ней дети (строки тасков).
+ */
+function TaskGroup({ label, accentCls, count, children }) {
+  return (
+    <div>
+      <div
+        className={cn(
+          'px-6 py-2 text-[11px] uppercase tracking-wide bg-muted/10 border-y border-border/40 flex items-center gap-2',
+          accentCls
+        )}
+      >
+        <span>{label}</span>
+        <span className="text-[10px] tabular-nums opacity-80">
+          ({count})
+        </span>
       </div>
+      <div className="divide-y divide-border/60">{children}</div>
     </div>
   )
 }
@@ -1374,20 +1478,25 @@ function TaskRowExpandable({
 }) {
   const detail = useJiraIssueDetail(issue.key, { enabled: expanded })
   const Caret = expanded ? ChevronDown : ChevronRight
-  // Парсим slug-mentions в summary (а в expanded — заодно в
-  // description, см. ниже) и отбрасываем сам slug этого проекта
-  // — это нормальное "правильное" упоминание.
   const mismatched = useMemo(() => {
     const all = findSlugMentions(issue.summary || '', knownSlugs)
     return all.filter(
       (s) => s.toLowerCase() !== currentSlug.toLowerCase()
     )
   }, [issue.summary, knownSlugs, currentSlug])
+
+  // Дедлайн: amber если просрочен (для активных категорий — для
+  // done не подсвечиваем, не имеет смысла).
+  const dueOverdue =
+    issue.duedate &&
+    issue.statusCategory !== 'done' &&
+    new Date(issue.duedate).getTime() < Date.now()
+
   return (
     <div>
       <button
         onClick={onToggle}
-        className="w-full text-left px-6 py-2.5 flex items-center gap-3 hover:bg-accent/40 transition-colors"
+        className="w-full text-left px-6 py-2 flex items-center gap-2.5 hover:bg-accent/40 transition-colors"
       >
         <Caret size={14} className="shrink-0 text-muted-foreground" />
         {issue.issueTypeIconUrl && (
@@ -1398,7 +1507,7 @@ function TaskRowExpandable({
             className="w-4 h-4 shrink-0"
           />
         )}
-        <code className="text-[10px] font-mono shrink-0 text-muted-foreground">
+        <code className="text-[10px] font-mono shrink-0 text-muted-foreground tabular-nums">
           {issue.key}
         </code>
         <span className="text-sm flex-1 min-w-0 truncate">
@@ -1407,11 +1516,40 @@ function TaskRowExpandable({
         {mismatched.length > 0 && (
           <SlugMismatchBadge mentioned={mismatched} />
         )}
+        {issue.assignee ? (
+          <span
+            title={`Assignee: ${issue.assignee.displayName}`}
+            className="shrink-0"
+          >
+            <Avatar name={issue.assignee.displayName} size={18} />
+          </span>
+        ) : (
+          <span
+            title="Unassigned"
+            className="shrink-0 inline-flex items-center justify-center w-[18px] h-[18px] rounded-full bg-muted/40 text-muted-foreground text-[9px]"
+          >
+            ?
+          </span>
+        )}
+        {issue.duedate && (
+          <span
+            title={`Due ${issue.duedate}`}
+            className={cn(
+              'shrink-0 text-[10px] inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded',
+              dueOverdue
+                ? 'bg-destructive/15 text-destructive'
+                : 'bg-muted/40 text-muted-foreground'
+            )}
+          >
+            <Calendar size={9} />
+            {issue.duedate}
+          </span>
+        )}
         <StatusBadge
           category={issue.statusCategory}
           label={issue.status}
         />
-        <span className="text-[11px] text-muted-foreground shrink-0">
+        <span className="text-[11px] text-muted-foreground shrink-0 tabular-nums">
           {formatRelative(issue.updated)}
         </span>
       </button>

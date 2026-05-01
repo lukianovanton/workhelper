@@ -562,6 +562,24 @@ export async function getMyIssues(opts = {}) {
 }
 
 /**
+ * Закрытые таски проекта (statusCategory = Done) — последние N
+ * штук. Используется для секции "Recently done" в Tasks-табе,
+ * чтобы пользователь видел свежий контекст того, что недавно
+ * было сделано в проекте.
+ *
+ * @param {string} projectKey
+ * @param {{ maxResults?: number }} [opts]
+ */
+export async function getProjectClosedIssues(projectKey, opts = {}) {
+  if (!projectKey) return { issues: [], total: 0, isLast: true }
+  const safe = projectKey.replace(/"/g, '\\"')
+  return searchIssues(
+    `project = "${safe}" AND statusCategory = Done ORDER BY updated DESC`,
+    { maxResults: opts.maxResults ?? 10 }
+  )
+}
+
+/**
  * Незакрытые таски одного Jira-проекта.
  *
  * @param {string} projectKey

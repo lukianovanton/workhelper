@@ -129,6 +129,8 @@ const api = {
     myIssues: (opts) => ipcRenderer.invoke('jira:my-issues', opts),
     projectIssues: (projectKey, opts) =>
       ipcRenderer.invoke('jira:project-issues', projectKey, opts),
+    projectClosedIssues: (projectKey, opts) =>
+      ipcRenderer.invoke('jira:project-closed-issues', projectKey, opts),
     issueDetail: (issueKey) =>
       ipcRenderer.invoke('jira:issue-detail', issueKey),
     issueUrl: (issueKey) => ipcRenderer.invoke('jira:issue-url', issueKey),

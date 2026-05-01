@@ -870,7 +870,7 @@ const AVATAR_COLORS = [
  * второго слова имени, заглавными. Цвет выбирается детерминированно
  * по hash имени — один и тот же юзер всегда одного цвета.
  */
-function Avatar({ name, size = 24 }) {
+export function Avatar({ name, size = 24 }) {
   if (!name) {
     return (
       <span

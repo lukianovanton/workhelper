@@ -4,6 +4,7 @@ import {
   listProjects,
   getMyIssues,
   getProjectIssues,
+  getProjectClosedIssues,
   getIssueDetail,
   buildIssueUrl,
   addComment,
@@ -31,6 +32,10 @@ export function registerJiraIpc() {
   ipcMain.handle('jira:my-issues', (_event, opts) => getMyIssues(opts))
   ipcMain.handle('jira:project-issues', (_event, projectKey, opts) =>
     getProjectIssues(projectKey, opts)
+  )
+  ipcMain.handle(
+    'jira:project-closed-issues',
+    (_event, projectKey, opts) => getProjectClosedIssues(projectKey, opts)
   )
   ipcMain.handle('jira:issue-detail', (_event, issueKey) =>
     getIssueDetail(issueKey)
