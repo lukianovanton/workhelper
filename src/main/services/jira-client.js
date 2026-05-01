@@ -80,22 +80,50 @@ function buildClient() {
     )
   }
 
-  const auth = 'Basic ' + Buffer.from(`${email}:${token}`).toString('base64')
+  // Atlassian отдаёт два формата API-токенов: классический (Basic
+  // email:token) и scoped (Bearer token). Bitbucket принимает оба
+  // через Basic, Jira же на новых scoped-токенах часто отдаёт 401
+  // на Basic и требует Bearer. Поэтому пробуем Basic, при 401 —
+  // пробуем Bearer тем же токеном; первый успешный сохраняется
+  // на время этого client'а, чтобы не делать лишних round-trip'ов.
+  const basicAuth =
+    'Basic ' + Buffer.from(`${email}:${token}`).toString('base64')
+  const bearerAuth = `Bearer ${token}`
+  let preferredAuth = basicAuth
 
   /**
    * @param {string} pathOrUrl относительный путь от корня host или абсолютный URL
+   * @param {{ asText?: boolean }} [opts]
    */
-  async function request(pathOrUrl) {
+  async function request(pathOrUrl, opts = {}) {
     const url = pathOrUrl.startsWith('http')
       ? pathOrUrl
       : `${host}${pathOrUrl}`
 
-    const res = await fetch(url, {
-      headers: {
-        Accept: 'application/json',
-        Authorization: auth
-      }
+    const accept = opts.asText ? 'text/plain, */*' : 'application/json'
+    let res = await fetch(url, {
+      headers: { Accept: accept, Authorization: preferredAuth }
     })
+    // Fallback: если Basic вернул 401, попробуем Bearer (или
+    // наоборот). Помогает при scoped Atlassian-токенах, которые на
+    // Jira REST API ходят только Bearer'ом.
+    if (res.status === 401 && preferredAuth === basicAuth) {
+      const retry = await fetch(url, {
+        headers: { Accept: accept, Authorization: bearerAuth }
+      })
+      if (retry.status !== 401) {
+        preferredAuth = bearerAuth
+        res = retry
+      }
+    } else if (res.status === 401 && preferredAuth === bearerAuth) {
+      const retry = await fetch(url, {
+        headers: { Accept: accept, Authorization: basicAuth }
+      })
+      if (retry.status !== 401) {
+        preferredAuth = basicAuth
+        res = retry
+      }
+    }
 
     if (res.status === 429) {
       throw new JiraError(
@@ -133,7 +161,7 @@ function buildClient() {
         'http'
       )
     }
-    return res.json()
+    return opts.asText ? res.text() : res.json()
   }
 
   return { request, host, email }
