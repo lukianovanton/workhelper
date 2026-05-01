@@ -59,6 +59,7 @@ import {
   SlugMismatchBadge,
   Avatar
 } from '@/routes/my-tasks'
+import { useT } from '@/i18n'
 import { useRunningProcesses } from '@/hooks/use-running-processes'
 import { useGitStatus } from '@/hooks/use-git-status'
 import { useProjectActions } from '@/hooks/use-project-actions'
@@ -119,11 +120,12 @@ export default function ProjectDetail() {
 }
 
 function DrawerShell({ children, onClose, loading }) {
+  const t = useT()
   return (
     <div className="w-1/2 border-l border-border bg-background flex flex-col">
       <header className="px-6 py-4 border-b border-border flex items-center justify-between">
         <div className="text-sm text-muted-foreground">
-          {loading ? 'Loading…' : 'Project'}
+          {loading ? t('drawer.loadingShort') : t('drawer.project')}
         </div>
         <Button variant="ghost" size="icon" onClick={onClose}>
           <X />
@@ -131,7 +133,7 @@ function DrawerShell({ children, onClose, loading }) {
       </header>
       {loading ? (
         <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
-          <Loader2 className="animate-spin mr-2" /> Loading project…
+          <Loader2 className="animate-spin mr-2" /> {t('drawer.loading')}
         </div>
       ) : (
         children
@@ -141,14 +143,14 @@ function DrawerShell({ children, onClose, loading }) {
 }
 
 function DrawerNotFound({ slug, onClose }) {
+  const t = useT()
   return (
     <DrawerShell onClose={onClose}>
       <div className="flex-1 flex items-center justify-center text-center p-8">
         <div>
-          <h3 className="font-medium">Project not found</h3>
+          <h3 className="font-medium">{t('drawer.notFound.title')}</h3>
           <p className="text-sm text-muted-foreground mt-1">
-            <code>{slug}</code> is not in the current Bitbucket workspace
-            list.
+            {t('drawer.notFound.message', { slug })}
           </p>
         </div>
       </div>
@@ -157,6 +159,7 @@ function DrawerNotFound({ slug, onClose }) {
 }
 
 function Drawer({ project, dbAvailable, onClose, initialTab, initialIssue }) {
+  const t = useT()
   const cloned = project.local.cloned
   const { bySlug } = useRunningProcesses()
   const runtime = bySlug.get(project.slug) || null
@@ -418,7 +421,7 @@ function Drawer({ project, dbAvailable, onClose, initialTab, initialIssue }) {
                 disabled={clone.isPending}
               >
                 <Sparkles />
-                Setup & Run
+                {t('drawer.action.setupAndRun')}
               </Button>
               <ActionButton
                 icon={
@@ -430,7 +433,11 @@ function Drawer({ project, dbAvailable, onClose, initialTab, initialIssue }) {
                 }
                 onClick={onClone}
                 disabled={clone.isPending}
-                label={clone.isPending ? 'Cloning…' : 'Clone only'}
+                label={
+                  clone.isPending
+                    ? t('drawer.action.cloning')
+                    : t('drawer.action.cloneOnly')
+                }
               />
             </>
           ) : (
@@ -438,12 +445,12 @@ function Drawer({ project, dbAvailable, onClose, initialTab, initialIssue }) {
               <ActionButton
                 icon={<Code2 />}
                 onClick={onOpenVSCode}
-                label="Open in VS Code"
+                label={t('drawer.action.openVSCode')}
               />
               <ActionButton
                 icon={<FolderInput />}
                 onClick={onOpenFolder}
-                label="Open folder"
+                label={t('drawer.action.openFolder')}
               />
               <ActionButton
                 icon={
@@ -456,9 +463,9 @@ function Drawer({ project, dbAvailable, onClose, initialTab, initialIssue }) {
                 onClick={onPull}
                 disabled={pull.isPending || isRunning}
                 disabledTooltip={
-                  isRunning ? 'Stop the running process before pulling' : ''
+                  isRunning ? t('drawer.action.pullDisabled.running') : ''
                 }
-                label="Pull"
+                label={t('drawer.action.pull')}
               />
               {isRunning ? (
                 <>
@@ -472,7 +479,13 @@ function Drawer({ project, dbAvailable, onClose, initialTab, initialIssue }) {
                     }
                     onClick={onStop}
                     disabled={stop.isPending}
-                    label={`Stop${runtime?.port ? ` (:${runtime.port})` : ''}`}
+                    label={
+                      runtime?.port
+                        ? t('drawer.action.stopWithPort', {
+                            port: runtime.port
+                          })
+                        : t('drawer.action.stop')
+                    }
                     destructive
                   />
                   {runtime?.url && (
@@ -480,7 +493,9 @@ function Drawer({ project, dbAvailable, onClose, initialTab, initialIssue }) {
                       variant="outline"
                       size="sm"
                       className="px-2"
-                      title={`Open ${runtime.url}`}
+                      title={t('projects.row.openInBrowser', {
+                        url: runtime.url
+                      })}
                       onClick={() => window.open(runtime.url, '_blank')}
                     >
                       <ExternalLink />
@@ -498,13 +513,13 @@ function Drawer({ project, dbAvailable, onClose, initialTab, initialIssue }) {
                   }
                   onClick={onRun}
                   disabled={run.isPending}
-                  label="Run"
+                  label={t('drawer.action.run')}
                 />
               )}
               <ActionButton
                 icon={<Wrench />}
                 onClick={() => setSetupDialogOpen(true)}
-                label="Setup remaining"
+                label={t('drawer.action.setupRemaining')}
               />
             </>
           )}
@@ -554,12 +569,20 @@ function Drawer({ project, dbAvailable, onClose, initialTab, initialIssue }) {
           <OverviewTab>
         <ChecklistRow
           state={project.local.cloned ? 'on' : 'off'}
-          title={project.local.cloned ? 'Cloned' : 'Not cloned'}
+          title={
+            project.local.cloned
+              ? t('drawer.checklist.cloned')
+              : t('drawer.checklist.notCloned')
+          }
           subtitle={
             project.local.cloned ? (
               <code className="text-xs">{project.local.path}</code>
             ) : (
-              `Will live at ${project.local.path || '<projectsRoot>/' + project.slug.toLowerCase()}`
+              t('drawer.checklist.willLiveAt', {
+                path:
+                  project.local.path ||
+                  '<projectsRoot>/' + project.slug.toLowerCase()
+              })
             )
           }
           right={
@@ -592,17 +615,21 @@ function Drawer({ project, dbAvailable, onClose, initialTab, initialIssue }) {
           state={isRunning ? 'running' : 'idle'}
           title={
             isRunning
-              ? `Running on :${runtime?.port ?? '?'}`
-              : 'Not running'
+              ? t('drawer.checklist.runningOn', {
+                  port: runtime?.port ?? '?'
+                })
+              : t('drawer.checklist.notRunning')
           }
           subtitle={
             isRunning ? (
               <>
-                PID {runtime?.pid} · Started{' '}
-                {formatRelative(runtime?.startedAt)}
+                {t('drawer.checklist.pidStarted', {
+                  pid: runtime?.pid,
+                  time: formatRelative(runtime?.startedAt)
+                })}
                 {runtime?.port == null && (
                   <span className="text-muted-foreground/70">
-                    {' '}· detecting port…
+                    {' '}· {t('drawer.checklist.detectingPort')}
                   </span>
                 )}
               </>
@@ -615,14 +642,12 @@ function Drawer({ project, dbAvailable, onClose, initialTab, initialIssue }) {
         {project.local.cloned && (
           <div className="text-xs text-muted-foreground pl-7">
             {project.local.runnableSubpath ? (
-              <>
-                Runnable subpath:{' '}
-                <code>{project.local.runnableSubpath}</code>
-              </>
+              t('drawer.checklist.runnableSubpath', {
+                path: project.local.runnableSubpath
+              })
             ) : (
               <span className="text-amber-500">
-                ⚠️ Cannot detect runnable project. Set
-                workingDirSubpath override in Settings.
+                {t('drawer.checklist.cantDetectRunnable')}
               </span>
             )}
           </div>
@@ -655,22 +680,21 @@ function Drawer({ project, dbAvailable, onClose, initialTab, initialIssue }) {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              Drop database <code className="font-mono">{project.db.name}</code>?
+              {t('drawer.dropDialog.title', { name: project.db.name })}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete all data in the database. This
-              action cannot be undone.
+              {t('drawer.dropDialog.description')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               onClick={onConfirmDrop}
               className={cn(
                 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
               )}
             >
-              Drop database
+              {t('drawer.dropDialog.confirm')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -692,29 +716,26 @@ function Drawer({ project, dbAvailable, onClose, initialTab, initialIssue }) {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              Replace database <code className="font-mono">{project.db.name}</code>?
+              {t('drawer.replaceDialog.title', { name: project.db.name })}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Database currently has{' '}
-              <strong>{formatBytes(project.db.sizeBytes)}</strong> of data.
-              Restoring will <strong>DROP and recreate</strong> it from{' '}
-              <code className="font-mono">
-                {pendingDumpPath
+              {t('drawer.replaceDialog.description', {
+                size: formatBytes(project.db.sizeBytes),
+                file: pendingDumpPath
                   ? pendingDumpPath.split(/[\\/]/).pop()
-                  : ''}
-              </code>
-              . Existing data will be permanently lost.
+                  : ''
+              })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               onClick={onConfirmReplace}
               className={cn(
                 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
               )}
             >
-              Replace and restore
+              {t('drawer.replaceDialog.confirm')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -734,11 +755,12 @@ function Drawer({ project, dbAvailable, onClose, initialTab, initialIssue }) {
  * навигацией», а действия не толкаются с lable'ами.
  */
 function DrawerTabs({ active, onChange }) {
+  const t = useT()
   const tabs = [
-    { id: 'overview', label: 'Overview' },
-    { id: 'commits', label: 'Commits', icon: GitCommit },
-    { id: 'pipelines', label: 'Pipelines', icon: Workflow },
-    { id: 'tasks', label: 'Tasks', icon: ListTodo }
+    { id: 'overview', label: t('drawer.tab.overview') },
+    { id: 'commits', label: t('drawer.tab.commits'), icon: GitCommit },
+    { id: 'pipelines', label: t('drawer.tab.pipelines'), icon: Workflow },
+    { id: 'tasks', label: t('drawer.tab.tasks'), icon: ListTodo }
   ]
   return (
     <div className="flex items-center px-3 border-b border-border bg-background/60">
@@ -780,6 +802,7 @@ function TabActionBar({
   branchesQuery,
   onBranchChange
 }) {
+  const t = useT()
   const queryClient = useQueryClient()
   const isFetching =
     useIsFetching({
@@ -834,7 +857,9 @@ function TabActionBar({
       <button
         onClick={refresh}
         disabled={isFetching}
-        title={isFetching ? 'Refreshing…' : 'Refresh'}
+        title={
+          isFetching ? t('drawer.tab.refreshing') : t('drawer.tab.refresh')
+        }
         className={cn(
           'ml-auto p-1.5 rounded transition-colors',
           isFetching
@@ -868,6 +893,7 @@ function OverviewTab({ children }) {
  * раскрытии лениво грузится getCommitDetail с diffstat.
  */
 function CommitsTab({ project, branch }) {
+  const t = useT()
   const slug = project.slug
   const { data, isLoading, isError, refetch } = useCommits(slug, {
     pagelen: 30,
@@ -896,15 +922,9 @@ function CommitsTab({ project, branch }) {
   if (!data || data.length === 0) {
     return (
       <div className="p-6 text-sm text-muted-foreground">
-        No commits found
-        {branch ? (
-          <>
-            {' '}on branch <code className="font-mono">{branch}</code>
-          </>
-        ) : (
-          ''
-        )}
-        .
+        {branch
+          ? t('drawer.commits.emptyOnBranch', { branch })
+          : t('drawer.commits.empty') + '.'}
       </div>
     )
   }
@@ -924,9 +944,11 @@ function CommitsTab({ project, branch }) {
 }
 
 function CommitRow({ slug, commit, expanded, onToggle }) {
+  const t = useT()
   const detail = useCommitDetail(slug, commit.hash, { enabled: expanded })
   const Caret = expanded ? ChevronDown : ChevronRight
-  const firstLine = (commit.message || '').split('\n')[0] || '(no message)'
+  const firstLine =
+    (commit.message || '').split('\n')[0] || t('drawer.commits.noMessage')
   return (
     <div>
       <button
@@ -959,6 +981,7 @@ function CommitRow({ slug, commit, expanded, onToggle }) {
 }
 
 function CommitDetailContent({ slug, commit, detail }) {
+  const t = useT()
   // Раскрытый файл — для inline-diff. Только один открыт за раз;
   // повторный клик по тому же закрывает.
   const [openedFile, setOpenedFile] = useState(null)
@@ -966,14 +989,15 @@ function CommitDetailContent({ slug, commit, detail }) {
   if (detail.isLoading) {
     return (
       <div className="py-3 text-xs text-muted-foreground inline-flex items-center gap-2">
-        <Loader2 size={12} className="animate-spin" /> Loading diff…
+        <Loader2 size={12} className="animate-spin" />{' '}
+        {t('drawer.commits.loadingDiff')}
       </div>
     )
   }
   if (detail.isError || !detail.data) {
     return (
       <div className="py-3 text-xs text-destructive">
-        Could not load commit details.
+        {t('drawer.commits.cantLoadDetails')}
       </div>
     )
   }
@@ -999,13 +1023,17 @@ function CommitDetailContent({ slug, commit, detail }) {
         <div className="space-y-1.5">
           <div className="text-[11px] text-muted-foreground inline-flex items-center gap-2">
             <span>
-              {ds.filesChanged} file{ds.filesChanged !== 1 ? 's' : ''}
+              {ds.filesChanged === 1
+                ? t('drawer.commits.filesChanged.one', { count: 1 })
+                : t('drawer.commits.filesChanged.many', {
+                    count: ds.filesChanged
+                  })}
             </span>
             <span className="text-emerald-500">+{ds.linesAdded}</span>
             <span className="text-destructive">-{ds.linesRemoved}</span>
             {ds.truncated && (
               <span className="text-amber-500">
-                · list truncated at 100 files
+                {t('drawer.commits.truncated')}
               </span>
             )}
           </div>
@@ -1061,7 +1089,7 @@ function CommitDetailContent({ slug, commit, detail }) {
         </div>
       ) : (
         <div className="text-[11px] text-muted-foreground">
-          No diffstat available (often the case for the initial commit).
+          {t('drawer.commits.noDiffstat')}
         </div>
       )}
       <a
@@ -1072,7 +1100,7 @@ function CommitDetailContent({ slug, commit, detail }) {
         }}
         className="text-[11px] text-muted-foreground hover:text-foreground inline-flex items-center gap-1 underline-offset-2 hover:underline"
       >
-        Open on Bitbucket <ExternalLink size={10} />
+        {t('drawer.commits.openOnBitbucket')} <ExternalLink size={10} />
       </a>
     </>
   )
@@ -1086,6 +1114,7 @@ function CommitDetailContent({ slug, commit, detail }) {
  * горизонтальным скроллом, чтобы длинные строки не ломали layout.
  */
 function FileDiffViewer({ slug, hash, path }) {
+  const t = useT()
   const { data, isLoading, isError } = useCommitFileDiff(
     slug,
     hash,
@@ -1095,21 +1124,22 @@ function FileDiffViewer({ slug, hash, path }) {
   if (isLoading) {
     return (
       <div className="py-2 pl-5 text-[11px] text-muted-foreground inline-flex items-center gap-2">
-        <Loader2 size={11} className="animate-spin" /> Loading diff…
+        <Loader2 size={11} className="animate-spin" />{' '}
+        {t('drawer.commits.loadingDiff')}
       </div>
     )
   }
   if (isError) {
     return (
       <div className="py-2 pl-5 text-[11px] text-destructive">
-        Could not load diff.
+        {t('drawer.commits.cantLoadDiff')}
       </div>
     )
   }
   if (!data || !data.trim()) {
     return (
       <div className="py-2 pl-5 text-[11px] text-muted-foreground">
-        Empty diff (binary file or no textual changes).
+        {t('drawer.commits.diffEmpty')}
       </div>
     )
   }
@@ -1172,6 +1202,7 @@ function FileStatusIcon({ status }) {
  * раскрытию.
  */
 function PipelinesTab({ project, branch }) {
+  const t = useT()
   const slug = project.slug
   const { data, isLoading, isError, refetch } = usePipelines(slug, {
     pagelen: 20,
@@ -1201,22 +1232,11 @@ function PipelinesTab({ project, branch }) {
     return (
       <div className="p-6 text-sm text-muted-foreground space-y-2">
         <p>
-          No pipelines found
-          {branch ? (
-            <>
-              {' '}on branch <code className="font-mono">{branch}</code>
-            </>
-          ) : (
-            ''
-          )}
-          .
+          {branch
+            ? t('drawer.pipelines.emptyOnBranch', { branch })
+            : t('drawer.pipelines.empty') + '.'}
         </p>
-        <p className="text-xs">
-          If pipelines run on this repo but the list is empty — the
-          API token may be missing the{' '}
-          <code>read:pipeline:bitbucket</code> scope. Recreate the
-          token with that scope added.
-        </p>
+        <p className="text-xs">{t('drawer.pipelines.scopeHint')}</p>
       </div>
     )
   }
@@ -1248,6 +1268,7 @@ function PipelinesTab({ project, branch }) {
  * "таск создан в одном проекте, а по факту относится к другому".
  */
 function TasksTab({ project, initialIssue }) {
+  const t = useT()
   const slug = project.slug
   const { project: matchedJira, isLoading: projectsLoading } =
     useJiraProjectForSlug(slug)
@@ -1296,23 +1317,16 @@ function TasksTab({ project, initialIssue }) {
   if (projectsLoading) {
     return (
       <div className="p-6 text-xs text-muted-foreground inline-flex items-center gap-2">
-        <Loader2 size={12} className="animate-spin" /> Resolving Jira
-        project…
+        <Loader2 size={12} className="animate-spin" />{' '}
+        {t('tasks.projectTab.resolving')}
       </div>
     )
   }
   if (!matchedJira) {
     return (
       <div className="p-6 text-sm text-muted-foreground space-y-2 max-w-md">
-        <p>
-          No Jira project matches this slug. Looked for a project whose
-          name starts with <code className="font-mono">{slug}</code>{' '}
-          (case-insensitive).
-        </p>
-        <p className="text-xs">
-          If a project does exist, rename it to start with the slug, or
-          check that Jira credentials are configured (Settings → Jira).
-        </p>
+        <p>{t('tasks.projectTab.noMatch.message', { slug })}</p>
+        <p className="text-xs">{t('tasks.projectTab.noMatch.hint')}</p>
       </div>
     )
   }
@@ -1354,7 +1368,7 @@ function TasksTab({ project, initialIssue }) {
   return (
     <div>
       <div className="px-6 py-2 text-[11px] text-muted-foreground border-b border-border/40 bg-muted/10">
-        Linked Jira project:{' '}
+        {t('tasks.projectTab.linkedProject')}{' '}
         <code className="font-mono text-foreground/80">
           {matchedJira.key}
         </code>{' '}
@@ -1363,13 +1377,13 @@ function TasksTab({ project, initialIssue }) {
 
       {noOpen && (
         <div className="px-6 py-4 text-sm text-muted-foreground">
-          No open tasks in this project.
+          {t('tasks.projectTab.noOpenInProject')}
         </div>
       )}
 
       {groups.mine.length > 0 && (
         <TaskGroup
-          label="Assigned to you"
+          label={t('tasks.projectTab.assignedToYou')}
           accentCls="text-sky-300"
           count={groups.mine.length}
         >
@@ -1379,7 +1393,7 @@ function TasksTab({ project, initialIssue }) {
 
       {groups.others.length > 0 && (
         <TaskGroup
-          label="Other open tasks"
+          label={t('tasks.projectTab.otherOpen')}
           accentCls="text-muted-foreground"
           count={groups.others.length}
         >
@@ -1398,7 +1412,7 @@ function TasksTab({ project, initialIssue }) {
             ) : (
               <ChevronRight size={11} />
             )}
-            <span>Recently done</span>
+            <span>{t('tasks.projectTab.recentlyDone')}</span>
             <span className="text-[10px] tabular-nums">
               ({groups.done.length})
             </span>
@@ -1413,9 +1427,9 @@ function TasksTab({ project, initialIssue }) {
 
       {totalVisible === 0 && groups.done.length > 0 && !showClosed && (
         <div className="px-6 py-2 text-[11px] text-muted-foreground">
-          {groups.done.length} closed task
-          {groups.done.length === 1 ? '' : 's'} hidden — expand
-          "Recently done" above to see them.
+          {t('tasks.projectTab.closedHidden', {
+            count: groups.done.length
+          })}
         </div>
       )}
     </div>
@@ -1452,6 +1466,7 @@ function TaskRowExpandable({
   expanded,
   onToggle
 }) {
+  const t = useT()
   const detail = useJiraIssueDetail(issue.key, { enabled: expanded })
   const Caret = expanded ? ChevronDown : ChevronRight
   const mismatched = useMemo(() => {
@@ -1487,7 +1502,7 @@ function TaskRowExpandable({
           {issue.key}
         </code>
         <span className="text-sm flex-1 min-w-0 truncate">
-          {issue.summary || '(no summary)'}
+          {issue.summary || t('drawer.commits.noMessage')}
         </span>
         {mismatched.length > 0 && (
           <SlugMismatchBadge mentioned={mismatched} />
@@ -1540,6 +1555,7 @@ function TaskRowExpandable({
 }
 
 function PipelineRow({ slug, pipeline, expanded, onToggle }) {
+  const t = useT()
   const Caret = expanded ? ChevronDown : ChevronRight
   return (
     <div>
@@ -1588,7 +1604,8 @@ function PipelineRow({ slug, pipeline, expanded, onToggle }) {
             }}
             className="text-[11px] text-muted-foreground hover:text-foreground inline-flex items-center gap-1 underline-offset-2 hover:underline"
           >
-            Open on Bitbucket <ExternalLink size={10} />
+            {t('drawer.commits.openOnBitbucket')}{' '}
+            <ExternalLink size={10} />
           </a>
         </div>
       )}
@@ -1597,6 +1614,7 @@ function PipelineRow({ slug, pipeline, expanded, onToggle }) {
 }
 
 function PipelineSteps({ slug, pipelineUuid }) {
+  const t = useT()
   const { data, isLoading, isError } = usePipelineSteps(slug, pipelineUuid)
   // Раскрытый step — для inline-log. Только один открыт за раз.
   const [openedStepUuid, setOpenedStepUuid] = useState(null)
@@ -1604,21 +1622,22 @@ function PipelineSteps({ slug, pipelineUuid }) {
   if (isLoading) {
     return (
       <div className="text-[11px] text-muted-foreground inline-flex items-center gap-2">
-        <Loader2 size={12} className="animate-spin" /> Loading steps…
+        <Loader2 size={12} className="animate-spin" />{' '}
+        {t('drawer.pipelines.loadingSteps')}
       </div>
     )
   }
   if (isError) {
     return (
       <div className="text-[11px] text-destructive">
-        Could not load steps.
+        {t('drawer.pipelines.cantLoadSteps')}
       </div>
     )
   }
   if (!data || data.length === 0) {
     return (
       <div className="text-[11px] text-muted-foreground">
-        No steps reported.
+        {t('drawer.pipelines.noSteps')}
       </div>
     )
   }
@@ -1645,10 +1664,10 @@ function PipelineSteps({ slug, pipelineUuid }) {
               disabled={liveStep}
               title={
                 liveStep
-                  ? 'Logs available once the step finishes'
+                  ? t('drawer.pipelines.stepLogPending')
                   : open
-                  ? 'Hide log'
-                  : 'Show log'
+                  ? t('drawer.pipelines.hideLog')
+                  : t('drawer.pipelines.showLog')
               }
               className={cn(
                 'w-full flex items-center gap-2 px-1 -mx-1 rounded text-left transition-colors',
@@ -1692,6 +1711,7 @@ function PipelineSteps({ slug, pipelineUuid }) {
 }
 
 function StepLogViewer({ slug, pipelineUuid, stepUuid }) {
+  const t = useT()
   const { data, isLoading, isError } = usePipelineStepLog(
     slug,
     pipelineUuid,
@@ -1701,21 +1721,22 @@ function StepLogViewer({ slug, pipelineUuid, stepUuid }) {
   if (isLoading) {
     return (
       <div className="py-2 pl-5 text-[11px] text-muted-foreground inline-flex items-center gap-2">
-        <Loader2 size={11} className="animate-spin" /> Loading log…
+        <Loader2 size={11} className="animate-spin" />{' '}
+        {t('drawer.pipelines.loadingLog')}
       </div>
     )
   }
   if (isError) {
     return (
       <div className="py-2 pl-5 text-[11px] text-destructive">
-        Could not load log.
+        {t('drawer.pipelines.cantLoadLog')}
       </div>
     )
   }
   if (!data || !data.trim()) {
     return (
       <div className="py-2 pl-5 text-[11px] text-muted-foreground">
-        No log output for this step.
+        {t('drawer.pipelines.emptyLog')}
       </div>
     )
   }
@@ -1732,11 +1753,13 @@ function StepLogViewer({ slug, pipelineUuid, stepUuid }) {
  * (там — без текста, только точка с tooltip).
  */
 export function PipelineStateBadge({ state, compact, dotOnly }) {
+  const t = useT()
   const cfg = pipelineStateConfig(state)
+  const label = cfg.labelKey ? t(cfg.labelKey) : cfg.label
   if (dotOnly) {
     return (
       <span
-        title={cfg.label}
+        title={label}
         className={cn(
           'inline-block w-2 h-2 rounded-full',
           cfg.dotCls,
@@ -1748,7 +1771,7 @@ export function PipelineStateBadge({ state, compact, dotOnly }) {
   const Icon = cfg.icon
   return (
     <span
-      title={cfg.label}
+      title={label}
       className={cn(
         'inline-flex items-center gap-1 shrink-0',
         compact ? 'text-[11px]' : 'text-xs',
@@ -1759,7 +1782,7 @@ export function PipelineStateBadge({ state, compact, dotOnly }) {
         size={compact ? 11 : 13}
         className={cfg.pulse ? 'animate-pulse' : ''}
       />
-      {!compact && <span>{cfg.label}</span>}
+      {!compact && <span>{label}</span>}
     </span>
   )
 }
@@ -1768,7 +1791,7 @@ function pipelineStateConfig(state) {
   switch (state) {
     case 'SUCCESSFUL':
       return {
-        label: 'Successful',
+        labelKey: 'drawer.pipelineState.successful',
         icon: CheckCircle2,
         cls: 'text-emerald-500',
         dotCls: 'bg-emerald-500'
@@ -1776,14 +1799,17 @@ function pipelineStateConfig(state) {
     case 'FAILED':
     case 'ERROR':
       return {
-        label: state === 'ERROR' ? 'Error' : 'Failed',
+        labelKey:
+          state === 'ERROR'
+            ? 'drawer.pipelineState.error'
+            : 'drawer.pipelineState.failed',
         icon: XCircle,
         cls: 'text-destructive',
         dotCls: 'bg-destructive'
       }
     case 'IN_PROGRESS':
       return {
-        label: 'In progress',
+        labelKey: 'drawer.pipelineState.inProgress',
         icon: Loader2,
         cls: 'text-sky-400',
         dotCls: 'bg-sky-500',
@@ -1791,14 +1817,14 @@ function pipelineStateConfig(state) {
       }
     case 'PAUSED':
       return {
-        label: 'Paused',
+        labelKey: 'drawer.pipelineState.paused',
         icon: Pause,
         cls: 'text-amber-500',
         dotCls: 'bg-amber-500'
       }
     case 'PENDING':
       return {
-        label: 'Pending',
+        labelKey: 'drawer.pipelineState.pending',
         icon: Clock,
         cls: 'text-amber-400',
         dotCls: 'bg-amber-400',
@@ -1806,27 +1832,29 @@ function pipelineStateConfig(state) {
       }
     case 'STOPPED':
       return {
-        label: 'Stopped',
+        labelKey: 'drawer.pipelineState.stopped',
         icon: CircleSlash,
         cls: 'text-muted-foreground',
         dotCls: 'bg-zinc-500'
       }
     case 'EXPIRED':
       return {
-        label: 'Expired',
+        labelKey: 'drawer.pipelineState.expired',
         icon: Clock,
         cls: 'text-muted-foreground',
         dotCls: 'bg-zinc-500'
       }
     case 'HALTED':
       return {
-        label: 'Halted',
+        labelKey: 'drawer.pipelineState.halted',
         icon: AlertCircle,
         cls: 'text-amber-500',
         dotCls: 'bg-amber-500'
       }
     default:
       return {
+        // Неизвестное состояние — даём raw статус как label,
+        // т.к. в i18n его не предсказать.
         label: state || 'Unknown',
         icon: CircleDashed,
         cls: 'text-muted-foreground',
@@ -1846,6 +1874,7 @@ function pipelineStateConfig(state) {
  * элементов своей полосы.
  */
 function BranchPicker({ branchesQuery, value, onChange }) {
+  const t = useT()
   const branches = branchesQuery.data?.branches || []
   const defaultBranch = branchesQuery.data?.defaultBranch || null
   const loading = branchesQuery.isLoading
@@ -1855,7 +1884,9 @@ function BranchPicker({ branchesQuery, value, onChange }) {
   const showOrphan = value && !branches.includes(value)
   return (
     <div className="inline-flex items-center gap-2">
-      <span className="text-muted-foreground shrink-0">Branch:</span>
+      <span className="text-muted-foreground shrink-0">
+        {t('drawer.branch.label')}
+      </span>
       <select
         value={value || ''}
         onChange={(e) => onChange(e.target.value || null)}
@@ -1867,12 +1898,12 @@ function BranchPicker({ branchesQuery, value, onChange }) {
           loading && 'opacity-60'
         )}
       >
-        <option value="">All branches</option>
+        <option value="">{t('drawer.branch.all')}</option>
         {showOrphan && <option value={value}>{value}</option>}
         {branches.map((b) => (
           <option key={b} value={b}>
             {b}
-            {b === defaultBranch ? ' (default)' : ''}
+            {b === defaultBranch ? t('drawer.branch.defaultSuffix') : ''}
           </option>
         ))}
       </select>
@@ -1884,14 +1915,15 @@ function BranchPicker({ branchesQuery, value, onChange }) {
 }
 
 function TabErrorState({ onRetry }) {
+  const t = useT()
   return (
     <div className="p-6 text-center space-y-3">
       <AlertCircle size={28} className="mx-auto text-destructive" />
       <p className="text-sm text-muted-foreground">
-        Could not load — check Bitbucket credentials in Settings.
+        {t('drawer.tab.errorState.message')}
       </p>
       <Button variant="outline" size="sm" onClick={onRetry}>
-        <RefreshCw size={12} /> Retry
+        <RefreshCw size={12} /> {t('drawer.tab.errorState.retry')}
       </Button>
     </div>
   )
@@ -2326,12 +2358,13 @@ function StateIcon({ state }) {
 }
 
 function LastCommitSection({ slug }) {
+  const t = useT()
   const { data, isLoading, isError } = useCommits(slug, 5)
 
   return (
     <div className="space-y-2">
       <div className="text-xs uppercase tracking-wide text-muted-foreground flex items-center gap-2">
-        <GitCommit size={12} /> Recent commits
+        <GitCommit size={12} /> {t('drawer.lastCommit.title')}
       </div>
       {isLoading && (
         <div className="space-y-2">
@@ -2356,7 +2389,7 @@ function LastCommitSection({ slug }) {
               )}
             >
               <div className="text-sm whitespace-pre-line line-clamp-2">
-                {c.message.trim() || '(no message)'}
+                {c.message.trim() || t('drawer.commits.noMessage')}
               </div>
               <div className="text-xs text-muted-foreground mt-1 flex items-center gap-2 flex-wrap">
                 <span>{c.author}</span>
@@ -2378,20 +2411,21 @@ function LastCommitSection({ slug }) {
 }
 
 function NotesSection({ value, onChange }) {
+  const t = useT()
   return (
     <div className="space-y-2">
       <div className="text-xs uppercase tracking-wide text-muted-foreground flex items-center gap-2">
-        <StickyNote size={12} /> Notes
+        <StickyNote size={12} /> {t('drawer.notes.title')}
       </div>
       <textarea
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder="Что-то про этот проект — баги, контакт людей, контекст…"
+        placeholder={t('drawer.notes.placeholder')}
         rows={4}
         className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-y"
       />
       <p className="text-[10px] text-muted-foreground/70">
-        Хранится локально, не синхронизируется между машинами.
+        {t('drawer.notes.localOnly')}
       </p>
     </div>
   )
