@@ -168,10 +168,16 @@ function buildClient() {
 }
 
 /**
- * Двухступенчатая проверка: /myself (auth + scope) и /project/search?maxResults=1
- * (доступ к projects). Возвращает имя текущего юзера и host для UI.
+ * Проверка коннекта. Главный функциональный тест — /project/search,
+ * это именно тот scope (read:jira-work / read:project:jira), который
+ * нужен реально работающему приложению. Identity (display name через
+ * /myself) грузим best-effort: на scoped-токенах /myself часто живёт
+ * под отдельным scope (read:me / read:user:jira), которого у токена
+ * может не быть — это не блокирует основные операции, поэтому такой
+ * 403 не превращаем в ошибку connection'а, просто фолбэчим имя на
+ * email из настроек.
  *
- * @returns {Promise<{ok: true, user: {accountId: string, displayName: string, email: string}, host: string} | {ok: false, stage: string, message: string, detail?: string}>}
+ * @returns {Promise<{ok: true, user: {accountId: string|null, displayName: string, email: string}, host: string} | {ok: false, stage: string, message: string, detail?: string}>}
  */
 export async function testConnection() {
   let client
@@ -181,9 +187,11 @@ export async function testConnection() {
     return { ok: false, stage: e.stage || 'config', message: e.message }
   }
 
-  let me
+  // Primary check: то, что делают list-эндпоинты (projects + issues
+  // через JQL). Если этот шаг прошёл — token действительно может
+  // делать ту работу, ради которой мы интегрируемся.
   try {
-    me = await client.request('/rest/api/3/myself')
+    await client.request('/rest/api/3/project/search?maxResults=1')
   } catch (e) {
     if (e.status === 401) {
       return {
@@ -191,7 +199,7 @@ export async function testConnection() {
         stage: 'auth',
         message: 'Authentication failed (401).',
         detail:
-          `Tried Basic Auth with email "${client.email}" against ${client.host}. ` +
+          `Tried Basic and Bearer auth against ${client.host} with email "${client.email}". ` +
           'Possible causes: ' +
           '(1) email does not match the Atlassian account that owns the token; ' +
           '(2) the token was revoked or expired; ' +
@@ -202,9 +210,12 @@ export async function testConnection() {
     if (e.status === 403) {
       return {
         ok: false,
-        stage: 'auth',
-        message: 'Forbidden (403). Token is missing the read:me / read:jira-user scope.',
-        detail: 'Required scopes: read:jira-work, read:jira-user, read:me. Recreate the token with these scopes.'
+        stage: 'scope',
+        message: 'Authenticated, but cannot list projects.',
+        detail:
+          'Token is missing the Jira-work read scope. Recreate it with ' +
+          'read:jira-work (or, for granular scopes, read:project:jira + ' +
+          'read:issue:jira).'
       }
     }
     if (e.status === 404) {
@@ -217,32 +228,26 @@ export async function testConnection() {
     return { ok: false, stage: e.stage || 'http', message: e.message }
   }
 
-  // Best-effort projects access — если /myself прошёл, но read:jira-work
-  // отсутствует, projects-search вернёт 403, и UI поймёт что нужно
-  // расширить scope.
-  try {
-    await client.request('/rest/api/3/project/search?maxResults=1')
-  } catch (e) {
-    if (e.status === 403) {
-      return {
-        ok: false,
-        stage: 'scope',
-        message: 'Authenticated, but cannot list projects.',
-        detail: 'Token missing read:jira-work scope. Recreate the token and include read:jira-work + read:jira-user.'
-      }
-    }
-    return { ok: false, stage: e.stage || 'http', message: e.message }
+  // Best-effort identity. /myself часто живёт под scope, отдельным
+  // от read:jira-work — если токен его не имеет, это нормально:
+  // UI просто покажет email вместо display name.
+  let identity = {
+    accountId: null,
+    displayName: client.email,
+    email: client.email
   }
-
-  return {
-    ok: true,
-    user: {
-      accountId: me.accountId,
+  try {
+    const me = await client.request('/rest/api/3/myself')
+    identity = {
+      accountId: me.accountId || null,
       displayName: me.displayName || me.emailAddress || client.email,
       email: me.emailAddress || client.email
-    },
-    host: client.host
+    }
+  } catch {
+    // ignore — projects уже доступны, имя не критично
   }
+
+  return { ok: true, user: identity, host: client.host }
 }
 
 /**
