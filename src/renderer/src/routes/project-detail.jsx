@@ -2357,17 +2357,25 @@ function StateIcon({ state }) {
   }
 }
 
+/**
+ * Recent commits в Overview-табе. Использует тот же CommitRow что
+ * и Commits-таб — единая семантика: клик по коммиту разворачивает
+ * detail (diffstat, файлы с inline-diff'ом, "Open on Bitbucket").
+ * Только один коммит раскрыт за раз. Для глубокого ныряния —
+ * Commits-таб с 30 коммитами и branch picker'ом.
+ */
 function LastCommitSection({ slug }) {
   const t = useT()
   const { data, isLoading, isError } = useCommits(slug, 5)
+  const [expandedHash, setExpandedHash] = useState(null)
 
   return (
     <div className="space-y-2">
-      <div className="text-xs uppercase tracking-wide text-muted-foreground flex items-center gap-2">
+      <div className="text-xs uppercase tracking-wide text-muted-foreground flex items-center gap-2 px-6">
         <GitCommit size={12} /> {t('drawer.lastCommit.title')}
       </div>
       {isLoading && (
-        <div className="space-y-2">
+        <div className="space-y-2 px-6">
           {Array.from({ length: 3 }).map((_, i) => (
             <div key={i} className="space-y-1.5">
               <div className="h-3 bg-muted rounded w-3/4 animate-pulse" />
@@ -2377,34 +2385,22 @@ function LastCommitSection({ slug }) {
         </div>
       )}
       {!isLoading && (isError || !data || data.length === 0) && (
-        <div className="text-sm text-muted-foreground">—</div>
+        <div className="text-sm text-muted-foreground px-6">—</div>
       )}
       {!isLoading && data && data.length > 0 && (
-        <ul className="space-y-3">
-          {data.map((c, i) => (
-            <li
-              key={c.hash || i}
-              className={cn(
-                i > 0 && 'pt-3 border-t border-border/40'
-              )}
-            >
-              <div className="text-sm whitespace-pre-line line-clamp-2">
-                {c.message.trim() || t('drawer.commits.noMessage')}
-              </div>
-              <div className="text-xs text-muted-foreground mt-1 flex items-center gap-2 flex-wrap">
-                <span>{c.author}</span>
-                <span>·</span>
-                <span>{formatRelative(c.date)}</span>
-                {c.hash && (
-                  <>
-                    <span>·</span>
-                    <code className="text-[10px]">{c.hash.slice(0, 7)}</code>
-                  </>
-                )}
-              </div>
-            </li>
+        <div className="-mx-6 divide-y divide-border/60">
+          {data.map((c) => (
+            <CommitRow
+              key={c.hash}
+              slug={slug}
+              commit={c}
+              expanded={expandedHash === c.hash}
+              onToggle={() =>
+                setExpandedHash((prev) => (prev === c.hash ? null : c.hash))
+              }
+            />
           ))}
-        </ul>
+        </div>
       )}
     </div>
   )
