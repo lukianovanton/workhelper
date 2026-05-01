@@ -15,10 +15,14 @@ export function useLastCommit(slug) {
 
 /**
  * Lazy-fetch последних N коммитов. Дёргается при открытии drawer
- * для секции «Recent commits». Тот же кэш-ключ ['commits', slug, n]
- * — переживает закрытие/открытие drawer.
+ * для секций «Recent commits» / Commits-tab. Тот же кэш-ключ
+ * ['commits', slug, n] — переживает закрытие/открытие drawer.
+ *
+ * Default pagelen=30 совпадает со спекой Чекпоинта 13 для Commits-tab.
+ * LastCommitSection / превью продолжает звать с pagelen=5 — ключ кэша
+ * у них раздельный, конфликта нет.
  */
-export function useCommits(slug, pagelen = 5) {
+export function useCommits(slug, pagelen = 30) {
   return useQuery({
     queryKey: ['commits', slug, pagelen],
     queryFn: () => api.bitbucket.commits(slug, pagelen),
