@@ -11,6 +11,7 @@ import { create } from 'zustand'
  *   - density:  'comfortable' | 'compact'
  *   - autoRefreshMs: 0 (off) | 60_000 | 300_000 | 600_000
  *   - searchHighlight: bool — подсвечивать совпадение в таблице
+ *   - language: 'en' | 'ru' — UI-язык
  */
 
 const KEY = 'workhelper-prefs'
@@ -18,7 +19,8 @@ const DEFAULTS = {
   theme: 'dark',
   density: 'comfortable',
   autoRefreshMs: 0,
-  searchHighlight: true
+  searchHighlight: true,
+  language: 'en'
 }
 
 function load() {
@@ -38,7 +40,8 @@ function persist(state) {
       theme: state.theme,
       density: state.density,
       autoRefreshMs: state.autoRefreshMs,
-      searchHighlight: state.searchHighlight
+      searchHighlight: state.searchHighlight,
+      language: state.language
     }
     localStorage.setItem(KEY, JSON.stringify(slice))
   } catch {
@@ -64,6 +67,10 @@ export const usePrefsStore = create((set, get) => ({
   },
   setSearchHighlight: (searchHighlight) => {
     set({ searchHighlight })
+    persist(get())
+  },
+  setLanguage: (language) => {
+    set({ language })
     persist(get())
   }
 }))

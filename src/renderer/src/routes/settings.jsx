@@ -46,45 +46,48 @@ import { DatabaseSetupGuide } from '@/components/setup-guides/database'
 import { DotnetSetupGuide } from '@/components/setup-guides/dotnet'
 import { PresenceSetupGuide } from '@/components/setup-guides/presence'
 import { AppearanceSetupGuide } from '@/components/setup-guides/appearance'
+import { useT, SUPPORTED_LANGUAGES } from '@/i18n'
 import { api } from '@/api'
 
 // Реестр всех setup-гайдов: вместо отдельного Dialog на секцию у
 // нас один централизованный, переключающий контент по id. Так
-// проще добавить ещё гайдов и не размножать boilerplate.
+// проще добавить ещё гайдов и не размножать boilerplate. Заголовки
+// и описания берутся из i18n внутри Dialog'а; здесь только фиксы
+// по компоненту и translation-ключам.
 const SETUP_GUIDES = {
   bitbucket: {
-    title: 'Bitbucket setup guide',
-    description: '4 steps to authenticate against Bitbucket Cloud. ~2 minutes.',
+    titleKey: 'settings.bitbucket.title',
+    descriptionKey: 'settings.guide.bitbucket.dialogDescription',
     Component: BitbucketSetupGuide
   },
   jira: {
-    title: 'Jira setup guide',
-    description: '3 steps; reuses your Atlassian email from the Bitbucket section.',
+    titleKey: 'settings.jira.title',
+    descriptionKey: 'settings.guide.jira.dialogDescription',
     Component: JiraSetupGuide
   },
   paths: {
-    title: 'Paths setup guide',
-    description: 'Where projects clone, where dumps live, how VS Code is launched.',
+    titleKey: 'settings.paths.title',
+    descriptionKey: 'settings.guide.paths.dialogDescription',
     Component: PathsSetupGuide
   },
   database: {
-    title: 'Database setup guide',
-    description: 'Local MySQL connection used for size, restore, drop/create.',
+    titleKey: 'settings.database.title',
+    descriptionKey: 'settings.guide.database.dialogDescription',
     Component: DatabaseSetupGuide
   },
   dotnet: {
-    title: '.NET setup guide',
-    description: 'Optional run arguments for dotnet run. Most users leave empty.',
+    titleKey: 'settings.dotnet.title',
+    descriptionKey: 'settings.guide.dotnet.dialogDescription',
     Component: DotnetSetupGuide
   },
   presence: {
-    title: 'Presence setup guide',
-    description: 'How to see colleagues running WorkHelper on your network.',
+    titleKey: 'settings.presence.title',
+    descriptionKey: 'settings.guide.presence.dialogDescription',
     Component: PresenceSetupGuide
   },
   appearance: {
-    title: 'Appearance setup guide',
-    description: 'Display preferences for this machine.',
+    titleKey: 'settings.appearance.title',
+    descriptionKey: 'settings.guide.appearance.dialogDescription',
     Component: AppearanceSetupGuide
   }
 }
@@ -94,12 +97,12 @@ const SETUP_GUIDES = {
 const SECTION_STORAGE_KEY = 'settings-active-section'
 
 const SECTIONS = /** @type {const} */ ([
-  { id: 'atlassian', label: 'Atlassian', icon: Cloud },
-  { id: 'paths', label: 'Paths', icon: Folder },
-  { id: 'database', label: 'Database', icon: Database },
-  { id: 'dotnet', label: '.NET', icon: Code2 },
-  { id: 'presence', label: 'Presence', icon: Users },
-  { id: 'appearance', label: 'Appearance', icon: Palette }
+  { id: 'atlassian', labelKey: 'settings.section.atlassian', icon: Cloud },
+  { id: 'paths', labelKey: 'settings.section.paths', icon: Folder },
+  { id: 'database', labelKey: 'settings.section.database', icon: Database },
+  { id: 'dotnet', labelKey: 'settings.section.dotnet', icon: Code2 },
+  { id: 'presence', labelKey: 'settings.section.presence', icon: Users },
+  { id: 'appearance', labelKey: 'settings.section.appearance', icon: Palette }
 ])
 
 // Старые id 'bitbucket' / 'jira' маппим на новый объединённый
@@ -120,6 +123,7 @@ function loadActiveSection() {
 
 export default function Settings() {
   const navigate = useNavigate()
+  const t = useT()
   const [config, setConfig] = useState(null)
   const [secretsStatus, setSecretsStatus] = useState({
     bitbucketApiToken: false,
@@ -283,9 +287,9 @@ export default function Settings() {
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="sm" onClick={() => navigate('/projects')}>
             <ArrowLeft />
-            Back
+            {t('common.back')}
           </Button>
-          <h2 className="text-base font-medium">Settings</h2>
+          <h2 className="text-base font-medium">{t('settings.title')}</h2>
         </div>
         <div className="flex items-center gap-3">
           {saveStatus && (
@@ -300,12 +304,16 @@ export default function Settings() {
               ) : (
                 <X size={14} className="shrink-0" />
               )}
-              <span className="break-words">{saveStatus.message}</span>
+              <span className="break-words">
+                {saveStatus.ok && saveStatus.message === 'Saved'
+                  ? t('common.saved')
+                  : saveStatus.message}
+              </span>
               {!saveStatus.ok && (
                 <button
                   onClick={() => setSaveStatus(null)}
                   className="ml-1 shrink-0 opacity-60 hover:opacity-100"
-                  title="Dismiss"
+                  title={t('common.dismiss')}
                 >
                   <X size={11} />
                 </button>
@@ -314,7 +322,7 @@ export default function Settings() {
           )}
           <Button onClick={onSave} disabled={saving}>
             {saving && <Loader2 className="animate-spin" />}
-            Save
+            {t('common.save')}
           </Button>
         </div>
       </header>
@@ -337,18 +345,20 @@ export default function Settings() {
                   )}
                 >
                   <Icon size={14} />
-                  <span>{s.label}</span>
+                  <span>{t(s.labelKey)}</span>
                 </button>
               )
             })}
           </nav>
           <div className="p-3 border-t border-border text-[11px] text-muted-foreground space-y-1 leading-snug">
             <p>
-              Config in{' '}
-              <code className="text-[10px]">%APPDATA%\\project-hub\\config.json</code>
+              {t('settings.footer.configPrefix')}{' '}
+              <code className="text-[10px]">
+                %APPDATA%\\project-hub\\config.json
+              </code>
             </p>
             <p>
-              Secrets encrypted via safeStorage in{' '}
+              {t('settings.footer.secretsPrefix')}{' '}
               <code className="text-[10px]">secrets.json</code>
             </p>
           </div>
@@ -367,14 +377,14 @@ export default function Settings() {
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
                 <Card>
                   <SectionCardHeader
-                    title="Bitbucket"
-                    description="Email, workspace, username and API token for the Cloud REST API."
+                    title={t('settings.bitbucket.title')}
+                    description={t('settings.bitbucket.description')}
                     onOpenGuide={() => setGuideOpen('bitbucket')}
                   />
                   <CardContent className="space-y-4">
                     <Field
-                      label="Email"
-                      hint="Atlassian account email — same for Bitbucket and Jira."
+                      label={t('settings.bitbucket.email')}
+                      hint={t('settings.bitbucket.email.hint')}
                     >
                       <Input
                         type="email"
@@ -389,8 +399,8 @@ export default function Settings() {
                       />
                     </Field>
                     <Field
-                      label="Workspace"
-                      hint="The short ID from your Bitbucket URL (bitbucket.org/<workspace>/…)."
+                      label={t('settings.bitbucket.workspace')}
+                      hint={t('settings.bitbucket.workspace.hint')}
                     >
                       <Input
                         value={config.bitbucket.workspace}
@@ -404,8 +414,8 @@ export default function Settings() {
                       />
                     </Field>
                     <Field
-                      label="Bitbucket username (for git)"
-                      hint="Different from email. Used in clone URLs."
+                      label={t('settings.bitbucket.gitUsername')}
+                      hint={t('settings.bitbucket.gitUsername.hint')}
                     >
                       <Input
                         value={config.bitbucket.gitUsername}
@@ -419,8 +429,8 @@ export default function Settings() {
                       />
                     </Field>
                     <SecretField
-                      label="API token"
-                      hint="Created at id.atlassian.com → Security → API tokens."
+                      label={t('settings.bitbucket.token')}
+                      hint={t('settings.bitbucket.token.hint')}
                       status={secretsStatus.bitbucketApiToken}
                       value={bitbucketApiToken}
                       onChange={setBitbucketApiToken}
@@ -439,7 +449,7 @@ export default function Settings() {
                         {testingBitbucket && (
                           <Loader2 className="animate-spin" />
                         )}
-                        Test connection
+                        {t('common.testConnection')}
                       </Button>
                       <BitbucketTestResult result={bitbucketTestResult} />
                     </div>
@@ -448,14 +458,14 @@ export default function Settings() {
 
                 <Card>
                   <SectionCardHeader
-                    title="Jira"
-                    description="Reuses your Atlassian email; needs its own API token."
+                    title={t('settings.jira.title')}
+                    description={t('settings.jira.description')}
                     onOpenGuide={() => setGuideOpen('jira')}
                   />
                   <CardContent className="space-y-4">
                     <Field
-                      label="Host"
-                      hint="Your Jira Cloud URL (https://<company>.atlassian.net)."
+                      label={t('settings.jira.host')}
+                      hint={t('settings.jira.host.hint')}
                     >
                       <Input
                         value={config.jira?.host || ''}
@@ -466,8 +476,8 @@ export default function Settings() {
                       />
                     </Field>
                     <SecretField
-                      label="API token"
-                      hint="Use a classic token (no scopes). See guide for why."
+                      label={t('settings.jira.token')}
+                      hint={t('settings.jira.token.hint')}
                       status={secretsStatus.jiraApiToken}
                       value={jiraApiToken}
                       onChange={setJiraApiToken}
@@ -486,7 +496,7 @@ export default function Settings() {
                         {testingJira && (
                           <Loader2 className="animate-spin" />
                         )}
-                        Test connection
+                        {t('common.testConnection')}
                       </Button>
                       <JiraTestResult result={jiraTestResult} />
                     </div>
@@ -498,14 +508,14 @@ export default function Settings() {
             {activeSection === 'paths' && (
               <Card>
                 <SectionCardHeader
-                  title="Paths"
-                  description="Where projects clone, where SQL dumps live, how VS Code is launched."
+                  title={t('settings.paths.title')}
+                  description={t('settings.paths.description')}
                   onOpenGuide={() => setGuideOpen('paths')}
                 />
                 <CardContent className="space-y-4">
                   <Field
-                    label="Projects folder"
-                    hint="Each repo clones to <root>/<slug>."
+                    label={t('settings.paths.projectsRoot')}
+                    hint={t('settings.paths.projectsRoot.hint')}
                   >
                     <Input
                       value={config.paths.projectsRoot}
@@ -516,8 +526,8 @@ export default function Settings() {
                     />
                   </Field>
                   <Field
-                    label="Dumps folder"
-                    hint="Where SQL dumps live; auto-detected by name pattern."
+                    label={t('settings.paths.dumpsRoot')}
+                    hint={t('settings.paths.dumpsRoot.hint')}
                   >
                     <Input
                       value={config.paths.dumpsRoot}
@@ -528,11 +538,11 @@ export default function Settings() {
                     />
                   </Field>
                   <BinaryPathField
-                    label="VS Code executable"
+                    label={t('settings.paths.vscode')}
                     value={config.paths.vscodeExecutable}
                     detected={vscodeDetected}
                     placeholder="code"
-                    notFoundHint="not found in PATH"
+                    notFoundHint={t('settings.paths.vscode.notFound')}
                     onChange={(v) =>
                       updatePath('paths', 'vscodeExecutable')(v)
                     }
@@ -544,13 +554,13 @@ export default function Settings() {
             {activeSection === 'database' && (
               <Card>
                 <SectionCardHeader
-                  title="Database"
-                  description="Local MySQL connection — size detection, restore, drop/create."
+                  title={t('settings.database.title')}
+                  description={t('settings.database.description')}
                   onOpenGuide={() => setGuideOpen('database')}
                 />
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-3 gap-4">
-                    <Field label="Host" className="col-span-2">
+                    <Field label={t('settings.database.host')} className="col-span-2">
                       <Input
                         value={config.database.host}
                         onChange={(e) =>
@@ -559,7 +569,7 @@ export default function Settings() {
                         placeholder="localhost"
                       />
                     </Field>
-                    <Field label="Port">
+                    <Field label={t('settings.database.port')}>
                       <Input
                         type="number"
                         value={config.database.port}
@@ -573,7 +583,7 @@ export default function Settings() {
                       />
                     </Field>
                   </div>
-                  <Field label="User">
+                  <Field label={t('settings.database.user')}>
                     <Input
                       value={config.database.user}
                       onChange={(e) =>
@@ -583,21 +593,21 @@ export default function Settings() {
                     />
                   </Field>
                   <SecretField
-                    label="Password"
+                    label={t('settings.database.password')}
                     status={secretsStatus.dbPassword}
                     value={dbPassword}
                     onChange={setDbPassword}
                     onClear={() => onClearSecret('dbPassword')}
                   />
                   <BinaryPathField
-                    label="mysql executable"
+                    label={t('settings.database.mysqlExecutable')}
                     value={config.database.mysqlExecutable}
                     detected={mysqlDetected}
                     placeholder="C:\\path\\to\\mysql.exe"
                     notFoundHint={
                       config.database.mysqlExecutable
-                        ? 'not found — restore will be blocked'
-                        : 'optional — only needed for restoring dumps'
+                        ? t('settings.database.mysqlExecutable.notFound')
+                        : t('settings.database.mysqlExecutable.optional')
                     }
                     onChange={(v) =>
                       updatePath('database', 'mysqlExecutable')(v)
@@ -611,7 +621,7 @@ export default function Settings() {
                       disabled={testingDb}
                     >
                       {testingDb && <Loader2 className="animate-spin" />}
-                      Test connection
+                      {t('common.testConnection')}
                     </Button>
                     <DbTestResult result={dbTestResult} />
                   </div>
@@ -622,14 +632,14 @@ export default function Settings() {
             {activeSection === 'dotnet' && (
               <Card>
                 <SectionCardHeader
-                  title=".NET"
-                  description="Optional dotnet run arguments. Most users leave this empty."
+                  title={t('settings.dotnet.title')}
+                  description={t('settings.dotnet.description')}
                   onOpenGuide={() => setGuideOpen('dotnet')}
                 />
                 <CardContent className="space-y-4">
                   <Field
-                    label="Run arguments"
-                    hint="Space-separated, passed to dotnet run after --"
+                    label={t('settings.dotnet.runArgs')}
+                    hint={t('settings.dotnet.runArgs.hint')}
                   >
                     <Input
                       value={(config.dotnet.runArgs || []).join(' ')}
@@ -677,10 +687,10 @@ export default function Settings() {
             <>
               <DialogHeader>
                 <DialogTitle>
-                  {SETUP_GUIDES[guideOpen].title}
+                  {t(SETUP_GUIDES[guideOpen].titleKey)}
                 </DialogTitle>
                 <DialogDescription>
-                  {SETUP_GUIDES[guideOpen].description}
+                  {t(SETUP_GUIDES[guideOpen].descriptionKey)}
                 </DialogDescription>
               </DialogHeader>
               {(() => {
@@ -701,6 +711,7 @@ export default function Settings() {
  * добавление guide-кнопки в новую карточку было одной строчкой.
  */
 function SectionCardHeader({ title, description, onOpenGuide }) {
+  const t = useT()
   return (
     <CardHeader>
       <div className="flex items-start justify-between gap-3">
@@ -713,10 +724,10 @@ function SectionCardHeader({ title, description, onOpenGuide }) {
             variant="outline"
             size="sm"
             onClick={onOpenGuide}
-            title="Open the full setup walkthrough"
+            title={t('settings.openSetupGuide')}
           >
             <BookOpen size={13} />
-            Setup guide
+            {t('settings.setupGuide')}
           </Button>
         )}
       </div>
@@ -725,6 +736,7 @@ function SectionCardHeader({ title, description, onOpenGuide }) {
 }
 
 function PresenceCard({ config, updatePath, onOpenGuide }) {
+  const t = useT()
   const enabled = !!config.presence?.enabled
 
   const onToggle = async (next) => {
@@ -741,8 +753,8 @@ function PresenceCard({ config, updatePath, onOpenGuide }) {
   return (
     <Card>
       <SectionCardHeader
-        title="Presence"
-        description="See which colleagues have WorkHelper open on the same network."
+        title={t('settings.presence.title')}
+        description={t('settings.presence.description')}
         onOpenGuide={onOpenGuide}
       />
       <CardContent className="space-y-2">
@@ -753,11 +765,10 @@ function PresenceCard({ config, updatePath, onOpenGuide }) {
             onChange={(e) => onToggle(e.target.checked)}
             className="rounded border-input"
           />
-          Enable presence
+          {t('settings.presence.enable')}
         </label>
         <p className="text-xs text-muted-foreground">
-          Off by default. Shares hostname, username, local IP and
-          version with others on your network or Tailnet.
+          {t('settings.presence.privacy')}
         </p>
       </CardContent>
     </Card>
@@ -765,6 +776,7 @@ function PresenceCard({ config, updatePath, onOpenGuide }) {
 }
 
 function AppearanceCard({ onOpenGuide }) {
+  const t = useT()
   const theme = usePrefsStore((s) => s.theme)
   const setTheme = usePrefsStore((s) => s.setTheme)
   const density = usePrefsStore((s) => s.density)
@@ -773,50 +785,87 @@ function AppearanceCard({ onOpenGuide }) {
   const setAutoRefreshMs = usePrefsStore((s) => s.setAutoRefreshMs)
   const searchHighlight = usePrefsStore((s) => s.searchHighlight)
   const setSearchHighlight = usePrefsStore((s) => s.setSearchHighlight)
+  const language = usePrefsStore((s) => s.language) || 'en'
+  const setLanguage = usePrefsStore((s) => s.setLanguage)
 
   return (
     <Card>
       <SectionCardHeader
-        title="Appearance"
-        description="Display preferences for this machine. Stored locally."
+        title={t('settings.appearance.title')}
+        description={t('settings.appearance.description')}
         onOpenGuide={onOpenGuide}
       />
       <CardContent className="space-y-4">
-        <Field label="Theme">
+        <Field label={t('settings.appearance.language')}>
+          <SegmentedRadio
+            options={SUPPORTED_LANGUAGES.map((l) => ({
+              value: l.id,
+              label: l.label
+            }))}
+            value={language}
+            onChange={setLanguage}
+          />
+        </Field>
+        <Field label={t('settings.appearance.theme')}>
           <SegmentedRadio
             options={[
-              { value: 'dark', label: 'Dark', icon: <Moon size={14} /> },
-              { value: 'light', label: 'Light', icon: <Sun size={14} /> },
-              { value: 'system', label: 'System', icon: <Monitor size={14} /> }
+              {
+                value: 'dark',
+                label: t('settings.appearance.theme.dark'),
+                icon: <Moon size={14} />
+              },
+              {
+                value: 'light',
+                label: t('settings.appearance.theme.light'),
+                icon: <Sun size={14} />
+              },
+              {
+                value: 'system',
+                label: t('settings.appearance.theme.system'),
+                icon: <Monitor size={14} />
+              }
             ]}
             value={theme}
             onChange={setTheme}
           />
         </Field>
-        <Field label="Density">
+        <Field label={t('settings.appearance.density')}>
           <SegmentedRadio
             options={[
               {
                 value: 'comfortable',
-                label: 'Comfortable',
+                label: t('settings.appearance.density.comfortable'),
                 icon: <Rows3 size={14} />
               },
-              { value: 'compact', label: 'Compact', icon: <Rows4 size={14} /> }
+              {
+                value: 'compact',
+                label: t('settings.appearance.density.compact'),
+                icon: <Rows4 size={14} />
+              }
             ]}
             value={density}
             onChange={setDensity}
           />
         </Field>
         <Field
-          label="Auto-refresh projects"
-          hint="Periodically fetches the Bitbucket list in the background"
+          label={t('settings.appearance.autoRefresh')}
+          hint={t('settings.appearance.autoRefresh.hint')}
         >
           <SegmentedRadio
             options={[
-              { value: 0, label: 'Off' },
-              { value: 60_000, label: '1 min' },
-              { value: 300_000, label: '5 min' },
-              { value: 600_000, label: '10 min' }
+              { value: 0, label: t('settings.appearance.autoRefresh.off') },
+              {
+                value: 60_000,
+                label: t('settings.appearance.autoRefresh.1m')
+              },
+              {
+                value: 300_000,
+                label: t('settings.appearance.autoRefresh.5m')
+              },
+              {
+                value: 600_000,
+                label: t('settings.appearance.autoRefresh.10m')
+              }
             ]}
             value={autoRefreshMs}
             onChange={setAutoRefreshMs}
@@ -829,7 +878,7 @@ function AppearanceCard({ onOpenGuide }) {
             onChange={(e) => setSearchHighlight(e.target.checked)}
             className="rounded border-input"
           />
-          Highlight search matches in the projects table
+          {t('settings.appearance.searchHighlight')}
         </label>
       </CardContent>
     </Card>
@@ -975,11 +1024,14 @@ function BinaryPathField({
   notFoundHint,
   onChange
 }) {
+  const t = useT()
   // Кнопка показывается всегда когда есть detected — даже если поле
   // уже равно detected. Это позволяет «вернуть к авто» одним кликом
   // в любой момент, не ломая голову над тем, что в поле сейчас.
   const canUseDetected = !!detected
-  const hint = detected ? `detected: ${detected}` : notFoundHint
+  const hint = detected
+    ? t('settings.detected', { path: detected })
+    : notFoundHint
   return (
     <div className="space-y-1.5">
       <Label>{label}</Label>
@@ -996,7 +1048,7 @@ function BinaryPathField({
             onClick={() => onChange(detected)}
             title={`Set to ${detected}`}
           >
-            Use detected
+            {t('settings.useDetected')}
           </Button>
         )}
       </div>
@@ -1018,6 +1070,7 @@ function Field({ label, hint, className, children }) {
 }
 
 function SecretField({ label, hint, status, value, onChange, onClear }) {
+  const t = useT()
   return (
     <div className="space-y-1.5">
       <Label>{label}</Label>
@@ -1026,17 +1079,19 @@ function SecretField({ label, hint, status, value, onChange, onClear }) {
           type="password"
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          placeholder={status ? '•••••• stored — leave blank to keep' : ''}
+          placeholder={
+            status ? '•••••• stored — leave blank to keep' : ''
+          }
         />
         {status && (
           <Button variant="outline" size="sm" onClick={onClear}>
-            Clear
+            {t('common.clear')}
           </Button>
         )}
       </div>
       {status && !value ? (
         <p className="text-xs text-muted-foreground">
-          Encrypted value already saved.
+          {t('settings.encryptedAlreadySaved')}
         </p>
       ) : hint ? (
         <p className="text-xs text-muted-foreground">{hint}</p>
