@@ -390,9 +390,12 @@ function toIssueShape(it) {
  *
  * @param {string} jql
  * @param {{ maxResults?: number, nextPageToken?: string }} [opts]
+ * @param {ReturnType<typeof buildClient>} [clientParam] — опционально
+ *   передать уже созданный client (чтобы не терять кэш auth-схемы
+ *   между resolve-шагом и собственно search'ем).
  */
-async function searchIssues(jql, opts = {}) {
-  const client = buildClient()
+async function searchIssues(jql, opts = {}, clientParam) {
+  const client = clientParam || buildClient()
   const max = Math.min(opts.maxResults ?? 50, 100)
   const qs = new URLSearchParams({
     jql,
@@ -414,21 +417,85 @@ async function searchIssues(jql, opts = {}) {
   }
 }
 
+// Кэш accountId по email — резолв через /myself или /user/search
+// делается один раз на сессию, потом подставляется напрямую в JQL.
+let cachedAccountId = null
+let cachedAccountIdFor = null
+
+/**
+ * Резолвит accountId текущего пользователя без зависимости от JQL
+ * функции `currentUser()` — она ненадёжно работает на Atlassian
+ * "API tokens with scopes" через Bearer auth, и query тогда
+ * возвращает 0 вместо реальных тасков.
+ *
+ * Стратегия:
+ *  1. /rest/api/3/myself (требует read:me).
+ *  2. Если /myself 403/недоступен — /user/search?query=<email>.
+ *     Требует read:jira-user, который у нас уже обязателен.
+ *  3. Если оба не сработали — null. Caller падает обратно на
+ *     currentUser().
+ */
+async function resolveCurrentAccountId(client) {
+  if (cachedAccountId && cachedAccountIdFor === client.email) {
+    return cachedAccountId
+  }
+  try {
+    const me = await client.request('/rest/api/3/myself')
+    if (me?.accountId) {
+      cachedAccountId = me.accountId
+      cachedAccountIdFor = client.email
+      return cachedAccountId
+    }
+  } catch {
+    // ignore — fallback ниже
+  }
+  if (client.email) {
+    try {
+      const results = await client.request(
+        `/rest/api/3/user/search?query=${encodeURIComponent(client.email)}`
+      )
+      if (Array.isArray(results)) {
+        // /user/search умеет возвращать частичные совпадения (по
+        // displayName тоже) — берём ровно того, чей email совпадает.
+        const exact = results.find(
+          (u) =>
+            u.emailAddress &&
+            u.emailAddress.toLowerCase() === client.email.toLowerCase()
+        )
+        const pick = exact || results[0]
+        if (pick?.accountId) {
+          cachedAccountId = pick.accountId
+          cachedAccountIdFor = client.email
+          return cachedAccountId
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return null
+}
+
 /**
  * Свои незакрытые таски — по всем проектам, доступным юзеру.
  * Без project-фильтра в JQL: Jira сам ограничит результат
  * проектами, к которым у юзера есть доступ.
  *
- * Ошибки больше НЕ тихо проглатываем — пустой результат и реальный
- * 403 / 404 / 401 это разные ситуации, и UI должен мочь их
- * отличать (показать «No open tasks» vs «scope missing»).
- *
  * @param {{ maxResults?: number }} [opts]
  */
 export async function getMyIssues(opts = {}) {
+  const client = buildClient()
+  const accountId = await resolveCurrentAccountId(client)
+  // Если accountId известен — подставляем его напрямую. Это надёжнее
+  // currentUser() через scoped Bearer-auth, у которой бывает баг
+  // «возвращает 0 вместо реальных тасков».
+  const assigneeFilter = accountId
+    ? `assignee = "${accountId}"`
+    : 'assignee = currentUser()'
   return searchIssues(
-    'assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC',
-    { maxResults: opts.maxResults ?? 50 }
+    `${assigneeFilter} AND statusCategory != Done ORDER BY updated DESC`,
+    { maxResults: opts.maxResults ?? 50 },
+    client
   )
 }
 
