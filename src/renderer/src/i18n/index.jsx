@@ -41,3 +41,12 @@ export function useT() {
     )
   }
 }
+
+/**
+ * Возвращает текущий язык. Для случаев где надо переключить JSX-дерево
+ * целиком (например setup-гайды с богатой разметкой), а пихать JSX
+ * в JSON-словарь не хочется.
+ */
+export function useLang() {
+  return usePrefsStore((s) => s.language) || 'en'
+}

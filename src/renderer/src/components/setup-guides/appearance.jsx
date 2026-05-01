@@ -1,6 +1,12 @@
 import { GuideShell, Section } from './_shared'
+import { useLang } from '@/i18n'
 
 export function AppearanceSetupGuide() {
+  const lang = useLang()
+  return lang === 'ru' ? <AppearanceSetupGuideRu /> : <AppearanceSetupGuideEn />
+}
+
+function AppearanceSetupGuideEn() {
   return (
     <GuideShell>
       <Section title="What this is for">
@@ -66,6 +72,79 @@ export function AppearanceSetupGuide() {
           name / description are wrapped in a soft amber highlight to
           make them stand out. Pure cosmetics — turn off if you find
           it distracting.
+        </p>
+      </Section>
+    </GuideShell>
+  )
+}
+
+function AppearanceSetupGuideRu() {
+  return (
+    <GuideShell>
+      <Section title="Зачем это">
+        <p>
+          Настройки отображения для этой машины. Все четыре опции
+          хранятся локально — они не синхронизируются между
+          устройствами и не входят в <code>config.json</code>.
+        </p>
+      </Section>
+
+      <Section title="Тема">
+        <ul className="list-disc pl-5 space-y-1.5">
+          <li>
+            <strong className="text-foreground">Dark</strong> —
+            фиксированная тёмная тема. Подходит, если вы и так живёте
+            в тёмном редакторе.
+          </li>
+          <li>
+            <strong className="text-foreground">Light</strong> —
+            фиксированная светлая. Лучше на ярких экранах / в ярком
+            помещении.
+          </li>
+          <li>
+            <strong className="text-foreground">System</strong> —
+            следует системной теме Windows. Автоматически
+            переключается при смене light/dark в системе.
+          </li>
+        </ul>
+      </Section>
+
+      <Section title="Плотность (Density)">
+        <ul className="list-disc pl-5 space-y-1.5">
+          <li>
+            <strong className="text-foreground">Comfortable</strong> —
+            по умолчанию. Более крупные строки, под названием проекта
+            видно описание. ~24 строки на экран ноутбука.
+          </li>
+          <li>
+            <strong className="text-foreground">Compact</strong> —
+            более короткие строки, описание скрыто, шрифт меньше. ~50
+            строк на экран. Удобно для пробегания длинного списка
+            репо глазами.
+          </li>
+        </ul>
+      </Section>
+
+      <Section title="Автообновление проектов">
+        <p>
+          Как часто список проектов перезапрашивает данные Bitbucket в
+          фоне — Off / 1 мин / 5 мин / 10 мин. Не зависит от ручной
+          кнопки <strong>Refresh</strong>, её можно жать в любой момент.
+        </p>
+        <p>
+          Оставьте <strong className="text-foreground">Off</strong>, если
+          лезете в Bitbucket лишь изредка — кешированный список и так
+          быстрый. <strong className="text-foreground">5 мин</strong> —
+          разумная середина; ниже этого вы упрётесь в лимит Bitbucket
+          1000 запросов/час, если проектов много.
+        </p>
+      </Section>
+
+      <Section title="Подсветка совпадений в поиске">
+        <p>
+          При вводе в строку поиска совпадающие подстроки в slug / имени /
+          описании оборачиваются в мягкую янтарную подсветку, чтобы
+          их было видно. Чистая косметика — выключите, если мешает.
         </p>
       </Section>
     </GuideShell>

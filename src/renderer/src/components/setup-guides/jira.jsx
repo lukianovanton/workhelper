@@ -1,6 +1,12 @@
 import { GuideShell, Section, Step, ExtLink } from './_shared'
+import { useLang } from '@/i18n'
 
 export function JiraSetupGuide() {
+  const lang = useLang()
+  return lang === 'ru' ? <JiraSetupGuideRu /> : <JiraSetupGuideEn />
+}
+
+function JiraSetupGuideEn() {
   return (
     <GuideShell>
       <Section title="What you'll need">
@@ -174,6 +180,187 @@ export function JiraSetupGuide() {
             <code>/rest/api/3/search</code> endpoint in 2026. Update
             the app — newer versions use the new{' '}
             <code>/rest/api/3/search/jql</code> endpoint.
+          </li>
+        </ul>
+      </Section>
+    </GuideShell>
+  )
+}
+
+function JiraSetupGuideRu() {
+  return (
+    <GuideShell>
+      <Section title="Что понадобится">
+        <ul className="list-disc pl-5 space-y-1">
+          <li>
+            <strong className="text-foreground">Email Atlassian</strong>{' '}
+            — тот же, что в карточке Bitbucket выше; переиспользуется.
+          </li>
+          <li>
+            <strong className="text-foreground">Jira host URL</strong>{' '}
+            — обычно <code>https://&lt;company&gt;.atlassian.net</code>
+          </li>
+          <li>
+            <strong className="text-foreground">API-токен Jira</strong>{' '}
+            — <em>отдельный</em> от Bitbucket. Atlassian выпускает по
+            одному токену на продукт.
+          </li>
+        </ul>
+        <p className="text-[12px]">
+          Два токена звучат как лишняя возня, но так устроен Atlassian.
+          Когда Bitbucket уже настроен, сюда уйдёт ~2 минуты.
+        </p>
+      </Section>
+
+      <Step number={1} title="Создайте Jira API-токен">
+        <p>
+          Откройте{' '}
+          <ExtLink href="https://id.atlassian.com/manage-profile/security/api-tokens">
+            id.atlassian.com → Security → API tokens
+          </ExtLink>
+          .
+        </p>
+        <p>
+          Как и для Bitbucket,{' '}
+          <strong className="text-foreground">
+            нажмите «Create API token»
+          </strong>
+          {' '}— ту, что <em>без</em> «with scopes». У scoped-токенов Jira
+          есть известный баг Atlassian: <code>currentUser()</code> в JQL
+          не резолвится при Bearer-авторизации, и «My Tasks» оказывается
+          пустым. Классические токены работают через Basic auth, JQL
+          работает, всё работает.
+        </p>
+        <ul className="list-disc pl-5 space-y-1">
+          <li>Назовите токен «WorkHelper Jira» или похоже</li>
+          <li>
+            <strong className="text-foreground">Скопируйте токен сразу</strong>{' '}
+            — показывается только один раз.
+          </li>
+        </ul>
+      </Step>
+
+      <Step number={2} title="Найдите Jira host URL">
+        <p>
+          Откройте Jira в браузере и посмотрите URL. Формат:{' '}
+          <code className="text-foreground">
+            https://&lt;company&gt;.atlassian.net/jira/...
+          </code>
+          . Скопируйте только протокол + домен — вставьте{' '}
+          <code className="text-foreground">
+            https://&lt;company&gt;.atlassian.net
+          </code>
+          {' '}без слэша на конце и без пути.
+        </p>
+        <p className="text-[12px]">
+          Можно вставить и полный URL с{' '}
+          <code>/jira/for-you</code> на конце — приложение само обрежет
+          путь.
+        </p>
+      </Step>
+
+      <Step number={3} title="Подставьте значения в Settings">
+        <p>В карточке Jira:</p>
+        <ul className="list-disc pl-5 space-y-1">
+          <li>
+            <strong className="text-foreground">Host</strong>: URL из
+            шага 2
+          </li>
+          <li>
+            <strong className="text-foreground">API-токен</strong>:
+            из шага 1
+          </li>
+          <li>
+            (Email берётся из карточки Bitbucket — это тот же аккаунт
+            Atlassian.)
+          </li>
+        </ul>
+        <p>
+          Нажмите <strong className="text-foreground">Save</strong>, затем{' '}
+          <strong className="text-foreground">Test Jira</strong>. Должно
+          показать <span className="text-emerald-400">Authenticated as
+          &lt;ваше имя&gt;</span>.
+        </p>
+      </Step>
+
+      <Section title="Что вы получаете">
+        <ul className="list-disc pl-5 space-y-1">
+          <li>
+            <strong className="text-foreground">My Tasks</strong> в
+            сайдбаре — все открытые задачи, назначенные на вас, по всем
+            Jira-проектам, сгруппированные по статусу.
+          </li>
+          <li>
+            <strong className="text-foreground">Вкладка Tasks</strong> в
+            drawer'е каждого проекта Bitbucket — открытые задачи
+            соответствующего Jira-проекта, разбитые на «Assigned to
+            you» / «Other open» / «Recently done».
+          </li>
+          <li>
+            <strong className="text-foreground">Счётчики в списке проектов</strong>
+            {' '}— проекты с назначенными задачами поднимаются вверх с
+            чипом <span className="font-mono">📋 N</span>.
+          </li>
+          <li>
+            <strong className="text-foreground">Действия в приложении</strong>:
+            комментарии, переназначение, смена статуса — не выходя из
+            WorkHelper.
+          </li>
+        </ul>
+      </Section>
+
+      <Section title="Как связываются проект ↔ задача">
+        <p>
+          Приложение сопоставляет Jira-проект с Bitbucket-репозиторием
+          по имени. Например, имя Jira-проекта{' '}
+          <code className="text-foreground">
+            p0066- Zeiad Jewellery (Amjad)
+          </code>{' '}
+          сматчится с Bitbucket-репо, у которого slug совпадает с
+          ведущей частью —{' '}
+          <code className="text-foreground">p0066</code>. Берётся всё
+          до первого не-alnum символа.
+        </p>
+        <p>
+          Если в заголовке задачи упомянут slug, отличающийся от
+          проекта, в котором она находится (например задача PZJA-5 в
+          проекте под <code>p0066</code>, а в заголовке —{' '}
+          <em>«p0067 fix login»</em>), на строку добавляется янтарный
+          бейдж <strong className="text-foreground">mismatch</strong> с
+          тултипом — это защита от типичной ошибки «создал задачу не в
+          том проекте».
+        </p>
+      </Section>
+
+      <Section title="Что делать если" className="pt-1 border-t border-border/40">
+        <ul className="list-disc pl-5 space-y-1.5">
+          <li>
+            <strong className="text-foreground">
+              «Authentication failed (401)»
+            </strong>
+            : тот же сценарий, что для Bitbucket — токен неверный,
+            email не совпадает или лишний пробел. Создайте токен заново.
+          </li>
+          <li>
+            <strong className="text-foreground">«My Tasks» пуст, хотя
+            на вас есть задачи</strong>: почти наверняка вы создали
+            scoped-токен. JQL <code>currentUser()</code> возвращает
+            ничего при Bearer-авторизации. Перейдите на классический
+            токен (шаг 1).
+          </li>
+          <li>
+            <strong className="text-foreground">«No Jira project matches
+            this slug»</strong> во вкладке Tasks проекта: имя
+            Jira-проекта не начинается со slug Bitbucket. Либо
+            переименуйте Jira-проект, либо это значит, что у репо
+            просто нет соответствующего Jira.
+          </li>
+          <li>
+            <strong className="text-foreground">410 / «API has been
+            removed»</strong>: Atlassian отключил старый эндпоинт{' '}
+            <code>/rest/api/3/search</code> в 2026. Обновите приложение
+            — новые версии используют новый{' '}
+            <code>/rest/api/3/search/jql</code>.
           </li>
         </ul>
       </Section>

@@ -1,6 +1,12 @@
 import { GuideShell, Section, Step } from './_shared'
+import { useLang } from '@/i18n'
 
 export function PathsSetupGuide() {
+  const lang = useLang()
+  return lang === 'ru' ? <PathsSetupGuideRu /> : <PathsSetupGuideEn />
+}
+
+function PathsSetupGuideEn() {
   return (
     <GuideShell>
       <Section title="What this is for">
@@ -106,6 +112,117 @@ export function PathsSetupGuide() {
             <code>C:\W</code>). Some .NET projects produce build
             outputs deep enough to push individual files past 260
             chars.
+          </li>
+        </ul>
+      </Section>
+    </GuideShell>
+  )
+}
+
+function PathsSetupGuideRu() {
+  return (
+    <GuideShell>
+      <Section title="Зачем это">
+        <p>
+          Три пути в файловой системе, о которых приложению нужно
+          знать: куда клонировать репозитории, где искать SQL-дампы и
+          как запускать VS Code. У всех трёх разумные значения по
+          умолчанию — менять стоит, только если у вас другая раскладка.
+        </p>
+      </Section>
+
+      <Step number={1} title="Папка проектов">
+        <p>
+          Куда клонируются репозитории. Каждый репо лежит по адресу{' '}
+          <code className="text-foreground">
+            &lt;projects-root&gt;/&lt;slug&gt;
+          </code>
+          {' '}— для slug <code>p0066</code> при дефолтном корне{' '}
+          <code>C:\Projects</code> это{' '}
+          <code>C:\Projects\p0066</code>.
+        </p>
+        <ul className="list-disc pl-5 space-y-1">
+          <li>
+            Значения <code>C:\Projects</code> по умолчанию хватит большинству
+          </li>
+          <li>
+            Выбирайте путь с{' '}
+            <strong className="text-foreground">
+              короткими верхними сегментами
+            </strong>{' '}
+            — у Windows лимит пути 260 символов, а артефакты .NET
+            пробивают его быстро
+          </li>
+          <li>
+            Не выбирайте папку под OneDrive / Dropbox / iCloud —
+            файловые блокировки во время git-операций сбивают агент
+            синхронизации с толку
+          </li>
+        </ul>
+      </Step>
+
+      <Step number={2} title="Папка дампов">
+        <p>
+          Где лежат SQL-дампы. Приложение автоматически находит дамп
+          для каждого slug по имени — файлы вида{' '}
+          <code className="text-foreground">
+            dump-&lt;slug&gt;-&lt;timestamp&gt;
+          </code>
+          {' '}сопоставляются и показываются в drawer'е проекта с
+          ярлыком «Restore».
+        </p>
+        <p>
+          Пустое значение = автодетект дампов выключен; тогда придётся
+          выбирать файл вручную при каждом восстановлении.
+        </p>
+      </Step>
+
+      <Step number={3} title="Исполняемый файл VS Code">
+        <p>
+          Что вызывает кнопка «Open in VS Code». По умолчанию
+          приложение пробует <code>code</code> в PATH (его добавляют
+          большинство инсталляторов VS Code).
+        </p>
+        <p>
+          Если <code>code</code> нет в PATH, приложение ищет бинарь по
+          стандартным путям установки (
+          <code className="text-foreground">
+            %LOCALAPPDATA%\Programs\Microsoft VS Code\Code.exe
+          </code>
+          ) и показывает рядом с полем кнопку «Use detected». Жмите её.
+        </p>
+        <p>
+          Иначе вставьте полный абсолютный путь к{' '}
+          <code>Code.exe</code> вручную.
+        </p>
+      </Step>
+
+      <Section title="Что делать если" className="pt-1 border-t border-border/40">
+        <ul className="list-disc pl-5 space-y-1.5">
+          <li>
+            <strong className="text-foreground">
+              «Open in VS Code» ничего не делает / показывает ошибку
+            </strong>
+            : значение указывает на несуществующий файл или не на VS
+            Code. Жмите «Use detected» или вставьте абсолютный путь.
+          </li>
+          <li>
+            <strong className="text-foreground">
+              Дампы не находятся автоматически
+            </strong>
+            : проверьте формат имени файла. Приложение матчит{' '}
+            <code>dump-&lt;slug&gt;</code> с опциональным суффиксом
+            даты — переименованные или с другим префиксом не подхватываются.
+            Файл всё равно можно выбрать вручную в меню «Restore» drawer'а.
+          </li>
+          <li>
+            <strong className="text-foreground">
+              Ошибки «Path too long» при клонировании
+            </strong>
+            : выберите более короткий projects-root (например{' '}
+            <code>C:\W</code>). Некоторые .NET-проекты создают такую
+            глубокую вложенность build-артефактов, что отдельные файлы
+            пробивают 260 символов.
           </li>
         </ul>
       </Section>
