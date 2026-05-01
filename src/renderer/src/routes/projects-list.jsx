@@ -39,6 +39,10 @@ import {
 import { PipelineStateBadge } from '@/routes/project-detail'
 import { WorkspaceNav } from '@/routes/my-tasks'
 import { useT } from '@/i18n'
+import {
+  EmptyState as SharedEmptyState,
+  ErrorState as SharedErrorState
+} from '@/components/states'
 import { api } from '@/api'
 
 const SORT_STORAGE_KEY = 'projects-sort'
@@ -1468,12 +1472,11 @@ function ListError({ error }) {
   const isConfig =
     /credentials/i.test(message) || /workspace not set/i.test(message)
   return (
-    <div className="h-full flex items-center justify-center p-8">
-      <div className="max-w-md text-center space-y-3">
-        <AlertCircle className="mx-auto text-destructive" size={32} />
-        <h3 className="font-medium">{t('projects.error.title')}</h3>
-        <p className="text-sm text-muted-foreground">{message}</p>
-        {isConfig && (
+    <SharedErrorState
+      title={t('projects.error.title')}
+      message={message}
+      cta={
+        isConfig ? (
           <Link
             to="/settings"
             className="inline-flex items-center gap-2 text-sm text-primary underline-offset-4 hover:underline"
@@ -1481,21 +1484,17 @@ function ListError({ error }) {
             <SettingsIcon size={14} />
             {t('common.openSettings')}
           </Link>
-        )}
-      </div>
-    </div>
+        ) : null
+      }
+    />
   )
 }
 
+// Унифицированный EmptyState теперь живёт в @/components/states.
+// Локальная обёртка-прокси оставлена чтобы не править все call-сайты
+// сразу — добавляет неявный icon = null, как было раньше.
 function EmptyState({ title, message }) {
-  return (
-    <div className="h-full flex items-center justify-center text-center p-8">
-      <div>
-        <h3 className="font-medium">{title}</h3>
-        <p className="text-sm text-muted-foreground mt-1">{message}</p>
-      </div>
-    </div>
-  )
+  return <SharedEmptyState title={title} message={message} />
 }
 
 function formatBytes(n) {

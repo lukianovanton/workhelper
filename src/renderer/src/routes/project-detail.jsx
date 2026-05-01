@@ -59,6 +59,7 @@ import {
   SlugMismatchBadge,
   Avatar
 } from '@/routes/my-tasks'
+import { ErrorState as SharedErrorState } from '@/components/states'
 import { useT } from '@/i18n'
 import { useRunningProcesses } from '@/hooks/use-running-processes'
 import { useGitStatus } from '@/hooks/use-git-status'
@@ -1917,15 +1918,11 @@ function BranchPicker({ branchesQuery, value, onChange }) {
 function TabErrorState({ onRetry }) {
   const t = useT()
   return (
-    <div className="p-6 text-center space-y-3">
-      <AlertCircle size={28} className="mx-auto text-destructive" />
-      <p className="text-sm text-muted-foreground">
-        {t('drawer.tab.errorState.message')}
-      </p>
-      <Button variant="outline" size="sm" onClick={onRetry}>
-        <RefreshCw size={12} /> {t('drawer.tab.errorState.retry')}
-      </Button>
-    </div>
+    <SharedErrorState
+      message={t('drawer.tab.errorState.message')}
+      onRetry={onRetry}
+      className="h-auto"
+    />
   )
 }
 

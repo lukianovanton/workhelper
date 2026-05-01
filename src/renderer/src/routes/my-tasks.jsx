@@ -33,6 +33,11 @@ import {
 } from '@/hooks/use-jira'
 import { useProjects } from '@/hooks/use-projects'
 import { AdfRenderer } from '@/components/adf-renderer'
+import {
+  EmptyState as SharedEmptyState,
+  ErrorState as SharedErrorState,
+  ListSkeleton as SharedListSkeleton
+} from '@/components/states'
 import { useT } from '@/i18n'
 import { api } from '@/api'
 
@@ -137,10 +142,29 @@ export default function MyTasks() {
         </header>
 
         <div className="flex-1 overflow-auto">
-          {isLoading && <ListSkeleton />}
-          {isError && <ErrorState error={error} />}
+          {isLoading && <SharedListSkeleton rows={8} />}
+          {isError && (
+            <SharedErrorState
+              title={t('tasks.error.title')}
+              error={error}
+              cta={
+                /credentials|host|configured/i.test(
+                  error?.message || ''
+                ) ? (
+                  <Link
+                    to="/settings"
+                    className="inline-flex items-center gap-2 text-sm text-primary underline-offset-4 hover:underline"
+                  >
+                    <SettingsIcon size={14} />{' '}
+                    {t('tasks.error.openJiraSettings')}
+                  </Link>
+                ) : null
+              }
+            />
+          )}
           {!isLoading && !isError && issues.length === 0 && (
-            <EmptyState
+            <SharedEmptyState
+              icon={ListTodo}
               title={t('tasks.empty.noOpen')}
               message={t('tasks.empty.message')}
               cta={
@@ -263,7 +287,8 @@ function TaskGroups({ groups, openedKey, onOpen }) {
   const t = useT()
   if (groups.length === 0) {
     return (
-      <EmptyState
+      <SharedEmptyState
+        icon={ListTodo}
         title={t('tasks.empty.noMatches.title')}
         message={t('tasks.empty.noMatches.message')}
       />
@@ -985,55 +1010,6 @@ export function OpenInJiraLink({ issueKey, className }) {
     >
       {t('tasks.detail.openInJira')} <ExternalLink size={10} />
     </button>
-  )
-}
-
-function ListSkeleton() {
-  return (
-    <div className="p-6 space-y-3">
-      {Array.from({ length: 8 }).map((_, i) => (
-        <div key={i} className="space-y-1.5">
-          <div className="h-3 bg-muted rounded w-1/2 animate-pulse" />
-          <div className="h-3 bg-muted rounded w-1/3 animate-pulse" />
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function ErrorState({ error }) {
-  const t = useT()
-  const msg = error?.message || String(error || t('common.unknown'))
-  const isConfig = /credentials|host|configured/i.test(msg)
-  return (
-    <div className="h-full flex items-center justify-center p-8">
-      <div className="max-w-md text-center space-y-3">
-        <AlertCircle className="mx-auto text-destructive" size={32} />
-        <h3 className="font-medium">{t('tasks.error.title')}</h3>
-        <p className="text-sm text-muted-foreground">{msg}</p>
-        {isConfig && (
-          <Link
-            to="/settings"
-            className="inline-flex items-center gap-2 text-sm text-primary underline-offset-4 hover:underline"
-          >
-            <SettingsIcon size={14} /> {t('tasks.error.openJiraSettings')}
-          </Link>
-        )}
-      </div>
-    </div>
-  )
-}
-
-function EmptyState({ title, message, cta }) {
-  return (
-    <div className="h-full flex items-center justify-center text-center p-8">
-      <div className="max-w-sm space-y-3">
-        <ListTodo size={32} className="mx-auto text-muted-foreground/40" />
-        <h3 className="font-medium">{title}</h3>
-        <p className="text-sm text-muted-foreground">{message}</p>
-        {cta}
-      </div>
-    </div>
   )
 }
 
