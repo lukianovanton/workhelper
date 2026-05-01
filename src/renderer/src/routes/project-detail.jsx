@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect, useMemo } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   X,
   ExternalLink,
@@ -79,9 +79,16 @@ import { api } from '@/api'
 export default function ProjectDetail() {
   const { slug } = useParams()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const { projects, warnings, isLoading: projectsLoading } = useProjects()
   const project = projects?.find((p) => p.slug === slug) || null
   const dbAvailable = !warnings.some((w) => /database/i.test(w))
+  // Deep-linking из My Tasks: ?tab=tasks&issue=PZJA-1 открывает
+  // нужный таб и сразу разворачивает указанную задачу в Tasks-табе.
+  // Captured один раз на mount и больше не меняется — это initial
+  // hint, дальше пользователь рулит сам.
+  const initialTab = searchParams.get('tab') || null
+  const initialIssue = searchParams.get('issue') || null
 
   // Запоминаем «открыли drawer этого проекта» для секции Recent
   const touchRecent = useProjectsMetaStore((s) => s.touchRecent)
@@ -125,6 +132,8 @@ export default function ProjectDetail() {
       project={project}
       dbAvailable={dbAvailable}
       onClose={() => navigate('/projects')}
+      initialTab={initialTab}
+      initialIssue={initialIssue}
     />
   )
 }
@@ -167,7 +176,7 @@ function DrawerNotFound({ slug, onClose }) {
   )
 }
 
-function Drawer({ project, dbAvailable, onClose }) {
+function Drawer({ project, dbAvailable, onClose, initialTab, initialIssue }) {
   const cloned = project.local.cloned
   const { bySlug } = useRunningProcesses()
   const runtime = bySlug.get(project.slug) || null
@@ -189,7 +198,12 @@ function Drawer({ project, dbAvailable, onClose }) {
   const [setupDialogOpen, setSetupDialogOpen] = useState(false)
   // Tab внутри drawer'а. Сессионный (per-mount), не персистится —
   // когда переключаешь проекты, default снова Overview.
-  const [activeTab, setActiveTab] = useState('overview')
+  // initialTab из query params (?tab=tasks) — приходит из My Tasks
+  // когда пользователь делает «Open in project».
+  const [activeTab, setActiveTab] = useState(() => {
+    const allowed = ['overview', 'commits', 'pipelines', 'tasks']
+    return allowed.includes(initialTab) ? initialTab : 'overview'
+  })
 
   // Выбранная ветка — общая для Commits и Pipelines табов. null =
   // «все ветки» (Bitbucket вернёт коммиты/пайплайны без фильтра).
@@ -652,7 +666,9 @@ function Drawer({ project, dbAvailable, onClose }) {
         {activeTab === 'pipelines' && (
           <PipelinesTab project={project} branch={selectedBranch} />
         )}
-        {activeTab === 'tasks' && <TasksTab project={project} />}
+        {activeTab === 'tasks' && (
+          <TasksTab project={project} initialIssue={initialIssue} />
+        )}
       </div>
 
       <AlertDialog open={dropDialogOpen} onOpenChange={setDropDialogOpen}>
@@ -1251,7 +1267,7 @@ function PipelinesTab({ project, branch }) {
  * показываем бейдж slug-mismatch с tooltip — это та самая ситуация
  * "таск создан в одном проекте, а по факту относится к другому".
  */
-function TasksTab({ project }) {
+function TasksTab({ project, initialIssue }) {
   const slug = project.slug
   const { project: matchedJira, isLoading: projectsLoading } =
     useJiraProjectForSlug(slug)
@@ -1263,7 +1279,10 @@ function TasksTab({ project }) {
   const issuesQuery = useProjectJiraIssues(matchedJira?.key, {
     enabled: !!matchedJira
   })
-  const [expandedKey, setExpandedKey] = useState(null)
+  // initialIssue из query (?issue=PZJA-1) — раскрываем сразу при
+  // mount'е таба, чтобы deep-link из My Tasks приводил пользователя
+  // прямо к нужной задаче в раскрытом виде.
+  const [expandedKey, setExpandedKey] = useState(initialIssue || null)
 
   if (projectsLoading) {
     return (

@@ -18,7 +18,8 @@ import {
   XSquare,
   Filter,
   X as XIcon,
-  Users
+  Users,
+  ListTodo
 } from 'lucide-react'
 import { useProjects } from '@/hooks/use-projects'
 import { useRunningProcesses } from '@/hooks/use-running-processes'
@@ -31,6 +32,10 @@ import { toast } from '@/store/toast.store.js'
 import { Checkbox } from '@/components/ui/checkbox'
 import { usePresence } from '@/hooks/use-presence'
 import { usePipelines } from '@/hooks/use-bitbucket'
+import {
+  useMyJiraIssues,
+  parseSlugFromProjectName
+} from '@/hooks/use-jira'
 import { PipelineStateBadge } from '@/routes/project-detail'
 import { WorkspaceNav } from '@/routes/my-tasks'
 import { api } from '@/api'
@@ -203,6 +208,20 @@ export default function ProjectsList() {
     )
   }
 
+  // Map: slug → количество моих open Jira-тасков. Используется
+  // для бейджа "📋 N" на строке и для пиннинга проектов с
+  // активными тасками к верху списка. Источник — общий
+  // useMyJiraIssues, тот же кэш, что у /my-tasks страницы.
+  const myIssuesQuery = useMyJiraIssues({ maxResults: 100 })
+  const taskCountBySlug = useMemo(() => {
+    const map = new Map()
+    for (const issue of myIssuesQuery.data?.issues || []) {
+      const slug = parseSlugFromProjectName(issue?.project?.name)
+      if (slug) map.set(slug, (map.get(slug) || 0) + 1)
+    }
+    return map
+  }, [myIssuesQuery.data])
+
   const sortedAndFiltered = useMemo(() => {
     if (!projects) return []
     const q = search.trim().toLowerCase()
@@ -263,10 +282,23 @@ export default function ProjectsList() {
 
     const sign = sort.direction === 'asc' ? 1 : -1
     return [...filtered].sort((a, b) => {
-      // Избранные всегда наверху, независимо от выбранной сортировки
+      // Избранные всегда наверху, независимо от сортировки.
       const aFav = !!favorites[a.slug]
       const bFav = !!favorites[b.slug]
       if (aFav !== bFav) return aFav ? -1 : 1
+      // Затем — проекты, по которым у тебя есть открытые таски.
+      // Они «приклеиваются» сверху неотсортированной массы, чтобы
+      // активная работа не терялась среди 100+ репо.
+      const aTasks = taskCountBySlug.get(a.slug) || 0
+      const bTasks = taskCountBySlug.get(b.slug) || 0
+      const aHasTasks = aTasks > 0
+      const bHasTasks = bTasks > 0
+      if (aHasTasks !== bHasTasks) return aHasTasks ? -1 : 1
+      // Среди «equal» по тасковости сортируем по количеству тасков:
+      // больше тасков → выше. Активная работа приоритетнее.
+      if (aHasTasks && bHasTasks && aTasks !== bTasks) {
+        return bTasks - aTasks
+      }
       return compareProjects(a, b, sort.column) * sign
     })
   }, [
@@ -276,7 +308,8 @@ export default function ProjectsList() {
     runningBySlug,
     sort,
     favorites,
-    columnFilters
+    columnFilters,
+    taskCountBySlug
   ])
 
   const counts = useMemo(() => {
@@ -542,6 +575,7 @@ export default function ProjectsList() {
               toggleSelected={toggleSelected}
               columnFilters={columnFilters}
               setColumnFilter={setColumnFilter}
+              taskCountBySlug={taskCountBySlug}
               onOpen={(slug) => navigate(`/projects/${slug}`)}
             />
           )}
@@ -568,6 +602,7 @@ function ProjectsTable({
   toggleSelected,
   columnFilters,
   setColumnFilter,
+  taskCountBySlug,
   onOpen
 }) {
   const compact = density === 'compact'
@@ -707,6 +742,7 @@ function ProjectsTable({
             cellPad={cellPad}
             nameTextCls={nameTextCls}
             descCls={descCls}
+            taskCount={taskCountBySlug?.get(p.slug) || 0}
           />
         ))}
       </tbody>
@@ -737,7 +773,8 @@ function ProjectRow({
   search,
   cellPad,
   nameTextCls,
-  descCls
+  descCls,
+  taskCount
 }) {
   const [hovered, setHovered] = useState(false)
   const [hoverDelayed, setHoverDelayed] = useState(false)
@@ -794,7 +831,18 @@ function ProjectRow({
         <StatusDots project={p} runtime={runtime} />
       </td>
       <td className={cn(cellPad, 'font-mono text-xs')}>
-        <Highlight text={p.slug} match={search} />
+        <div className="inline-flex items-center gap-2">
+          <Highlight text={p.slug} match={search} />
+          {taskCount > 0 && (
+            <span
+              title={`${taskCount} open Jira task${taskCount === 1 ? '' : 's'} assigned to you`}
+              className="inline-flex items-center gap-0.5 text-[10px] px-1 py-px rounded bg-sky-500/15 text-sky-300 font-sans tabular-nums"
+            >
+              <ListTodo size={9} />
+              {taskCount}
+            </span>
+          )}
+        </div>
       </td>
       <td className={cellPad}>
         <div className={nameTextCls}>

@@ -201,6 +201,23 @@ export function useApplyJiraTransition(issueKey) {
 }
 
 /**
+ * Reverse-направление маппинга: из Jira-имени проекта вытащить
+ * Bitbucket slug. Берём ведущую alnum-последовательность до
+ * первого не-alnum символа, lowercase. Так "p0066- Zeiad Jewellery
+ * (Amjad)" → "p0066"; "PZJA Project (123)" → "pzja"; "WikiOnly"
+ * → "wikionly". Caller сам проверяет, есть ли такой slug среди
+ * известных Bitbucket-репо.
+ *
+ * @param {string} name
+ * @returns {string|null}
+ */
+export function parseSlugFromProjectName(name) {
+  if (!name || typeof name !== 'string') return null
+  const m = name.trim().match(/^([a-z0-9]+)(?:[^a-z0-9].*)?$/i)
+  return m ? m[1].toLowerCase() : null
+}
+
+/**
  * Чистая функция matching'а — экспортируется для тестов и для
  * использования в других хуках (mismatch detector). Строгий
  * префикс: имя Jira-проекта должно начинаться с slug'а

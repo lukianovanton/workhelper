@@ -28,8 +28,10 @@ import {
   useJiraAssignableUsers,
   useAddJiraComment,
   useSetJiraAssignee,
-  useApplyJiraTransition
+  useApplyJiraTransition,
+  parseSlugFromProjectName
 } from '@/hooks/use-jira'
+import { useProjects } from '@/hooks/use-projects'
 import { AdfRenderer } from '@/components/adf-renderer'
 import { api } from '@/api'
 
@@ -405,12 +407,12 @@ export function TaskDetailContent({ issueKey, detail }) {
         )}
       </div>
 
-      {/* Project — короткая инлайн-строчка, не отдельная плита */}
-      <div className="text-xs text-muted-foreground">
-        in{' '}
-        <code className="font-mono text-foreground/80">{d.project.key}</code>
-        {' '}— {d.project.name}
-      </div>
+      {/* Project — короткая инлайн-строчка. Если в Bitbucket есть
+          репо с этим slug'ом, то это кликабельная ссылка которая
+          открывает project drawer с заранее выбранной Tasks-табой
+          и раскрытой текущей задачей: пользователь сразу видит
+          и таск, и кнопки Run/Pull/Open VS Code в шапке drawer'а. */}
+      <ProjectLine project={d.project} issueKey={issueKey} />
 
       {/* People — отдельной строкой каждая роль, формат как у
           комментариев: avatar | name · role. Так визуально однородно
@@ -490,6 +492,49 @@ export function TaskDetailContent({ issueKey, detail }) {
         <CommentForm issueKey={issueKey} />
       </section>
     </>
+  )
+}
+
+/**
+ * Project-line в task detail. Парсит slug из имени Jira-проекта
+ * ("p0066- Zeiad Jewellery" → "p0066") и сверяет со списком
+ * Bitbucket-репо. Если репо найдено — рендерит кликабельную
+ * стрелку, которая ведёт в /projects/<slug>?tab=tasks&issue=<key>:
+ * project drawer открывается на Tasks-табе с раскрытой текущей
+ * задачей. Таск не теряется — он там же inline.
+ */
+function ProjectLine({ project, issueKey }) {
+  const navigate = useNavigate()
+  const { projects: bitbucketProjects } = useProjects()
+  const candidate = parseSlugFromProjectName(project?.name)
+  const matched = useMemo(() => {
+    if (!candidate || !bitbucketProjects) return null
+    return (
+      bitbucketProjects.find(
+        (p) => p.slug.toLowerCase() === candidate
+      ) || null
+    )
+  }, [candidate, bitbucketProjects])
+  const inner = (
+    <>
+      in{' '}
+      <code className="font-mono text-foreground/80">{project.key}</code>
+      {' '}— {project.name}
+    </>
+  )
+  if (!matched) {
+    return <div className="text-xs text-muted-foreground">{inner}</div>
+  }
+  const target = `/projects/${encodeURIComponent(matched.slug)}?tab=tasks&issue=${encodeURIComponent(issueKey || '')}`
+  return (
+    <button
+      onClick={() => navigate(target)}
+      title={`Open ${matched.slug} project drawer with this task expanded`}
+      className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1 underline-offset-2 hover:underline text-left"
+    >
+      {inner}
+      <ArrowLeftRight size={10} />
+    </button>
   )
 }
 
