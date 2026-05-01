@@ -531,11 +531,16 @@ function Drawer({ project, dbAvailable, onClose }) {
         )}
       </header>
 
-      <DrawerTabs
-        active={activeTab}
-        onChange={setActiveTab}
-        slug={project.slug}
-      />
+      <DrawerTabs active={activeTab} onChange={setActiveTab} />
+      {(activeTab === 'commits' || activeTab === 'pipelines') && (
+        <TabActionBar
+          activeTab={activeTab}
+          slug={project.slug}
+          branch={selectedBranch}
+          branchesQuery={branchesQuery}
+          onBranchChange={onBranchChange}
+        />
+      )}
 
       <div className="flex-1 overflow-auto">
         {activeTab === 'overview' && (
@@ -629,20 +634,10 @@ function Drawer({ project, dbAvailable, onClose }) {
           </OverviewTab>
         )}
         {activeTab === 'commits' && (
-          <CommitsTab
-            project={project}
-            branch={selectedBranch}
-            branchesQuery={branchesQuery}
-            onBranchChange={onBranchChange}
-          />
+          <CommitsTab project={project} branch={selectedBranch} />
         )}
         {activeTab === 'pipelines' && (
-          <PipelinesTab
-            project={project}
-            branch={selectedBranch}
-            branchesQuery={branchesQuery}
-            onBranchChange={onBranchChange}
-          />
+          <PipelinesTab project={project} branch={selectedBranch} />
         )}
       </div>
 
@@ -724,45 +719,11 @@ function Drawer({ project, dbAvailable, onClose }) {
  * частых переключениях). Стик не делаем — табы всё равно
  * остаются вверху scrollable-контейнера.
  *
- * На правом краю — icon-only refresh, который контекстен активному
- * табу: на Commits invalidate'ит ['commits',slug,...] и
- * ['commit-detail',slug,...], на Pipelines — ['pipelines',slug,...]
- * и ['pipeline-steps',slug,...]. Overview без refresh — там данные
- * уже live (process events, fs/db poll).
- *
- * Иконка крутится во время любого fetch'а под этим slug + табом —
- * включая авто-poll пайплайнов. Это и заменяет отдельный hint
- * "auto-refreshing every 15s": видно что сейчас идёт запрос.
+ * Действия (refresh, branch picker) живут в отдельной полосе
+ * TabActionBar ниже — так группа табов остаётся «чистой
+ * навигацией», а действия не толкаются с lable'ами.
  */
-function DrawerTabs({ active, onChange, slug }) {
-  const queryClient = useQueryClient()
-  const isFetching =
-    useIsFetching({
-      predicate: (q) => {
-        const key = q.queryKey[0]
-        if (q.queryKey[1] !== slug) return false
-        if (active === 'commits') {
-          return key === 'commits' || key === 'commit-detail'
-        }
-        if (active === 'pipelines') {
-          return key === 'pipelines' || key === 'pipeline-steps'
-        }
-        return false
-      }
-    }) > 0
-
-  const refresh = () => {
-    if (active === 'commits') {
-      queryClient.invalidateQueries({ queryKey: ['commits', slug] })
-      queryClient.invalidateQueries({ queryKey: ['commit-detail', slug] })
-    } else if (active === 'pipelines') {
-      queryClient.invalidateQueries({ queryKey: ['pipelines', slug] })
-      queryClient.invalidateQueries({ queryKey: ['pipeline-steps', slug] })
-    }
-  }
-
-  const showRefresh = active === 'commits' || active === 'pipelines'
-
+function DrawerTabs({ active, onChange }) {
   const tabs = [
     { id: 'overview', label: 'Overview' },
     { id: 'commits', label: 'Commits', icon: GitCommit },
@@ -789,25 +750,75 @@ function DrawerTabs({ active, onChange, slug }) {
           </button>
         )
       })}
-      {showRefresh && (
-        <button
-          onClick={refresh}
-          disabled={isFetching}
-          title={isFetching ? 'Refreshing…' : 'Refresh'}
-          className={cn(
-            'ml-auto p-1.5 rounded transition-colors',
-            isFetching
-              ? 'text-sky-400'
-              : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
-          )}
-        >
-          {isFetching ? (
-            <Loader2 size={13} className="animate-spin" />
-          ) : (
-            <RefreshCw size={13} />
-          )}
-        </button>
-      )}
+    </div>
+  )
+}
+
+/**
+ * Объединённая полоса действий под табами для Commits и
+ * Pipelines: BranchPicker слева, Refresh справа. Refresh
+ * контекстен активному табу — invalidate'ит соответствующие
+ * queryKey'и для текущего slug. Иконка превращается в крутящийся
+ * Loader2, пока идёт fetch (включая 15-секундный авто-poll
+ * пайплайнов) — отдельный «auto-refreshing» hint поэтому не нужен.
+ */
+function TabActionBar({
+  activeTab,
+  slug,
+  branch,
+  branchesQuery,
+  onBranchChange
+}) {
+  const queryClient = useQueryClient()
+  const isFetching =
+    useIsFetching({
+      predicate: (q) => {
+        const key = q.queryKey[0]
+        if (q.queryKey[1] !== slug) return false
+        if (activeTab === 'commits') {
+          return key === 'commits' || key === 'commit-detail'
+        }
+        if (activeTab === 'pipelines') {
+          return key === 'pipelines' || key === 'pipeline-steps'
+        }
+        return false
+      }
+    }) > 0
+
+  const refresh = () => {
+    if (activeTab === 'commits') {
+      queryClient.invalidateQueries({ queryKey: ['commits', slug] })
+      queryClient.invalidateQueries({ queryKey: ['commit-detail', slug] })
+    } else if (activeTab === 'pipelines') {
+      queryClient.invalidateQueries({ queryKey: ['pipelines', slug] })
+      queryClient.invalidateQueries({ queryKey: ['pipeline-steps', slug] })
+    }
+  }
+
+  return (
+    <div className="px-6 py-2 border-b border-border/40 flex items-center gap-3 text-xs">
+      <BranchPicker
+        branchesQuery={branchesQuery}
+        value={branch}
+        onChange={onBranchChange}
+      />
+      <button
+        onClick={refresh}
+        disabled={isFetching}
+        title={isFetching ? 'Refreshing…' : 'Refresh'}
+        className={cn(
+          'ml-auto p-1.5 rounded transition-colors',
+          isFetching
+            ? 'text-sky-400'
+            : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+        )}
+      >
+        {isFetching ? (
+          <Loader2 size={13} className="animate-spin" />
+        ) : (
+          <RefreshCw size={13} />
+        )}
+      </button>
     </div>
   )
 }
@@ -827,7 +838,7 @@ function OverviewTab({ children }) {
  * Только один коммит раскрыт за раз (accordion-поведение). При
  * раскрытии лениво грузится getCommitDetail с diffstat.
  */
-function CommitsTab({ project, branch, branchesQuery, onBranchChange }) {
+function CommitsTab({ project, branch }) {
   const slug = project.slug
   const { data, isLoading, isError, refetch } = useCommits(slug, {
     pagelen: 30,
@@ -838,50 +849,48 @@ function CommitsTab({ project, branch, branchesQuery, onBranchChange }) {
   const toggle = (hash) =>
     setExpandedHash((prev) => (prev === hash ? null : hash))
 
+  if (isLoading) {
+    return (
+      <div className="p-6 space-y-3">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="space-y-1.5">
+            <div className="h-3 bg-muted rounded w-3/4 animate-pulse" />
+            <div className="h-3 bg-muted rounded w-1/2 animate-pulse" />
+          </div>
+        ))}
+      </div>
+    )
+  }
+  if (isError) {
+    return <TabErrorState onRetry={refetch} />
+  }
+  if (!data || data.length === 0) {
+    return (
+      <div className="p-6 text-sm text-muted-foreground">
+        No commits found
+        {branch ? (
+          <>
+            {' '}on branch <code className="font-mono">{branch}</code>
+          </>
+        ) : (
+          ''
+        )}
+        .
+      </div>
+    )
+  }
   return (
-    <>
-      <BranchPicker
-        branchesQuery={branchesQuery}
-        value={branch}
-        onChange={onBranchChange}
-      />
-      {isLoading ? (
-        <div className="p-6 space-y-3">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="space-y-1.5">
-              <div className="h-3 bg-muted rounded w-3/4 animate-pulse" />
-              <div className="h-3 bg-muted rounded w-1/2 animate-pulse" />
-            </div>
-          ))}
-        </div>
-      ) : isError ? (
-        <TabErrorState onRetry={refetch} />
-      ) : !data || data.length === 0 ? (
-        <div className="p-6 text-sm text-muted-foreground">
-          No commits found
-          {branch ? (
-            <>
-              {' '}on branch <code className="font-mono">{branch}</code>
-            </>
-          ) : (
-            ''
-          )}
-          .
-        </div>
-      ) : (
-        <div className="divide-y divide-border/60">
-          {data.map((c) => (
-            <CommitRow
-              key={c.hash}
-              slug={slug}
-              commit={c}
-              expanded={expandedHash === c.hash}
-              onToggle={() => toggle(c.hash)}
-            />
-          ))}
-        </div>
-      )}
-    </>
+    <div className="divide-y divide-border/60">
+      {data.map((c) => (
+        <CommitRow
+          key={c.hash}
+          slug={slug}
+          commit={c}
+          expanded={expandedHash === c.hash}
+          onToggle={() => toggle(c.hash)}
+        />
+      ))}
+    </div>
   )
 }
 
@@ -1128,7 +1137,7 @@ function FileStatusIcon({ status }) {
  * PENDING запись. Steps конкретного пайплайна грузятся лениво по
  * раскрытию.
  */
-function PipelinesTab({ project, branch, branchesQuery, onBranchChange }) {
+function PipelinesTab({ project, branch }) {
   const slug = project.slug
   const { data, isLoading, isError, refetch } = usePipelines(slug, {
     pagelen: 20,
@@ -1139,58 +1148,56 @@ function PipelinesTab({ project, branch, branchesQuery, onBranchChange }) {
   const toggle = (uuid) =>
     setExpandedUuid((prev) => (prev === uuid ? null : uuid))
 
+  if (isLoading) {
+    return (
+      <div className="p-6 space-y-3">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div key={i} className="space-y-1.5">
+            <div className="h-3 bg-muted rounded w-1/2 animate-pulse" />
+            <div className="h-3 bg-muted rounded w-1/3 animate-pulse" />
+          </div>
+        ))}
+      </div>
+    )
+  }
+  if (isError) {
+    return <TabErrorState onRetry={refetch} />
+  }
+  if (!data || data.length === 0) {
+    return (
+      <div className="p-6 text-sm text-muted-foreground space-y-2">
+        <p>
+          No pipelines found
+          {branch ? (
+            <>
+              {' '}on branch <code className="font-mono">{branch}</code>
+            </>
+          ) : (
+            ''
+          )}
+          .
+        </p>
+        <p className="text-xs">
+          If pipelines run on this repo but the list is empty — the
+          API token may be missing the{' '}
+          <code>read:pipeline:bitbucket</code> scope. Recreate the
+          token with that scope added.
+        </p>
+      </div>
+    )
+  }
   return (
-    <>
-      <BranchPicker
-        branchesQuery={branchesQuery}
-        value={branch}
-        onChange={onBranchChange}
-      />
-      {isLoading ? (
-        <div className="p-6 space-y-3">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="space-y-1.5">
-              <div className="h-3 bg-muted rounded w-1/2 animate-pulse" />
-              <div className="h-3 bg-muted rounded w-1/3 animate-pulse" />
-            </div>
-          ))}
-        </div>
-      ) : isError ? (
-        <TabErrorState onRetry={refetch} />
-      ) : !data || data.length === 0 ? (
-        <div className="p-6 text-sm text-muted-foreground space-y-2">
-          <p>
-            No pipelines found
-            {branch ? (
-              <>
-                {' '}on branch <code className="font-mono">{branch}</code>
-              </>
-            ) : (
-              ''
-            )}
-            .
-          </p>
-          <p className="text-xs">
-            If pipelines run on this repo but the list is empty — the
-            API token may be missing the{' '}
-            <code>read:pipeline:bitbucket</code> scope. Recreate the
-            token with that scope added.
-          </p>
-        </div>
-      ) : (
-        <div className="divide-y divide-border/60">
-          {data.map((p) => (
-            <PipelineRow
-              key={p.uuid}
-              slug={slug}
-              pipeline={p}
-              expanded={expandedUuid === p.uuid}
-              onToggle={() => toggle(p.uuid)}
-            />
-          ))}
-        </div>
-      )}
-    </>
+    <div className="divide-y divide-border/60">
+      {data.map((p) => (
+        <PipelineRow
+          key={p.uuid}
+          slug={slug}
+          pipeline={p}
+          expanded={expandedUuid === p.uuid}
+          onToggle={() => toggle(p.uuid)}
+        />
+      ))}
+    </div>
   )
 }
 
@@ -1496,9 +1503,9 @@ function pipelineStateConfig(state) {
  * Опция "All branches" (value="") = null в state, тогда хуки идут
  * без branch-фильтра.
  *
- * Default-ветка помечена в скобках. Если список ещё грузится —
- * select disabled, но текущее значение (которое уже могло быть
- * автоустановлено родителем) показывается.
+ * Inline-стиль: ничего своего вокруг (ни padding'а, ни border'а),
+ * чтобы родительский TabActionBar мог разложить его как один из
+ * элементов своей полосы.
  */
 function BranchPicker({ branchesQuery, value, onChange }) {
   const branches = branchesQuery.data?.branches || []
@@ -1509,7 +1516,7 @@ function BranchPicker({ branchesQuery, value, onChange }) {
   // чтобы select не сбросило в "All branches" визуально.
   const showOrphan = value && !branches.includes(value)
   return (
-    <div className="px-6 py-2 border-b border-border/40 flex items-center gap-2 text-xs">
+    <div className="inline-flex items-center gap-2">
       <span className="text-muted-foreground shrink-0">Branch:</span>
       <select
         value={value || ''}
