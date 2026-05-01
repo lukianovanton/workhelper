@@ -15,7 +15,7 @@ import {
   Package,
   FileCode2,
   GitPullRequest,
-  XSquare,
+  CheckSquare,
   Filter,
   X as XIcon,
   Users,
@@ -582,6 +582,12 @@ export default function ProjectsList() {
  * сбивающее с толку «строка под выделением сдвинулась». Скрывается
  * без layout shift через opacity + translate-y, без mount/unmount,
  * чтобы переход был плавным.
+ *
+ * Дизайн: компактная pill, иконка + большое число + лейбл, потом
+ * вертикальный разделитель, потом действия как ghost-кнопки. Разделитель
+ * визуально отделяет «что выбрано» от «что с этим делать», whitespace-nowrap
+ * на всём баре — чтобы число и слово ни при каких i18n-комбинациях не
+ * переезжали на новую строку.
  */
 function FloatingBulkActions({ count, onPull, onStop, onClear, busy }) {
   const t = useT()
@@ -598,31 +604,42 @@ function FloatingBulkActions({ count, onPull, onStop, onClear, busy }) {
     >
       <div
         className={cn(
-          'flex items-center gap-2 rounded-lg border border-amber-500/40 bg-popover/95 backdrop-blur shadow-lg px-3 py-2 text-xs',
+          'flex items-center gap-1 rounded-full border border-border bg-popover/95 backdrop-blur shadow-xl pl-3 pr-1.5 py-1.5 text-xs whitespace-nowrap',
           visible && 'pointer-events-auto'
         )}
       >
-        <span className="text-amber-300 px-1">
+        <CheckSquare size={14} className="text-amber-400 shrink-0" />
+        <span className="font-medium tabular-nums">
           {t('projects.selected', { count })}
         </span>
+        <span className="mx-1.5 h-5 w-px bg-border shrink-0" aria-hidden />
         <Button
-          variant="outline"
+          variant="ghost"
           size="sm"
           onClick={onPull}
           disabled={busy}
+          className="h-7 px-2"
         >
           <GitPullRequest /> {t('projects.bulk.pull')}
         </Button>
         <Button
-          variant="outline"
+          variant="ghost"
           size="sm"
           onClick={onStop}
           disabled={busy}
+          className="h-7 px-2"
         >
           <Square /> {t('projects.bulk.stop')}
         </Button>
-        <Button variant="ghost" size="sm" onClick={onClear}>
-          <XSquare /> {t('common.clear')}
+        <span className="mx-0.5 h-5 w-px bg-border shrink-0" aria-hidden />
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onClear}
+          className="h-7 w-7 p-0"
+          title={t('common.clear')}
+        >
+          <XIcon size={14} />
         </Button>
       </div>
     </div>
@@ -860,7 +877,7 @@ function ProjectRow({
       )}
     >
       <td
-        className={cn(cellPad, 'text-center cursor-pointer')}
+        className={cn(cellPad, 'cursor-pointer group/cell')}
         onClick={(e) => {
           e.stopPropagation()
           onToggleSelected()
@@ -878,7 +895,7 @@ function ProjectRow({
       <td
         className={cn(
           cellPad,
-          'text-center cursor-pointer transition-colors',
+          'cursor-pointer transition-colors',
           favorite
             ? 'text-amber-400 hover:text-amber-300'
             : 'text-muted-foreground/30 hover:text-amber-400'
@@ -889,10 +906,12 @@ function ProjectRow({
         }}
         title={favorite ? t('projects.row.unpin') : t('projects.row.pin')}
       >
-        <Star
-          size={14}
-          className={cn('inline', favorite && 'fill-current')}
-        />
+        <div className="flex items-center justify-center">
+          <Star
+            size={16}
+            className={cn('shrink-0', favorite && 'fill-current')}
+          />
+        </div>
       </td>
       <td className={cellPad}>
         <StatusDots
@@ -908,9 +927,9 @@ function ProjectRow({
           {taskCount > 0 && (
             <span
               title={t('projects.row.taskCount', { count: taskCount })}
-              className="inline-flex items-center gap-0.5 text-[10px] px-1 py-px rounded bg-sky-500/15 text-sky-300 font-sans tabular-nums"
+              className="inline-flex items-center gap-1 text-[11px] leading-none px-1.5 py-1 rounded-md bg-sky-500/15 border border-sky-500/40 text-sky-200 font-sans font-medium tabular-nums shrink-0"
             >
-              <ListTodo size={9} />
+              <ListTodo size={12} className="shrink-0" />
               {taskCount}
             </span>
           )}
@@ -949,14 +968,19 @@ function ProjectRow({
  * не выполнен (строка ещё не попала во вьюпорт / не загрузилась) —
  * рендерим dim-кружок, чтобы не было визуальных скачков по ширине.
  * Когда данные пришли — это PipelineStateBadge с реальным цветом.
+ *
+ * Wrapper всегда `inline-flex items-center` с фиксированной высотой —
+ * иначе flex-родитель в StatusDots ловит разную высоту inline и
+ * inline-block потомков и кружки оказываются на разных уровнях.
  */
 function PipelineCell({ pipeline, loaded }) {
   const t = useT()
+  const wrapperCls = 'inline-flex items-center justify-center w-2 h-2'
   if (!loaded) {
     return (
       <span
         title={t('projects.pipeline.loading')}
-        className="inline-block w-2 h-2 rounded-full bg-muted-foreground/15"
+        className={cn(wrapperCls, 'rounded-full bg-muted-foreground/15')}
       />
     )
   }
@@ -964,7 +988,7 @@ function PipelineCell({ pipeline, loaded }) {
     return (
       <span
         title={t('projects.pipeline.noPipelines')}
-        className="inline-block w-2 h-2 rounded-full bg-muted-foreground/25"
+        className={cn(wrapperCls, 'rounded-full bg-muted-foreground/25')}
       />
     )
   }
@@ -974,7 +998,7 @@ function PipelineCell({ pipeline, loaded }) {
     pipeline.createdOn ? ' · ' + formatRelative(pipeline.createdOn) : ''
   }${pipeline.buildNumber ? ' · #' + pipeline.buildNumber : ''}`
   return (
-    <span title={tooltip}>
+    <span title={tooltip} className="inline-flex items-center">
       <PipelineStateBadge state={pipeline.state} dotOnly />
     </span>
   )
@@ -1382,11 +1406,18 @@ function StatusDots({ project, runtime, lastPipeline, pipelineLoaded }) {
     })
   }
 
+  // leading-none на родителе важно: иначе flex-bbox внутри tablecell
+  // получает высоту line-height, а кружки сохраняют baseline-смещение
+  // и визуально расходятся по вертикали. С leading-none и явным h-3
+  // (12px — выше любого 8px-кружка) все элементы центрируются ровно.
   return (
-    <div className="flex gap-1.5 items-center">
+    <div className="inline-flex gap-1.5 items-center leading-none h-3">
       <span
         title={installTitle}
-        className={cn('inline-block w-2 h-2 rounded-full', installColor)}
+        className={cn(
+          'inline-flex w-2 h-2 rounded-full shrink-0',
+          installColor
+        )}
       />
       <PipelineCell pipeline={lastPipeline} loaded={pipelineLoaded} />
       {running && (
@@ -1395,7 +1426,7 @@ function StatusDots({ project, runtime, lastPipeline, pipelineLoaded }) {
             port: runtime?.port ?? '?',
             pid: runtime?.pid
           })}
-          className="inline-block w-2 h-2 rounded-full bg-sky-500 animate-pulse"
+          className="inline-flex w-2 h-2 rounded-full shrink-0 bg-sky-500 animate-pulse"
         />
       )}
       {running && runtime?.url && (
@@ -1405,7 +1436,7 @@ function StatusDots({ project, runtime, lastPipeline, pipelineLoaded }) {
             window.open(runtime.url, '_blank')
           }}
           title={t('projects.row.openInBrowser', { url: runtime.url })}
-          className="ml-0.5 text-muted-foreground hover:text-sky-500 transition-colors"
+          className="ml-0.5 inline-flex items-center text-muted-foreground hover:text-sky-500 transition-colors"
         >
           <ExternalLink size={11} />
         </button>

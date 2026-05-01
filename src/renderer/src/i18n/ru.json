@@ -27,7 +27,7 @@
   "projects.search.placeholder": "Поиск по slug, name или описанию…",
   "projects.reposCount.full": "{count} репо",
   "projects.reposCount.partial": "{shown} из {total}",
-  "projects.selected": "выбрано: {count}",
+  "projects.selected": "Выбрано {count}",
   "projects.bulk.pull": "Pull",
   "projects.bulk.stop": "Стоп",
   "projects.columnFiltersActive": "Фильтры столбцов активны",

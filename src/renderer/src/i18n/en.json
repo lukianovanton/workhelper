@@ -27,7 +27,7 @@
   "projects.search.placeholder": "Search by slug, name, description…",
   "projects.reposCount.full": "{count} repos",
   "projects.reposCount.partial": "{shown} of {total}",
-  "projects.selected": "{count} selected",
+  "projects.selected": "Selected {count}",
   "projects.bulk.pull": "Pull",
   "projects.bulk.stop": "Stop",
   "projects.columnFiltersActive": "Column filters active",
