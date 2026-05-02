@@ -2490,8 +2490,12 @@ function Combobox({
               }
             : undefined
         }
+        // Только onClick toggle. Раньше был ещё onFocus={setOpen(true)},
+        // и на одном click'е они конфликтовали: focus → open=true,
+        // click → toggle → open=false. Dropdown моргал и открывался
+        // только со второго клика. Tab-фокус из-за этого больше не
+        // авто-открывает dropdown — стандартное поведение select'а.
         onClick={() => setOpen((o) => !o)}
-        onFocus={() => setOpen(true)}
         placeholder={placeholder}
         className={cn(
           // pr-8: оставляем место под chevron справа, чтобы он не лип к
