@@ -18,11 +18,12 @@
 import { getConfig } from '../config-store.js'
 import { getSecret } from '../secrets.js'
 import { createMysqlEngine } from './mysql-engine.js'
+import { createPostgresEngine } from './postgres-engine.js'
 
 /**
  * @typedef {Object} DbConfigEntry
  * @property {string} id
- * @property {'mysql'} type
+ * @property {'mysql' | 'postgres'} type
  * @property {string} name
  * @property {string} host
  * @property {number} port
@@ -31,6 +32,9 @@ import { createMysqlEngine } from './mysql-engine.js'
  * @property {string} secretKey
  */
 
+const SUPPORTED_TYPES = new Set(['mysql', 'postgres'])
+const DEFAULT_PORTS = { mysql: 3306, postgres: 5432 }
+
 /**
  * @returns {DbConfigEntry[]}
  */
@@ -38,13 +42,19 @@ function getDatabases() {
   const config = getConfig()
   const databases = Array.isArray(config.databases) ? config.databases : []
   return databases
-    .filter((d) => d && d.type === 'mysql')
+    .filter((d) => d && SUPPORTED_TYPES.has(d.type))
     .map((d) => ({
       id: d.id,
       type: d.type,
-      name: d.name || (d.host ? `${d.user || 'mysql'}@${d.host}` : 'MySQL'),
+      name:
+        d.name ||
+        (d.host
+          ? `${d.user || d.type}@${d.host}`
+          : d.type === 'postgres'
+          ? 'PostgreSQL'
+          : 'MySQL'),
       host: d.host || '',
-      port: d.port || 3306,
+      port: d.port || DEFAULT_PORTS[d.type],
       user: d.user || '',
       executable: d.executable || '',
       secretKey: `db:${d.id}:password`
@@ -55,10 +65,10 @@ function getDatabases() {
 const engines = new Map()
 
 function buildEngine(entry) {
-  if (entry.type !== 'mysql') {
-    throw new Error(`Unknown DB engine type: ${entry.type}`)
-  }
-  return createMysqlEngine({
+  // Lazy-getters: каждый раз перечитываем актуальную запись из конфига,
+  // чтобы edits в Settings подхватывались без пересоздания инстанса
+  // (restoreJobs Map пережил бы такие правки, что важно).
+  const lazy = {
     getHost: () => {
       const fresh = getDatabases().find((e) => e.id === entry.id)
       return fresh?.host || entry.host
@@ -76,7 +86,10 @@ function buildEngine(entry) {
       const fresh = getDatabases().find((e) => e.id === entry.id)
       return fresh?.executable || entry.executable
     }
-  })
+  }
+  if (entry.type === 'mysql') return createMysqlEngine(lazy)
+  if (entry.type === 'postgres') return createPostgresEngine(lazy)
+  throw new Error(`Unknown DB engine type: ${entry.type}`)
 }
 
 /**

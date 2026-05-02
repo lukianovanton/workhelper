@@ -41,10 +41,16 @@ export function registerDatabasesIpc() {
     if (!payload || typeof payload !== 'object') {
       throw new Error('Invalid database payload')
     }
-    if (payload.type !== 'mysql') {
+    if (payload.type !== 'mysql' && payload.type !== 'postgres') {
       throw new Error(`Unsupported database type: ${payload.type}`)
     }
-    const id = payload.id || `mysql-${randomUUID()}`
+    const isPostgres = payload.type === 'postgres'
+    const defaultPort = isPostgres ? 5432 : 3306
+    const defaultUser = isPostgres ? 'postgres' : 'root'
+    const fallbackName = isPostgres ? 'PostgreSQL' : 'MySQL'
+    const id =
+      payload.id ||
+      `${payload.type}-${randomUUID()}`
     const config = getConfig()
     const databases = Array.isArray(config.databases)
       ? [...config.databases]
@@ -54,15 +60,15 @@ export function registerDatabasesIpc() {
     }
     databases.push({
       id,
-      type: 'mysql',
+      type: payload.type,
       name:
         payload.name ||
         (payload.host
-          ? `${payload.user || 'mysql'}@${payload.host}`
-          : 'MySQL'),
+          ? `${payload.user || defaultUser}@${payload.host}`
+          : fallbackName),
       host: payload.host || 'localhost',
-      port: payload.port || 3306,
-      user: payload.user || 'root',
+      port: payload.port || defaultPort,
+      user: payload.user || defaultUser,
       executable: payload.executable || ''
     })
     setConfig({ databases })

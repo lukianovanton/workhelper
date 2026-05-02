@@ -1206,17 +1206,18 @@ function DatabasesCard({ onOpenGuide, detected }) {
     setPasswords((prev) => ({ ...prev, [id]: value }))
   }
 
-  const startAdd = () => {
+  const startAdd = (type) => {
     const tempId = `__new_${Date.now()}`
+    const isPostgres = type === 'postgres'
     setDrafts((prev) => ({
       ...prev,
       [tempId]: {
         id: tempId,
-        type: 'mysql',
+        type: type || 'mysql',
         name: '',
         host: 'localhost',
-        port: 3306,
-        user: 'root',
+        port: isPostgres ? 5432 : 3306,
+        user: isPostgres ? 'postgres' : 'root',
         executable: '',
         hasPassword: false,
         unsaved: true
@@ -1384,6 +1385,25 @@ function DatabasesCard({ onOpenGuide, detected }) {
           const isNew = !!draft.unsaved
           const isBusy = !!busy[id]
           const isTesting = !!busy[`test:${id}`]
+          const isPostgres = draft.type === 'postgres'
+          const portPlaceholder = isPostgres ? '5432' : '3306'
+          const userPlaceholder = isPostgres ? 'postgres' : 'root'
+          const execLabelKey = isPostgres
+            ? 'settings.database.psqlExecutable'
+            : 'settings.database.mysqlExecutable'
+          const execPlaceholder = isPostgres
+            ? 'C:\\path\\to\\psql.exe'
+            : 'C:\\path\\to\\mysql.exe'
+          const execNotFoundKey = isPostgres
+            ? 'settings.database.psqlExecutable.notFound'
+            : 'settings.database.mysqlExecutable.notFound'
+          const execOptionalKey = isPostgres
+            ? 'settings.database.psqlExecutable.optional'
+            : 'settings.database.mysqlExecutable.optional'
+          // Postgres detect через PATH у нас единый для psql; для
+          // MySQL — mysql. detected приходит из родителя только для
+          // mysql, для постгреса оставим null чтобы не сбивать с толку.
+          const detectedForType = isPostgres ? null : detected
           return (
             <div
               key={id}
@@ -1392,7 +1412,11 @@ function DatabasesCard({ onOpenGuide, detected }) {
               <div className="flex items-start justify-between gap-2">
                 <div className="text-xs uppercase tracking-wide text-muted-foreground">
                   {isNew
-                    ? t('settings.databases.newDatabase')
+                    ? t(
+                        isPostgres
+                          ? 'settings.databases.newDatabase.postgres'
+                          : 'settings.databases.newDatabase.mysql'
+                      )
                     : draft.type}
                 </div>
                 {!isNew && (
@@ -1414,7 +1438,7 @@ function DatabasesCard({ onOpenGuide, detected }) {
                 <Input
                   value={draft.name}
                   onChange={(e) => updateDraft(id, 'name', e.target.value)}
-                  placeholder="root@localhost"
+                  placeholder={`${userPlaceholder}@localhost`}
                 />
               </Field>
               <div className="grid grid-cols-3 gap-4">
@@ -1438,7 +1462,7 @@ function DatabasesCard({ onOpenGuide, detected }) {
                         Number(e.target.value) || 0
                       )
                     }
-                    placeholder="3306"
+                    placeholder={portPlaceholder}
                   />
                 </Field>
               </div>
@@ -1448,7 +1472,7 @@ function DatabasesCard({ onOpenGuide, detected }) {
                   onChange={(e) =>
                     updateDraft(id, 'user', e.target.value)
                   }
-                  placeholder="root"
+                  placeholder={userPlaceholder}
                 />
               </Field>
               <SecretField
@@ -1463,14 +1487,14 @@ function DatabasesCard({ onOpenGuide, detected }) {
                 }
               />
               <BinaryPathField
-                label={t('settings.database.mysqlExecutable')}
+                label={t(execLabelKey)}
                 value={draft.executable}
-                detected={detected}
-                placeholder="C:\\path\\to\\mysql.exe"
+                detected={detectedForType}
+                placeholder={execPlaceholder}
                 notFoundHint={
                   draft.executable
-                    ? t('settings.database.mysqlExecutable.notFound')
-                    : t('settings.database.mysqlExecutable.optional')
+                    ? t(execNotFoundKey)
+                    : t(execOptionalKey)
                 }
                 onChange={(v) => updateDraft(id, 'executable', v)}
               />
@@ -1530,10 +1554,24 @@ function DatabasesCard({ onOpenGuide, detected }) {
           )
         })}
 
-        <Button variant="outline" size="sm" onClick={startAdd}>
-          <Plus />
-          {t('settings.databases.add')}
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => startAdd('mysql')}
+          >
+            <Plus />
+            {t('settings.databases.add.mysql')}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => startAdd('postgres')}
+          >
+            <Plus />
+            {t('settings.databases.add.postgres')}
+          </Button>
+        </div>
       </CardContent>
     </Card>
   )
