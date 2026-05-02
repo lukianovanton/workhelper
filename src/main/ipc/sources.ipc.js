@@ -44,19 +44,22 @@ export function registerSourcesIpc() {
     if (!payload || typeof payload !== 'object') {
       throw new Error('Invalid source payload')
     }
-    if (payload.type !== 'bitbucket') {
+    if (payload.type !== 'bitbucket' && payload.type !== 'github') {
       throw new Error(`Unsupported source type: ${payload.type}`)
     }
-    const id = payload.id || `bb-${randomUUID()}`
+    const prefix = payload.type === 'github' ? 'gh' : 'bb'
+    const id = payload.id || `${prefix}-${randomUUID()}`
     const config = getConfig()
     const sources = Array.isArray(config.sources) ? [...config.sources] : []
     if (sources.some((s) => s.id === id)) {
       throw new Error(`Source with id ${id} already exists`)
     }
+    const fallbackName =
+      payload.type === 'github' ? 'GitHub' : 'Bitbucket'
     sources.push({
       id,
-      type: 'bitbucket',
-      name: payload.name || payload.workspace || 'Bitbucket',
+      type: payload.type,
+      name: payload.name || payload.workspace || fallbackName,
       workspace: payload.workspace || '',
       username: payload.username || '',
       gitUsername: payload.gitUsername || ''

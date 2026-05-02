@@ -778,13 +778,13 @@ function SourcesCard({ onOpenGuide }) {
     setTokens((prev) => ({ ...prev, [id]: value }))
   }
 
-  const startAdd = () => {
+  const startAdd = (type) => {
     const tempId = `__new_${Date.now()}`
     setDrafts((prev) => ({
       ...prev,
       [tempId]: {
         id: tempId,
-        type: 'bitbucket',
+        type: type || 'bitbucket',
         name: '',
         workspace: '',
         username: '',
@@ -953,6 +953,30 @@ function SourcesCard({ onOpenGuide }) {
           const isNew = !!draft.unsaved
           const isBusy = !!busy[id]
           const isTesting = !!busy[`test:${id}`]
+          const isGithub = draft.type === 'github'
+          // Лейблы в зависимости от типа: BB использует «Email» +
+          // «Workspace», GitHub — только «Owner» (PAT-аутентификация
+          // без email). gitUsername полезен в обоих случаях для
+          // подсказки credential-helper'у системного git.
+          const workspaceLabelKey = isGithub
+            ? 'settings.github.owner'
+            : 'settings.bitbucket.workspace'
+          const workspaceHintKey = isGithub
+            ? 'settings.github.owner.hint'
+            : 'settings.bitbucket.workspace.hint'
+          const workspacePlaceholder = isGithub ? 'octocat' : 'techgurusit'
+          const gitUsernameLabelKey = isGithub
+            ? 'settings.github.gitUsername'
+            : 'settings.bitbucket.gitUsername'
+          const gitUsernameHintKey = isGithub
+            ? 'settings.github.gitUsername.hint'
+            : 'settings.bitbucket.gitUsername.hint'
+          const tokenLabelKey = isGithub
+            ? 'settings.github.token'
+            : 'settings.bitbucket.token'
+          const tokenHintKey = isGithub
+            ? 'settings.github.token.hint'
+            : 'settings.bitbucket.token.hint'
           return (
             <div
               key={id}
@@ -961,7 +985,11 @@ function SourcesCard({ onOpenGuide }) {
               <div className="flex items-start justify-between gap-2">
                 <div className="text-xs uppercase tracking-wide text-muted-foreground">
                   {isNew
-                    ? t('settings.sources.newSource')
+                    ? t(
+                        isGithub
+                          ? 'settings.sources.newSource.github'
+                          : 'settings.sources.newSource.bitbucket'
+                      )
                     : draft.type}
                 </div>
                 {!isNew && (
@@ -984,50 +1012,56 @@ function SourcesCard({ onOpenGuide }) {
                 <Input
                   value={draft.name}
                   onChange={(e) => updateDraft(id, 'name', e.target.value)}
-                  placeholder="techgurusit"
+                  placeholder={isGithub ? 'GitHub' : 'techgurusit'}
                 />
               </Field>
 
+              {!isGithub && (
+                <Field
+                  label={t('settings.bitbucket.email')}
+                  hint={t('settings.bitbucket.email.hint')}
+                >
+                  <Input
+                    type="email"
+                    value={draft.username}
+                    onChange={(e) =>
+                      updateDraft(id, 'username', e.target.value)
+                    }
+                    placeholder="you@example.com"
+                  />
+                </Field>
+              )}
               <Field
-                label={t('settings.bitbucket.email')}
-                hint={t('settings.bitbucket.email.hint')}
-              >
-                <Input
-                  type="email"
-                  value={draft.username}
-                  onChange={(e) =>
-                    updateDraft(id, 'username', e.target.value)
-                  }
-                  placeholder="you@example.com"
-                />
-              </Field>
-              <Field
-                label={t('settings.bitbucket.workspace')}
-                hint={t('settings.bitbucket.workspace.hint')}
+                label={t(workspaceLabelKey)}
+                hint={t(workspaceHintKey)}
               >
                 <Input
                   value={draft.workspace}
                   onChange={(e) =>
                     updateDraft(id, 'workspace', e.target.value)
                   }
-                  placeholder="techgurusit"
+                  placeholder={workspacePlaceholder}
                 />
               </Field>
               <Field
-                label={t('settings.bitbucket.gitUsername')}
-                hint={t('settings.bitbucket.gitUsername.hint')}
+                label={t(gitUsernameLabelKey)}
+                hint={t(gitUsernameHintKey)}
               >
                 <Input
-                  value={draft.gitUsername}
+                  value={isGithub ? draft.username : draft.gitUsername}
                   onChange={(e) =>
-                    updateDraft(id, 'gitUsername', e.target.value)
+                    updateDraft(
+                      id,
+                      isGithub ? 'username' : 'gitUsername',
+                      e.target.value
+                    )
                   }
-                  placeholder="antonreact1"
+                  placeholder={isGithub ? 'octocat' : 'antonreact1'}
                 />
               </Field>
               <SecretField
-                label={t('settings.bitbucket.token')}
-                hint={t('settings.bitbucket.token.hint')}
+                label={t(tokenLabelKey)}
+                hint={t(tokenHintKey)}
                 status={!isNew && draft.hasToken}
                 value={tokens[id] || ''}
                 onChange={(v) => setToken(id, v)}
@@ -1046,7 +1080,13 @@ function SourcesCard({ onOpenGuide }) {
                   <>
                     <Button
                       size="sm"
-                      onClick={() => saveNew(id)}
+                      onClick={() => {
+                        // Для GitHub username = git-username (один логин).
+                        if (isGithub) {
+                          updateDraft(id, 'gitUsername', draft.username || '')
+                        }
+                        saveNew(id)
+                      }}
                       disabled={isBusy || !draft.workspace}
                     >
                       {isBusy && <Loader2 className="animate-spin" />}
@@ -1091,10 +1131,24 @@ function SourcesCard({ onOpenGuide }) {
           )
         })}
 
-        <Button variant="outline" size="sm" onClick={startAdd}>
-          <Plus />
-          {t('settings.sources.add')}
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => startAdd('bitbucket')}
+          >
+            <Plus />
+            {t('settings.sources.add.bitbucket')}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => startAdd('github')}
+          >
+            <Plus />
+            {t('settings.sources.add.github')}
+          </Button>
+        </div>
       </CardContent>
     </Card>
   )

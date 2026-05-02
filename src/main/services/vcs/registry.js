@@ -20,22 +20,29 @@
 import { getConfig } from '../config-store.js'
 import { getSecret } from '../secrets.js'
 import { createBitbucketProvider } from './bitbucket-provider.js'
+import { createGitHubProvider } from './github-provider.js'
 
 /**
  * @typedef {Object} VcsSource
  * @property {string} id
- * @property {'bitbucket'} type
+ * @property {'bitbucket' | 'github'} type
  * @property {string} name             user-facing label
- * @property {string} workspace        BB workspace slug
- * @property {string} username         Atlassian email
- * @property {string} gitUsername      BB username (для git clone URL)
+ * @property {string} workspace        BB workspace slug / GH owner
+ * @property {string} username         Atlassian email / GitHub login
+ * @property {string} gitUsername      git URL username
  * @property {string} secretKey        ключ в secrets store для API token'а
  */
+
+const SUPPORTED_TYPES = new Set(['bitbucket', 'github'])
 
 /**
  * Список источников из config.sources[]. config-store сам мигрирует
  * legacy `bitbucket: {}` в sources[0] на первом чтении, поэтому здесь
  * никаких fallback'ов больше не нужно.
+ *
+ * Phase B: фильтруем на known типы (bitbucket / github). Неизвестные
+ * type'ы (например при downgrade c новой версии) просто скипаются —
+ * registry такие игнорирует, чтобы не упасть.
  *
  * @returns {VcsSource[]}
  */
@@ -43,11 +50,14 @@ function getSources() {
   const config = getConfig()
   const sources = Array.isArray(config.sources) ? config.sources : []
   return sources
-    .filter((s) => s && s.type === 'bitbucket')
+    .filter((s) => s && SUPPORTED_TYPES.has(s.type))
     .map((s) => ({
       id: s.id,
       type: s.type,
-      name: s.name || s.workspace || 'Bitbucket',
+      name:
+        s.name ||
+        s.workspace ||
+        (s.type === 'github' ? 'GitHub' : 'Bitbucket'),
       workspace: s.workspace || '',
       username: s.username || '',
       gitUsername: s.gitUsername || '',
@@ -59,21 +69,35 @@ function getSources() {
 const providers = new Map()
 
 function buildProvider(source) {
-  if (source.type !== 'bitbucket') {
-    throw new Error(`Unknown VCS source type: ${source.type}`)
+  if (source.type === 'bitbucket') {
+    return createBitbucketProvider({
+      getWorkspace: () => {
+        const fresh = getSources().find((s) => s.id === source.id)
+        return fresh?.workspace || source.workspace
+      },
+      getUsername: () => {
+        const fresh = getSources().find((s) => s.id === source.id)
+        return fresh?.username || source.username
+      },
+      getToken: () => getSecret(source.secretKey),
+      cacheKey: `vcs-cache-${source.id}`
+    })
   }
-  return createBitbucketProvider({
-    getWorkspace: () => {
-      const fresh = getSources().find((s) => s.id === source.id)
-      return fresh?.workspace || source.workspace
-    },
-    getUsername: () => {
-      const fresh = getSources().find((s) => s.id === source.id)
-      return fresh?.username || source.username
-    },
-    getToken: () => getSecret(source.secretKey),
-    cacheKey: `vcs-cache-${source.id}`
-  })
+  if (source.type === 'github') {
+    return createGitHubProvider({
+      getOwner: () => {
+        const fresh = getSources().find((s) => s.id === source.id)
+        return fresh?.workspace || source.workspace
+      },
+      getUsername: () => {
+        const fresh = getSources().find((s) => s.id === source.id)
+        return fresh?.username || source.username
+      },
+      getToken: () => getSecret(source.secretKey),
+      cacheKey: `vcs-cache-${source.id}`
+    })
+  }
+  throw new Error(`Unknown VCS source type: ${source.type}`)
 }
 
 /**
