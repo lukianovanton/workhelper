@@ -8,6 +8,7 @@
   "common.test": "Test",
   "common.testConnection": "Test connection",
   "common.loading": "Loading…",
+  "common.noOptions": "No options",
   "common.searching": "Searching…",
   "common.dismiss": "Dismiss",
   "common.send": "Send",

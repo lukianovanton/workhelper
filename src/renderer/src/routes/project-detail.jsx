@@ -2442,6 +2442,7 @@ function Combobox({
   allowFreeText = false,
   className
 }) {
+  const t = useT()
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
 
@@ -2462,11 +2463,12 @@ function Combobox({
   }, [open])
 
   // Display: для select-mode показываем label выбранной опции; для
-  // combobox-mode — сырой value (юзер может ввести своё).
+  // combobox-mode — сырой value (юзер может ввести своё). В select-mode
+  // если value не матчится ни с одной опцией (например id source'а
+  // удалили из конфига) — показываем пустую строку, чтобы placeholder
+  // отрисовался вместо «голого» id'а.
   const selectedOption = options.find((o) => o.value === value)
-  const display = allowFreeText
-    ? value
-    : (selectedOption?.label ?? value ?? '')
+  const display = allowFreeText ? value : (selectedOption?.label ?? '')
 
   // Filtering для combobox-mode по введённому значению.
   const filtered =
@@ -2475,6 +2477,12 @@ function Combobox({
           o.label.toLowerCase().includes(value.toLowerCase())
         )
       : options
+
+  // Toggle на mousedown (а не на click): срабатывает на нажатие, до
+  // mouseup. Без этого пользователь видит микро-задержку «нажал → ждёт
+  // → выпало». onClick раньше тоже работал из-за конфликта с focus
+  // (двойной toggle на одном клике); сейчас единственный handler.
+  const toggle = () => setOpen((o) => !o)
 
   return (
     <div ref={ref} className={cn('relative', className)}>
@@ -2490,12 +2498,7 @@ function Combobox({
               }
             : undefined
         }
-        // Только onClick toggle. Раньше был ещё onFocus={setOpen(true)},
-        // и на одном click'е они конфликтовали: focus → open=true,
-        // click → toggle → open=false. Dropdown моргал и открывался
-        // только со второго клика. Tab-фокус из-за этого больше не
-        // авто-открывает dropdown — стандартное поведение select'а.
-        onClick={() => setOpen((o) => !o)}
+        onMouseDown={toggle}
         placeholder={placeholder}
         className={cn(
           // pr-8: оставляем место под chevron справа, чтобы он не лип к
@@ -2512,24 +2515,30 @@ function Combobox({
           open && 'rotate-180'
         )}
       />
-      {open && filtered.length > 0 && (
+      {open && (
         <div className="absolute top-full left-0 right-0 z-30 mt-1 bg-popover border border-border rounded-md shadow-lg max-h-48 overflow-auto py-1">
-          {filtered.map((o, i) => (
-            <button
-              key={`${o.value}-${i}`}
-              type="button"
-              onClick={() => {
-                onChange(o.value)
-                setOpen(false)
-              }}
-              className={cn(
-                'w-full text-left px-3 py-1.5 text-sm hover:bg-accent transition-colors',
-                o.value === value && 'bg-accent/50'
-              )}
-            >
-              {o.label}
-            </button>
-          ))}
+          {filtered.length === 0 ? (
+            <div className="px-3 py-1.5 text-sm text-muted-foreground italic">
+              {t('common.noOptions')}
+            </div>
+          ) : (
+            filtered.map((o, i) => (
+              <button
+                key={`${o.value}-${i}`}
+                type="button"
+                onClick={() => {
+                  onChange(o.value)
+                  setOpen(false)
+                }}
+                className={cn(
+                  'w-full text-left px-3 py-1.5 text-sm hover:bg-accent transition-colors',
+                  o.value === value && 'bg-accent/50'
+                )}
+              >
+                {o.label}
+              </button>
+            ))
+          )}
         </div>
       )}
     </div>
@@ -2741,20 +2750,42 @@ function DatabaseOverrideSection({ slug }) {
 
   // Подгружаем список БД на выбранном engine для combobox-предложений.
   // Engine = databaseId override либо первый сконфигурированный.
+  // Кроме того, при ИЗМЕНЕНИИ databaseId (а не первой загрузки из
+  // конфига) переоцениваем dbName: если текущее имя не валидно на
+  // новом engine — пробуем slug.toLowerCase(), иначе сбрасываем.
+  // prevDbIdRef отслеживает предыдущий databaseId; null = ещё не
+  // загружено из config'а.
+  const prevDbIdRef = useRef(null)
   useEffect(() => {
+    const isFirstLoad = prevDbIdRef.current === null
+    const dbIdChanged = !isFirstLoad && prevDbIdRef.current !== databaseId
+    prevDbIdRef.current = databaseId
+
     const targetId = databaseId || databases[0]?.id
     if (!targetId) {
       setNamesOnEngine([])
+      if (dbIdChanged) setDbName('')
       return
     }
     let cancelled = false
     api.databases.listDbNames(targetId).then((names) => {
-      if (!cancelled) setNamesOnEngine(Array.isArray(names) ? names : [])
+      if (cancelled) return
+      const list = Array.isArray(names) ? names : []
+      setNamesOnEngine(list)
+      if (!dbIdChanged) return
+      // Юзер сменил connection. Решаем что делать с dbName:
+      const set = new Set(list)
+      setDbName((curName) => {
+        if (curName && set.has(curName)) return curName
+        const slugLower = (slug || '').toLowerCase()
+        if (set.has(slugLower)) return slugLower
+        return ''
+      })
     })
     return () => {
       cancelled = true
     }
-  }, [databaseId, databases])
+  }, [databaseId, databases, slug])
 
   // Auto-detect на mount: если override пуст, пробуем найти подходящую
   // БД на любом engine. exact-match — заполняем поля молча; fuzzy —

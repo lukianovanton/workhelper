@@ -8,6 +8,7 @@
   "common.test": "Проверить",
   "common.testConnection": "Проверить подключение",
   "common.loading": "Загрузка…",
+  "common.noOptions": "Нет вариантов",
   "common.searching": "Поиск…",
   "common.dismiss": "Скрыть",
   "common.send": "Отправить",
