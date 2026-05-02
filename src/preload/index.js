@@ -142,6 +142,10 @@ const api = {
     deleteProjectLocal: (slug) =>
       ipcRenderer.invoke('app:deleteProjectLocal', slug)
   },
+  meta: {
+    get: () => ipcRenderer.invoke('meta:get'),
+    set: (patch) => ipcRenderer.invoke('meta:set', patch)
+  },
   presence: {
     list: () => ipcRenderer.invoke('presence:list'),
     isEnabled: () => ipcRenderer.invoke('presence:isEnabled'),

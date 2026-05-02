@@ -106,5 +106,9 @@ export const IPC = {
   app: {
     openFolder: 'app:openFolder',
     deleteProjectLocal: 'app:deleteProjectLocal'
+  },
+  meta: {
+    get: 'meta:get',
+    set: 'meta:set'
   }
 }

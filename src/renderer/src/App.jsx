@@ -9,6 +9,7 @@ import { UpdateBanner } from './components/update-banner.jsx'
 import { Toaster } from './components/toaster.jsx'
 import { useRestoreStore } from './store/restore.store.js'
 import { useSetupStore } from './store/setup.store.js'
+import { useProjectsMetaStore } from './store/projects-meta.store.js'
 import { toast } from './store/toast.store.js'
 import { api } from './api'
 
@@ -16,6 +17,7 @@ export default function App() {
   useRestoreSubscription()
   useSetupSubscription()
   useProcessExitSubscription()
+  useProjectsMetaLoad()
   const update = useUpdateBanner()
 
   return (
@@ -130,6 +132,21 @@ function useSetupSubscription() {
  * Раньше падение было «тихим»: «Started... Waiting for port…», а
  * потом просто исчезало без объяснения.
  */
+/**
+ * One-shot load projectsMeta из main-store на старте приложения.
+ * Раньше zustand-store читал из localStorage синхронно при init'е, но
+ * persistence теперь через IPC (origin-неспецифичный main-store).
+ * load() идемпотентен — повторный вызов no-op после первого успеха.
+ * Также делает one-time миграцию из legacy localStorage если backend
+ * пуст/без перекрытий.
+ */
+function useProjectsMetaLoad() {
+  const load = useProjectsMetaStore((s) => s.load)
+  useEffect(() => {
+    load()
+  }, [load])
+}
+
 function useProcessExitSubscription() {
   useEffect(() => {
     return api.process.on('exit', (evt) => {
