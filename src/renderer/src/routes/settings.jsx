@@ -28,7 +28,8 @@ import {
   BookOpen,
   Plus,
   Trash2,
-  Inbox
+  Inbox,
+  Wrench
 } from 'lucide-react'
 import { usePrefsStore } from '@/store/prefs.store.js'
 import { cn } from '@/lib/utils'
@@ -146,6 +147,7 @@ const SECTIONS = /** @type {const} */ ([
   { id: 'paths', labelKey: 'settings.section.paths', icon: Folder },
   { id: 'database', labelKey: 'settings.section.database', icon: Database },
   { id: 'defaults', labelKey: 'settings.section.defaults', icon: Code2 },
+  { id: 'toolchain', labelKey: 'settings.section.toolchain', icon: Wrench },
   { id: 'presence', labelKey: 'settings.section.presence', icon: Users },
   { id: 'appearance', labelKey: 'settings.section.appearance', icon: Palette }
 ])
@@ -563,6 +565,8 @@ export default function Settings() {
               </Card>
             )}
 
+            {activeSection === 'toolchain' && <ToolchainSection />}
+
             {activeSection === 'presence' && (
               <PresenceCard
                 config={config}
@@ -612,7 +616,7 @@ export default function Settings() {
  * слева, кнопка "Setup guide" справа. Сделана отдельно, чтобы
  * добавление guide-кнопки в новую карточку было одной строчкой.
  */
-function SectionCardHeader({ title, description, onOpenGuide }) {
+function SectionCardHeader({ title, description, onOpenGuide, right }) {
   const t = useT()
   return (
     <CardHeader>
@@ -621,19 +625,221 @@ function SectionCardHeader({ title, description, onOpenGuide }) {
           <CardTitle>{title}</CardTitle>
           <CardDescription>{description}</CardDescription>
         </div>
-        {onOpenGuide && (
+        <div className="flex items-center gap-2 shrink-0">
+          {right}
+          {onOpenGuide && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onOpenGuide}
+              title={t('settings.openSetupGuide')}
+            >
+              <BookOpen size={13} />
+              {t('settings.setupGuide')}
+            </Button>
+          )}
+        </div>
+      </div>
+    </CardHeader>
+  )
+}
+
+/**
+ * Settings → Toolchain секция: общая сводка состояния машины с
+ * кнопками установки. Не привязана к конкретному проекту — нужна
+ * чтобы поставить тулчейн ПРО-АКТИВНО, ещё до того как столкнёшься
+ * с проектом, который его требует.
+ *
+ * Per-project флоу остаётся в Setup-dialog'е (ToolchainBanner) — он
+ * показывает что нужно ИМЕННО ЭТОМУ проекту.
+ */
+function ToolchainSection() {
+  const t = useT()
+  const [status, setStatus] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [installing, setInstalling] = useState(null)
+  const [lastResult, setLastResult] = useState(null)
+
+  const refresh = useCallback(async () => {
+    setLoading(true)
+    try {
+      await api.toolchain.invalidateCache()
+      const s = await api.toolchain.status(null)
+      setStatus(s)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    refresh()
+  }, [refresh])
+
+  const onInstall = async (which) => {
+    setInstalling(which)
+    setLastResult(null)
+    try {
+      const fn =
+        which === 'buildTools'
+          ? api.toolchain.installBuildTools
+          : which === 'python'
+          ? api.toolchain.installPython
+          : which === 'volta'
+          ? api.node.installVolta
+          : null
+      if (!fn) return
+      const result = await fn()
+      setLastResult({ which, ...result })
+      if (result.ok) await refresh()
+    } catch (e) {
+      setLastResult({
+        which,
+        ok: false,
+        message: e?.message || String(e)
+      })
+    } finally {
+      setInstalling(null)
+    }
+  }
+
+  if (loading || !status) {
+    return (
+      <Card>
+        <SectionCardHeader
+          title={t('settings.toolchain.title')}
+          description={t('settings.toolchain.description')}
+        />
+        <CardContent>
+          <div className="text-xs text-muted-foreground inline-flex items-center gap-2">
+            <Loader2 size={12} className="animate-spin" />
+            {t('common.loading')}
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  const tools = [
+    {
+      key: 'node',
+      label: 'Node.js',
+      installed: status.state.node.installed,
+      version: status.state.node.version,
+      installer: null
+    },
+    {
+      key: 'volta',
+      label: 'Volta (Node version manager)',
+      installed: status.state.volta.installed,
+      version: status.state.volta.version,
+      installer: 'volta',
+      detail: status.state.volta.installed
+        ? `Has ${status.state.volta.nodeVersions.length} Node version(s)`
+        : null
+    },
+    {
+      key: 'python',
+      label: 'Python',
+      installed: status.state.python.installed,
+      version: status.state.python.version,
+      installer: 'python'
+    },
+    {
+      key: 'buildTools',
+      label: 'Visual Studio Build Tools',
+      installed: status.state.buildTools.installed,
+      version: status.state.buildTools.instances[0]?.installationVersion,
+      installer: 'buildTools',
+      detail: status.state.buildTools.installed
+        ? status.state.buildTools.instances[0]?.displayName
+        : null
+    }
+  ]
+
+  return (
+    <Card>
+      <SectionCardHeader
+        title={t('settings.toolchain.title')}
+        description={t('settings.toolchain.description')}
+        right={
           <Button
             variant="outline"
             size="sm"
-            onClick={onOpenGuide}
-            title={t('settings.openSetupGuide')}
+            onClick={refresh}
+            disabled={loading}
+            className="h-7"
           >
-            <BookOpen size={13} />
-            {t('settings.setupGuide')}
+            <Loader2
+              size={12}
+              className={cn('animate-spin', !loading && 'hidden')}
+            />
+            {t('common.refresh')}
           </Button>
+        }
+      />
+      <CardContent className="space-y-2">
+        {tools.map((tool) => (
+          <div
+            key={tool.key}
+            className="flex items-center gap-3 px-3 py-2 rounded-md border border-border/60 bg-muted/20"
+          >
+            <span
+              className={cn(
+                'shrink-0 w-2 h-2 rounded-full',
+                tool.installed ? 'bg-emerald-500' : 'bg-muted-foreground/40'
+              )}
+            />
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium">{tool.label}</div>
+              <div className="text-xs text-muted-foreground">
+                {tool.installed
+                  ? tool.version
+                    ? `v${tool.version}`
+                    : 'installed'
+                  : t('settings.toolchain.notInstalled')}
+                {tool.detail && (
+                  <span className="ml-1.5">· {tool.detail}</span>
+                )}
+              </div>
+            </div>
+            {!tool.installed && tool.installer && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onInstall(tool.installer)}
+                disabled={installing != null}
+                className="h-7 shrink-0"
+                title={
+                  tool.installer === 'buildTools'
+                    ? 'Visual Studio Build Tools — Microsoft installer, ~2GB. Triggers a UAC prompt.'
+                    : tool.installer === 'python'
+                    ? 'Python 3 per-user install (~25MB). No UAC needed.'
+                    : 'Volta — direct download from GitHub Releases.'
+                }
+              >
+                {installing === tool.installer && (
+                  <Loader2 size={12} className="animate-spin" />
+                )}
+                {t('common.install')}
+                {tool.installer === 'buildTools' && ' (UAC)'}
+              </Button>
+            )}
+          </div>
+        ))}
+        {lastResult && (
+          <div
+            className={cn(
+              'text-xs px-3 py-2 rounded-md border',
+              lastResult.ok
+                ? 'border-emerald-500/30 bg-emerald-500/5 text-emerald-500'
+                : 'border-destructive/30 bg-destructive/5 text-destructive'
+            )}
+          >
+            {lastResult.message}
+          </div>
         )}
-      </div>
-    </CardHeader>
+      </CardContent>
+    </Card>
   )
 }
 
