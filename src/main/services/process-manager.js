@@ -277,15 +277,22 @@ export async function run(slug) {
     handle.logs.push({ stream, text, ts: Date.now() })
     emit('log', { slug, chunk: text, stream })
     if (handle.url == null) {
+      // Накапливаем sanitized-текст в rolling buffer. ANSI-codes
+      // зачищаем чтобы Vite/Next/etc цвета не разрывали URL.
+      handle.urlSearchBuffer = (
+        handle.urlSearchBuffer + stripAnsi(text)
+      ).slice(-URL_SEARCH_BUFFER_LIMIT)
+      const buf = handle.urlSearchBuffer
       const m =
-        text.match(URL_REGEX) ||
-        text.match(HOST_PORT_REGEX) ||
-        text.match(PORT_KEYWORD_REGEX)
+        buf.match(URL_REGEX) ||
+        buf.match(HOST_PORT_REGEX) ||
+        buf.match(PORT_KEYWORD_REGEX)
       if (m) {
         const port = Number(m[1])
         if (port >= 1 && port <= 65535) {
           handle.port = port
           handle.url = `http://localhost:${port}`
+          handle.urlSearchBuffer = '' // нашли — буфер больше не нужен
           emit('port', {
             slug,
             port: handle.port,
@@ -338,8 +345,28 @@ function createHandle(child) {
     port: null,
     url: null,
     startedAt: new Date().toISOString(),
-    logs: new RingBuffer(LOG_BUFFER_SIZE)
+    logs: new RingBuffer(LOG_BUFFER_SIZE),
+    // Rolling-буфер для port detection. Chunk'и stdout приходят
+    // arbitrary размером (стрим режется по ~4KB), URL может оказаться
+    // разорван на границе двух chunk'ов — `http://localhost:51` |
+    // `74/`. Копим последние N байт и матчим против всего буфера, а
+    // не отдельных кусков. Limit'имся 2KB чтобы не держать в памяти
+    // долго работающий процесс с многомегабайтным выводом.
+    urlSearchBuffer: ''
   }
+}
+
+const URL_SEARCH_BUFFER_LIMIT = 2048
+
+/**
+ * Минимальный ANSI-stripper: удаляет CSI escape sequences (цвета,
+ * курсор, и т.д.). Vite/Next/Webpack обильно красят через chalk —
+ * без этого URL внутри `\x1b[36m...\x1b[39m` иногда не матчится если
+ * между http-частью и портом вклинился стилевой code reset.
+ */
+function stripAnsi(s) {
+  // eslint-disable-next-line no-control-regex
+  return s.replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, '')
 }
 
 export function stop(slug) {
