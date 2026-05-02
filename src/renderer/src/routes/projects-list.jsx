@@ -1497,8 +1497,12 @@ function Popover({ trigger, children, align = 'left' }) {
           // drawer проекта. Локально для popover'а это безопасно: клик-
           // outside уже обрабатывается через mousedown + wrapRef-check.
           onClick={(e) => e.stopPropagation()}
+          // whitespace-normal сбрасывает наследуемый whitespace-nowrap
+          // от родителей-pill'ов (как floating bulk-bar). Без этого
+          // inline-flex-кнопки внутри picker'а пытались укладываться
+          // одной строкой и вылезали за viewport.
           className={cn(
-            'absolute z-30 min-w-[200px] bg-popover border border-border rounded-md shadow-lg p-3',
+            'absolute z-30 min-w-[200px] bg-popover border border-border rounded-md shadow-lg p-3 whitespace-normal',
             positionCls
           )}
         >
