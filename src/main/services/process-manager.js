@@ -13,6 +13,7 @@
 
 import { spawn } from 'node:child_process'
 import path from 'node:path'
+import fs from 'node:fs'
 import treeKill from 'tree-kill'
 import { getConfig } from './config-store.js'
 import {
@@ -76,23 +77,38 @@ function parseCommand(cmdline) {
 }
 
 /**
- * Резолвит rabочую директорию для запуска. Приоритет:
- *   1. runOverrides[slug].cwd (явно задано пользователем, относительно
- *      project root). Если абсолютный путь — используем как есть.
- *   2. Auto-detect через resolveRunnableSubpath (legacy .NET-эвристика
- *      по .sln/Program.cs). Сохранено как fallback для существующих
- *      .NET-проектов которые работали без явного cwd.
+ * Резолвит рабочую директорию для запуска. Приоритет:
+ *   1. runOverrides[slug].cwd — явно задано пользователем. По UI-подсказке
+ *      это путь относительно project root. Лидирующие `/` или `\` мы
+ *      зачищаем (пользователи часто пишут «/affiliatecrm» имея в виду
+ *      под-папку — на Windows path.isAbsolute бы съел такое как
+ *      C:\affiliatecrm и spawn упал бы с ENOENT). Реальные абсолютные
+ *      пути с drive-letter (Windows: «C:\…») / POSIX-абсолютные на
+ *      *nix остаются абсолютными.
+ *   2. Auto-detect через resolveRunnableSubpath (.NET-эвристика по
+ *      .sln/Program.cs) — fallback для .NET-проектов без явного cwd.
  *   3. Сам project root.
  */
-async function resolveCwd(slug, repoPath, override) {
-  if (override?.cwd) {
-    return path.isAbsolute(override.cwd)
-      ? override.cwd
-      : path.join(repoPath, override.cwd)
+function resolveOverrideCwd(repoPath, raw) {
+  const cwd = (raw || '').trim()
+  if (!cwd) return null
+  // Реально абсолютный путь — Windows drive-letter…
+  if (process.platform === 'win32' && /^[a-z]:[\\/]/i.test(cwd)) {
+    return cwd
   }
-  // Legacy fallback: пытаемся auto-detect только если runCommand
-  // начинается с 'dotnet' — иначе резолвер бесполезен и тратит fs-обходы.
-  // Не критично; при необходимости пользователь явно укажет cwd.
+  // …или POSIX absolute на *nix.
+  if (process.platform !== 'win32' && cwd.startsWith('/')) {
+    return cwd
+  }
+  // Иначе считаем relative to project root, лидирующие slash/backslash
+  // зачищаем — это пользовательская конвенция «папка от корня проекта».
+  return path.join(repoPath, cwd.replace(/^[\\/]+/, ''))
+}
+
+async function resolveCwd(slug, repoPath, override) {
+  const overrideCwd = resolveOverrideCwd(repoPath, override?.cwd)
+  if (overrideCwd) return overrideCwd
+
   const subpath = await resolveRunnableSubpath(
     repoPath,
     slug.toLowerCase(),
@@ -140,6 +156,15 @@ export async function run(slug) {
   const [bin, ...args] = tokens
 
   const cwd = await resolveCwd(slug, repoPath, override)
+  // Проверяем cwd ДО spawn'а: иначе spawn упадёт с ENOENT, который
+  // неотличим от «binary not found», и пользователь увидит вводящее
+  // в заблуждение сообщение про dotnet хотя проблема в неверном
+  // override.cwd.
+  if (!fs.existsSync(cwd)) {
+    throw new Error(
+      `Working directory not found: ${cwd}. Check the per-project cwd override in the drawer.`
+    )
+  }
 
   const child = spawn(bin, args, {
     cwd,
