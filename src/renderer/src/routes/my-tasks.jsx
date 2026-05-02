@@ -545,16 +545,16 @@ export function TaskDetailContent({ issueKey, detail }) {
 function ProjectLine({ project, issueKey }) {
   const t = useT()
   const navigate = useNavigate()
-  const { projects: bitbucketProjects } = useProjects()
+  const { projects: vcsProjects } = useProjects()
   const candidate = parseSlugFromProjectName(project?.name)
   const matched = useMemo(() => {
-    if (!candidate || !bitbucketProjects) return null
+    if (!candidate || !vcsProjects) return null
     return (
-      bitbucketProjects.find(
+      vcsProjects.find(
         (p) => p.slug.toLowerCase() === candidate
       ) || null
     )
-  }, [candidate, bitbucketProjects])
+  }, [candidate, vcsProjects])
   const inner = (
     <>
       {t('tasks.detail.in')}{' '}

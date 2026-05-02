@@ -598,19 +598,27 @@ function Drawer({ project, dbAvailable, onClose, initialTab, initialIssue }) {
             ) : null
           }
         />
-        <DbSection
-          project={project}
-          dbAvailable={dbAvailable}
-          isRunning={isRunning}
-          creating={dbCreate.isPending}
-          dropping={dbDrop.isPending}
-          restoreState={restoreState}
-          onCreate={onCreateDb}
-          onRequestDrop={() => setDropDialogOpen(true)}
-          onRestoreAuto={() => onRestoreFromDump(project.db.dumpPath)}
-          onPickDump={onPickDump}
-          onClearRestoreState={() => clearRestore(project.slug)}
-        />
+        {project.db.skipDb ? (
+          <ChecklistRow
+            state="off"
+            title="No database for this project"
+            subtitle="Marked as no-DB during setup. Re-run setup to enable."
+          />
+        ) : (
+          <DbSection
+            project={project}
+            dbAvailable={dbAvailable}
+            isRunning={isRunning}
+            creating={dbCreate.isPending}
+            dropping={dbDrop.isPending}
+            restoreState={restoreState}
+            onCreate={onCreateDb}
+            onRequestDrop={() => setDropDialogOpen(true)}
+            onRestoreAuto={() => onRestoreFromDump(project.db.dumpPath)}
+            onPickDump={onPickDump}
+            onClearRestoreState={() => clearRestore(project.slug)}
+          />
+        )}
         <ChecklistRow
           state={isRunning ? 'running' : 'idle'}
           title={
@@ -639,17 +647,19 @@ function Drawer({ project, dbAvailable, onClose, initialTab, initialIssue }) {
           }
         />
 
-        {project.local.cloned && (
+        {/* runnableSubpath — это .NET-специфичная подсказка (находит
+            подпапку с Program.cs рядом с .sln). Для Node/Rust/Go cwd
+            живёт в runOverrides[slug].cwd, а stack отображается через
+            бейдж/Run override-секцию. Поэтому показываем строку
+            ТОЛЬКО когда subpath реально нашёлся; иначе ничего —
+            прежний amber «Cannot detect runnable project» вводил в
+            заблуждение для не-.NET-проектов, у которых run работает
+            через runOverrides и без subpath'а. */}
+        {project.local.cloned && project.local.runnableSubpath && (
           <div className="text-xs text-muted-foreground pl-7">
-            {project.local.runnableSubpath ? (
-              t('drawer.checklist.runnableSubpath', {
-                path: project.local.runnableSubpath
-              })
-            ) : (
-              <span className="text-amber-500">
-                {t('drawer.checklist.cantDetectRunnable')}
-              </span>
-            )}
+            {t('drawer.checklist.runnableSubpath', {
+              path: project.local.runnableSubpath
+            })}
           </div>
         )}
 
@@ -658,13 +668,19 @@ function Drawer({ project, dbAvailable, onClose, initialTab, initialIssue }) {
             проекта), cwd-override указывает в несуществующий путь, а
             DB-override без локального проекта тоже бесполезен — его
             всё равно нечем триггерить. После клона блоки появляются
-            и работают auto-detect. */}
+            и работают auto-detect. Database override дополнительно
+            прячется для проектов, у которых юзер явно отметил «без
+            БД» в Setup dialog (project.db.skipDb). */}
         {cloned && (
           <>
             <Separator />
             <RunOverrideSection slug={project.slug} />
-            <Separator />
-            <DatabaseOverrideSection slug={project.slug} />
+            {!project.db.skipDb && (
+              <>
+                <Separator />
+                <DatabaseOverrideSection slug={project.slug} />
+              </>
+            )}
           </>
         )}
 
@@ -1291,10 +1307,10 @@ function TasksTab({ project, initialIssue }) {
   const slug = project.slug
   const { project: matchedJira, isLoading: projectsLoading } =
     useJiraProjectForSlug(slug)
-  const { projects: allBitbucketProjects } = useProjects()
+  const { projects: allVcsProjects } = useProjects()
   const knownSlugs = useMemo(
-    () => (allBitbucketProjects || []).map((p) => p.slug),
-    [allBitbucketProjects]
+    () => (allVcsProjects || []).map((p) => p.slug),
+    [allVcsProjects]
   )
   const openIssuesQuery = useProjectJiraIssues(matchedJira?.key, {
     enabled: !!matchedJira

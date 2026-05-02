@@ -38,13 +38,23 @@ class BitbucketError extends Error {
  * @param {string} opts.cacheKey                имя electron-store файла для
  *                                                listRepos cache
  *                                                (один файл на source)
+ * @param {() => string} [opts.getTemplatePrefix]  lazy getter для prefix'а
+ *                                                BB project-key, по которому
+ *                                                репо классифицируется как
+ *                                                template. Default 'TP'
+ *                                                (соглашение в нашем legacy
+ *                                                workspace). Свой workspace
+ *                                                может иметь другой prefix
+ *                                                либо нулевой — тогда все
+ *                                                репо считаются 'project'.
  * @returns {VcsProvider}
  */
 export function createBitbucketProvider({
   getWorkspace,
   getUsername,
   getToken,
-  cacheKey
+  cacheKey,
+  getTemplatePrefix
 }) {
   const cacheStore = new Store({
     name: cacheKey,
@@ -210,7 +220,10 @@ export function createBitbucketProvider({
       url = data.next || null
     }
 
-    return all.map((repo) => toProviderRepo(repo, client.workspace))
+    const templatePrefix = getTemplatePrefix ? getTemplatePrefix() : 'TP'
+    return all.map((repo) =>
+      toProviderRepo(repo, client.workspace, templatePrefix)
+    )
   }
 
   async function listRepos(forceRefresh = false) {
@@ -243,7 +256,8 @@ export function createBitbucketProvider({
           'slug,name,description,links.clone,project.key,updated_on'
         )}`
       )
-      return toProviderRepo(repo, client.workspace)
+      const templatePrefix = getTemplatePrefix ? getTemplatePrefix() : 'TP'
+      return toProviderRepo(repo, client.workspace, templatePrefix)
     } catch (e) {
       if (e.status === 404 || e.status === 403) return null
       throw e
@@ -579,6 +593,12 @@ export function createBitbucketProvider({
 
   return {
     type: 'bitbucket',
+    capabilities: {
+      builds: true,
+      branches: true,
+      commits: true,
+      commitDiff: true
+    },
     testConnection,
     listRepos,
     getRepo,
@@ -621,16 +641,21 @@ function toCommitShape(c) {
   }
 }
 
-function toProviderRepo(repo, workspace) {
+function toProviderRepo(repo, workspace, templatePrefix) {
   const cloneUrl =
     (repo.links?.clone || []).find((c) => c.name === 'https')?.href || ''
   const projectKey = repo.project?.key || ''
+  // Repo считается template если его BB project key начинается с
+  // настраиваемого префикса. Default 'TP' для legacy совместимости.
+  // Empty prefix = вся классификация выключена → 'project' для всех.
+  const isTemplate =
+    !!templatePrefix && projectKey.startsWith(templatePrefix)
 
   return {
     slug: repo.slug,
     name: repo.name,
     description: repo.description || '',
-    kind: projectKey.startsWith('TP') ? 'template' : 'project',
+    kind: isTemplate ? 'template' : 'project',
     url: `https://bitbucket.org/${workspace}/${repo.slug}`,
     cloneUrl,
     updatedOn: repo.updated_on || null,

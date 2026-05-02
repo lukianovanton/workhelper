@@ -23,8 +23,9 @@ import * as gitService from './git-service.js'
 import * as fsService from './fs-service.js'
 import * as editorService from './editor-service.js'
 import * as processManager from './process-manager.js'
-import { getConfig } from './config-store.js'
+import { getConfig, setConfig } from './config-store.js'
 import { resolveProjectDb } from './db/registry.js'
+import { resolvePackageManager, runPmCommand } from './node-deps.js'
 
 const activeSetups = new Map()
 
@@ -92,6 +93,12 @@ export async function runFull(slug, options, emitStep) {
   }
 
   try {
+    // skipDb-флаг — это намерение проекта, а не разовое решение для
+    // одного запуска setup. Persist'им до старта шагов, чтобы UI на
+    // деталях проекта мог сразу его прочитать (Database override
+    // секция скрыта для проектов без БД).
+    persistSkipDbIntent(slug, !!options?.skipDb)
+
     // ─── a) clone ────────────────────────────────────────────────────
     checkCancel()
     if (
@@ -112,6 +119,25 @@ export async function runFull(slug, options, emitStep) {
         throw e
       }
       endStep('clone', t)
+    }
+
+    // Auto-detect run override после клона. Setup-диалог детектит
+    // стек только для информационной строки + setupDb-дефолта, но не
+    // сохраняет результат — поэтому у только что клонированного
+    // Node/Rust/Go-проекта `runOverrides[slug]` оставался пустым,
+    // post-setup `Run` уходил в global default `dotnet run` и падал.
+    // Persist'им один раз — только если override ещё не задан
+    // пользователем (не клобберим ручную настройку).
+    try {
+      if (config.paths.projectsRoot) {
+        await persistDetectedRunOverride(
+          slug,
+          fsService.projectPath(config.paths.projectsRoot, slug)
+        )
+      }
+    } catch {
+      // Detect — best-effort. Если упал — не валим setup; пользователь
+      // выставит override руками в drawer'е.
     }
 
     // ─── b) db-create ────────────────────────────────────────────────
@@ -217,6 +243,31 @@ export async function runFull(slug, options, emitStep) {
       }
     }
 
+    // ─── c.5) deps install ───────────────────────────────────────────
+    // Свежеклонированные Node-проекты не запустятся без `npm install`:
+    // `npm run start` упадёт с module-not-found как только spawn найдёт
+    // package.json. Делаем install автоматически по lockfile (npm /
+    // pnpm / yarn). Skip если node_modules уже есть (повторный setup).
+    // Для не-Node стеков шаг отдаёт done «Skipped».
+    checkCancel()
+    if (config.paths.projectsRoot) {
+      try {
+        await runDepsStep(
+          fsService.projectPath(config.paths.projectsRoot, slug),
+          beginStep,
+          endStep,
+          errorStep,
+          emitStep
+        )
+      } catch (e) {
+        // deps-fail — фатально. Без зависимостей run всё равно упадёт,
+        // лучше остановить setup явной ошибкой.
+        throw e
+      }
+    } else {
+      emitStep({ kind: 'deps', status: 'done', message: 'Skipped' })
+    }
+
     // ─── d) workspace (optional, opt-in) ─────────────────────────────
     checkCancel()
     if (options?.openWorkspace) {
@@ -253,6 +304,114 @@ export async function runFull(slug, options, emitStep) {
   } finally {
     activeSetups.delete(slug)
   }
+}
+
+async function runDepsStep(repoPath, beginStep, endStep, errorStep, emitStep) {
+  const pm = resolvePackageManager(repoPath)
+  if (!pm.hasPackageJson) {
+    emitStep({
+      kind: 'deps',
+      status: 'done',
+      message: 'Skipped (not a Node project)'
+    })
+    return
+  }
+  if (pm.hasNodeModules) {
+    emitStep({
+      kind: 'deps',
+      status: 'done',
+      message: `${pm.pmName}: node_modules already present`
+    })
+    return
+  }
+
+  const t = beginStep('deps')
+  let result
+  try {
+    result = await runPmCommand(repoPath, pm.pmName, ['install'])
+  } catch (err) {
+    if (err && err.code === 'ENOENT') {
+      const msg = `'${pm.pmName}' not found in PATH. Install ${pm.pmName} or run install manually before retrying.`
+      errorStep('deps', msg)
+      throw new Error(msg)
+    }
+    const msg = `${pm.pmName} failed to start: ${err?.message || err}`
+    errorStep('deps', msg)
+    throw new Error(msg)
+  }
+  if (result.code !== 0) {
+    const detail = (result.stderrTail.trim() || result.stdoutTail.trim() || '')
+      .split(/\r?\n/)
+      .slice(-3)
+      .join(' | ')
+      .slice(0, 240)
+    const msg = `${pm.pmName} install exited with code ${result.code}${
+      detail ? `: ${detail}` : ''
+    }`
+    errorStep('deps', msg)
+    throw new Error(msg)
+  }
+  endStep('deps', t, `${pm.pmName} install ok`)
+}
+
+/**
+ * Persist'ит skipDb-намерение для slug. true → ставим флаг (preserving
+ * остальные поля overrideа — databaseId / name пользователь мог уже
+ * выставить руками). false → снимаем флаг, остальное оставляем.
+ */
+function persistSkipDbIntent(slug, skipDb) {
+  const config = getConfig()
+  const all = { ...(config.databaseOverrides || {}) }
+  const existing = { ...(all[slug] || {}) }
+  if (skipDb) {
+    existing.skipDb = true
+  } else {
+    delete existing.skipDb
+  }
+  // Если у override'а ничего полезного не осталось — удаляем запись
+  // целиком, чтобы map не разрастался пустыми объектами.
+  if (
+    !existing.skipDb &&
+    !existing.databaseId &&
+    !(existing.name && existing.name.trim())
+  ) {
+    delete all[slug]
+  } else {
+    all[slug] = existing
+  }
+  setConfig({ databaseOverrides: all })
+}
+
+/**
+ * Вызывает detectStack по локальному repoPath и записывает
+ * runOverrides[slug] = { runCommand, cwd } если у проекта ещё нет
+ * полезного override'а. Логика «полезный override»: либо runCommand
+ * с непустым trim, либо cwd с непустым trim. Если есть хотя бы одно —
+ * пользователь уже что-то настроил, не трогаем.
+ */
+async function persistDetectedRunOverride(slug, repoPath) {
+  const config = getConfig()
+  const existing = (config.runOverrides || {})[slug] || {}
+  const hasUserCmd =
+    typeof existing.runCommand === 'string' && existing.runCommand.trim() !== ''
+  // Только наличие runCommand говорит о реальной user-action в Run-override
+  // секции. cwd-only запись — почти всегда артефакт legacy-миграции
+  // (`dotnet.workingDirSubpathOverride[slug] = 'src/api'` → migrate в
+  // `runOverrides[slug] = { cwd: 'src/api' }` для всех проектов скопом).
+  // Поэтому cwd-only отказывает detect'у в перезаписи, и проект на Node
+  // упирался в `<root>/src/api` после re-setup. Считаем cwd-only за
+  // «не настроено» — detect перетирает.
+  if (hasUserCmd) return
+
+  const detected = await fsService.detectStack(repoPath)
+  if (!detected) return
+  const runCommand = (detected.runCommand || '').trim()
+  const cwd = (detected.cwd || '').trim()
+  if (!runCommand && !cwd) return
+
+  const all = { ...(config.runOverrides || {}) }
+  all[slug] = { runCommand, cwd }
+  setConfig({ runOverrides: all })
 }
 
 export { CancelledError }

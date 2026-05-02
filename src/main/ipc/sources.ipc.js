@@ -10,6 +10,10 @@ import {
   getProvider,
   invalidateProviders
 } from '../services/vcs/registry.js'
+import {
+  getVcsProviderDef,
+  isSupportedVcsType
+} from '../services/vcs/providers.js'
 
 /**
  * IPC для управления VCS-источниками (Phase A.4b).
@@ -36,6 +40,7 @@ export function registerSourcesIpc() {
       workspace: s.workspace || '',
       username: s.username || '',
       gitUsername: s.gitUsername || '',
+      providerOptions: s.providerOptions || {},
       hasToken: hasSecret(`vcs:${s.id}:token`)
     }))
   })
@@ -44,25 +49,24 @@ export function registerSourcesIpc() {
     if (!payload || typeof payload !== 'object') {
       throw new Error('Invalid source payload')
     }
-    if (payload.type !== 'bitbucket' && payload.type !== 'github') {
+    if (!isSupportedVcsType(payload.type)) {
       throw new Error(`Unsupported source type: ${payload.type}`)
     }
-    const prefix = payload.type === 'github' ? 'gh' : 'bb'
-    const id = payload.id || `${prefix}-${randomUUID()}`
+    const def = getVcsProviderDef(payload.type)
+    const id = payload.id || `${def.idPrefix}-${randomUUID()}`
     const config = getConfig()
     const sources = Array.isArray(config.sources) ? [...config.sources] : []
     if (sources.some((s) => s.id === id)) {
       throw new Error(`Source with id ${id} already exists`)
     }
-    const fallbackName =
-      payload.type === 'github' ? 'GitHub' : 'Bitbucket'
     sources.push({
       id,
       type: payload.type,
-      name: payload.name || payload.workspace || fallbackName,
+      name: payload.name || payload.workspace || def.fallbackName,
       workspace: payload.workspace || '',
       username: payload.username || '',
-      gitUsername: payload.gitUsername || ''
+      gitUsername: payload.gitUsername || '',
+      providerOptions: payload.providerOptions || {}
     })
     setConfig({ sources })
     if (payload.token) {
@@ -83,6 +87,9 @@ export function registerSourcesIpc() {
       if (patch && Object.prototype.hasOwnProperty.call(patch, key)) {
         next[key] = patch[key] ?? ''
       }
+    }
+    if (patch && Object.prototype.hasOwnProperty.call(patch, 'providerOptions')) {
+      next.providerOptions = patch.providerOptions || {}
     }
     sources[idx] = next
     setConfig({ sources })

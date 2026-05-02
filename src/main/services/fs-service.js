@@ -210,22 +210,112 @@ const GO_DB_PATTERNS = [
   /github\.com\/jmoiron\/sqlx\b/
 ]
 
+// Маркеры конкретного DB engine'а для разных стеков. Использует
+// resolveEngineFromText в databases:detectForProject когда имя БД не
+// совпадает со slug'ом (проект `AffiliateCRM` ↔ база `qacrm` — fuzzy
+// match невозможен, но движок мы определим и подсветим правильное
+// подключение, оставив юзеру только выбор имени БД).
+//
+// Формат: список tuples `{ engineId, patterns: RegExp[] }`. Каждый
+// engineId должен совпадать с ключом в DB_ENGINE_DEFS (см. db/engines.js).
+// Скейл: добавление mssql / mongo = добавить tuple, не трогать
+// resolveEngineFromText.
+//
+// Принцип резолва: если матчатся два разных engine'а одновременно —
+// ambiguous, возвращаем null. Лучше null, чем неверная подсказка.
+const DOTNET_ENGINE_SIGNALS = [
+  {
+    engineId: 'postgres',
+    patterns: [
+      /Npgsql/i,
+      /Pomelo\.EntityFrameworkCore\.PostgreSQL/i,
+      /Npgsql\.EntityFrameworkCore\.PostgreSQL/i,
+      // Connection-string маркеры из appsettings.json. Port=5432 — дефолт-
+      // ный порт Postgres'а; Host= в EF/Npgsql conn-string'е использует-
+      // ся только у Postgres (MySQL / MSSQL пишут Server=).
+      /Port\s*=\s*5432\b/i,
+      /Host\s*=[^;]*;[^"]*Database\s*=/i
+    ]
+  },
+  {
+    engineId: 'mysql',
+    patterns: [
+      /MySqlConnector/i,
+      /Pomelo\.EntityFrameworkCore\.MySql/i,
+      /MySql\.Data\b/i,
+      // Port=3306 — дефолтный порт MySQL'а. Server= в conn-string ambi-
+      // guous (используется и у MSSQL), поэтому только в паре с явным
+      // MySQL-портом.
+      /Port\s*=\s*3306\b/i
+    ]
+  }
+]
+const NODE_ENGINE_DEP_SETS = [
+  { engineId: 'postgres', deps: new Set(['pg', 'pg-promise', 'postgres']) },
+  { engineId: 'mysql', deps: new Set(['mysql', 'mysql2']) }
+]
+const CARGO_ENGINE_SIGNALS = [
+  {
+    engineId: 'postgres',
+    patterns: [/^\s*tokio-postgres\s*=/m, /^\s*postgres\s*=/m, /\bpostgres\b/i]
+  },
+  { engineId: 'mysql', patterns: [/^\s*mysql\s*=/m] }
+]
+const GO_ENGINE_SIGNALS = [
+  {
+    engineId: 'postgres',
+    patterns: [/github\.com\/lib\/pq\b/, /github\.com\/jackc\/pgx\b/]
+  },
+  {
+    engineId: 'mysql',
+    patterns: [/github\.com\/go-sql-driver\/mysql\b/]
+  }
+]
+
+/**
+ * Резолвит engine по списку tuple'ов `{ engineId, patterns }`:
+ * пробегает все tuple'ы, собирает engineId'ы, чьи patterns матчатся.
+ * Если ровно один — возвращает его. Иначе null (ambiguous либо ничего
+ * не нашли).
+ */
+function resolveEngineFromText(text, engineSignals) {
+  const matched = new Set()
+  for (const { engineId, patterns } of engineSignals) {
+    if (patterns.some((re) => re.test(text))) matched.add(engineId)
+  }
+  return matched.size === 1 ? [...matched][0] : null
+}
+
+function resolveEngineFromDeps(allDeps, depSets) {
+  const matched = new Set()
+  for (const { engineId, deps } of depSets) {
+    if (Object.keys(allDeps).some((d) => deps.has(d))) matched.add(engineId)
+  }
+  return matched.size === 1 ? [...matched][0] : null
+}
+
 async function detectDotnet(repoRoot) {
   const subpath = await resolveRunnableSubpath(repoRoot, '', {})
   if (!subpath) return null
-  // Проверяем наличие БД через содержимое appsettings*.json в runnable-папке.
+
+  // Собираем текст из:
+  //   1. appsettings*.json в runnable-папке (connection strings)
+  //   2. ВСЕХ *.csproj в корне репо и в subdir'ах глубины 1
+  //
+  // Расширили scope (раньше брали только runnable-папку): в типичной
+  // .NET-солюшене Npgsql/MySqlConnector часто живёт в библиотечном
+  // проекте (DataAccess/DataAccess.csproj) — runnable-csproj его лишь
+  // ProjectReference'ит и не содержит явных пакетов. Без обхода
+  // sibling'ов databaseEngine получался null для большинства реальных
+  // солюшенов.
+  let fileText = ''
   const targetDir = path.join(repoRoot, subpath)
-  let needsDb = false
   try {
     const entries = await fsp.readdir(targetDir)
     for (const f of entries) {
       if (!/^appsettings(\..+)?\.json$/i.test(f)) continue
       try {
-        const raw = await fsp.readFile(path.join(targetDir, f), 'utf8')
-        if (DOTNET_DB_PATTERNS.some((re) => re.test(raw))) {
-          needsDb = true
-          break
-        }
+        fileText += '\n' + (await fsp.readFile(path.join(targetDir, f), 'utf8'))
       } catch {
         // ignore
       }
@@ -233,32 +323,50 @@ async function detectDotnet(repoRoot) {
   } catch {
     // ignore
   }
-  // Дополнительно: csproj может референсить EF Core / Npgsql без
-  // отдельного appsettings (например, infra-only проекты).
-  if (!needsDb) {
-    try {
-      const entries = await fsp.readdir(targetDir)
-      for (const f of entries) {
-        if (!/\.csproj$/i.test(f)) continue
+
+  // .csproj-файлы: root level + 1 уровень subdir'ов. Глубже не лезем
+  // (хватает «standard» структуры src/<Project>/Project.csproj). Это
+  // подсчитано как ~10-30 fs.readdir на репо — не критично.
+  const csprojTargets = []
+  try {
+    const rootEntries = await fsp.readdir(repoRoot, { withFileTypes: true })
+    for (const e of rootEntries) {
+      if (e.isFile() && /\.csproj$/i.test(e.name)) {
+        csprojTargets.push(path.join(repoRoot, e.name))
+      } else if (e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules') {
+        const subDir = path.join(repoRoot, e.name)
         try {
-          const raw = await fsp.readFile(path.join(targetDir, f), 'utf8')
-          if (DOTNET_DB_PATTERNS.some((re) => re.test(raw))) {
-            needsDb = true
-            break
+          const subEntries = await fsp.readdir(subDir)
+          for (const f of subEntries) {
+            if (/\.csproj$/i.test(f)) {
+              csprojTargets.push(path.join(subDir, f))
+            }
           }
         } catch {
-          // ignore
+          // ignore — могла быть restricted папка
         }
       }
+    }
+  } catch {
+    // ignore
+  }
+  for (const p of csprojTargets) {
+    try {
+      fileText += '\n' + (await fsp.readFile(p, 'utf8'))
     } catch {
       // ignore
     }
   }
+
+  const needsDb = DOTNET_DB_PATTERNS.some((re) => re.test(fileText))
+  const databaseEngine = resolveEngineFromText(fileText, DOTNET_ENGINE_SIGNALS)
+
   return {
     stackKind: 'dotnet',
     runCommand: 'dotnet run',
     cwd: subpath,
-    needsDatabase: needsDb
+    needsDatabase: needsDb,
+    databaseEngine
   }
 }
 
@@ -273,6 +381,7 @@ async function detectNode(repoRoot) {
   }
   let runCommand = `${pkgManager} start`
   let needsDb = false
+  let databaseEngine = null
   try {
     const raw = await fsp.readFile(pkgPath, 'utf8')
     const pkg = JSON.parse(raw)
@@ -296,6 +405,7 @@ async function detectNode(repoRoot) {
         break
       }
     }
+    databaseEngine = resolveEngineFromDeps(allDeps, NODE_ENGINE_DEP_SETS)
   } catch {
     // оставляем дефолты
   }
@@ -303,7 +413,8 @@ async function detectNode(repoRoot) {
     stackKind: 'node',
     runCommand,
     cwd: '',
-    needsDatabase: needsDb
+    needsDatabase: needsDb,
+    databaseEngine
   }
 }
 
@@ -311,9 +422,11 @@ async function detectCargo(repoRoot) {
   const cargoPath = path.join(repoRoot, 'Cargo.toml')
   if (!(await fileExists(cargoPath))) return null
   let needsDb = false
+  let databaseEngine = null
   try {
     const raw = await fsp.readFile(cargoPath, 'utf8')
     needsDb = CARGO_DB_PATTERNS.some((re) => re.test(raw))
+    databaseEngine = resolveEngineFromText(raw, CARGO_ENGINE_SIGNALS)
   } catch {
     // ignore
   }
@@ -321,7 +434,8 @@ async function detectCargo(repoRoot) {
     stackKind: 'cargo',
     runCommand: 'cargo run',
     cwd: '',
-    needsDatabase: needsDb
+    needsDatabase: needsDb,
+    databaseEngine
   }
 }
 
@@ -329,9 +443,11 @@ async function detectGo(repoRoot) {
   const goModPath = path.join(repoRoot, 'go.mod')
   if (!(await fileExists(goModPath))) return null
   let needsDb = false
+  let databaseEngine = null
   try {
     const raw = await fsp.readFile(goModPath, 'utf8')
     needsDb = GO_DB_PATTERNS.some((re) => re.test(raw))
+    databaseEngine = resolveEngineFromText(raw, GO_ENGINE_SIGNALS)
     // go.mod часто содержит только direct deps; если там пусто — пробуем
     // главный source-файл (быстрая эвристика без полного walk'а).
   } catch {
@@ -341,7 +457,8 @@ async function detectGo(repoRoot) {
     stackKind: 'go',
     runCommand: 'go run .',
     cwd: '',
-    needsDatabase: needsDb
+    needsDatabase: needsDb,
+    databaseEngine
   }
 }
 
@@ -352,7 +469,8 @@ async function detectMake(repoRoot) {
         stackKind: 'make',
         runCommand: 'make run',
         cwd: '',
-        needsDatabase: false
+        needsDatabase: false,
+        databaseEngine: null
       }
     }
   }
@@ -374,12 +492,24 @@ async function detectMake(repoRoot) {
  *   stackKind: string|null,
  *   runCommand: string|null,
  *   cwd: string,
- *   needsDatabase: boolean
+ *   needsDatabase: boolean,
+ *   databaseEngine: string|null
  * }>}
+ *
+ * databaseEngine — id из DB_ENGINE_DEFS (см. db/engines.js): 'mysql',
+ * 'postgres', и т.д. Список расширяется добавлением tuple'ов в
+ * DOTNET_ENGINE_SIGNALS / NODE_ENGINE_DEP_SETS / etc. — без правки
+ * resolveEngineFromText / resolveEngineFromDeps.
  */
 export async function detectStack(repoRoot) {
   if (!repoRoot) {
-    return { stackKind: null, runCommand: null, cwd: '', needsDatabase: false }
+    return {
+      stackKind: null,
+      runCommand: null,
+      cwd: '',
+      needsDatabase: false,
+      databaseEngine: null
+    }
   }
   // Приоритет: .NET → Node → Cargo → Go → Make. Первый совпавший
   // detector определяет стек.
@@ -388,7 +518,13 @@ export async function detectStack(repoRoot) {
     const res = await d(repoRoot)
     if (res) return res
   }
-  return { stackKind: null, runCommand: null, cwd: '', needsDatabase: false }
+  return {
+    stackKind: null,
+    runCommand: null,
+    cwd: '',
+    needsDatabase: false,
+    databaseEngine: null
+  }
 }
 
 /**

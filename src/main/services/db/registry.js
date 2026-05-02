@@ -17,13 +17,16 @@
 
 import { getConfig } from '../config-store.js'
 import { getSecret } from '../secrets.js'
-import { createMysqlEngine } from './mysql-engine.js'
-import { createPostgresEngine } from './postgres-engine.js'
+import {
+  getDbEngineDef,
+  isSupportedDbType,
+  defaultDbNameFor
+} from './engines.js'
 
 /**
  * @typedef {Object} DbConfigEntry
  * @property {string} id
- * @property {'mysql' | 'postgres'} type
+ * @property {string} type             'mysql' | 'postgres' | <future>
  * @property {string} name
  * @property {string} host
  * @property {number} port
@@ -32,9 +35,6 @@ import { createPostgresEngine } from './postgres-engine.js'
  * @property {string} secretKey
  */
 
-const SUPPORTED_TYPES = new Set(['mysql', 'postgres'])
-const DEFAULT_PORTS = { mysql: 3306, postgres: 5432 }
-
 /**
  * @returns {DbConfigEntry[]}
  */
@@ -42,33 +42,36 @@ function getDatabases() {
   const config = getConfig()
   const databases = Array.isArray(config.databases) ? config.databases : []
   return databases
-    .filter((d) => d && SUPPORTED_TYPES.has(d.type))
-    .map((d) => ({
-      id: d.id,
-      type: d.type,
-      name:
-        d.name ||
-        (d.host
-          ? `${d.user || d.type}@${d.host}`
-          : d.type === 'postgres'
-          ? 'PostgreSQL'
-          : 'MySQL'),
-      host: d.host || '',
-      port: d.port || DEFAULT_PORTS[d.type],
-      user: d.user || '',
-      executable: d.executable || '',
-      secretKey: `db:${d.id}:password`
-    }))
+    .filter((d) => d && isSupportedDbType(d.type))
+    .map((d) => {
+      const def = getDbEngineDef(d.type)
+      return {
+        id: d.id,
+        type: d.type,
+        name:
+          d.name ||
+          (d.host ? `${d.user || d.type}@${d.host}` : def.fallbackName),
+        host: d.host || '',
+        port: d.port || def.defaultPort,
+        user: d.user || '',
+        executable: d.executable || '',
+        secretKey: `db:${d.id}:password`
+      }
+    })
 }
 
 /** @type {Map<string, DbEngine>} */
 const engines = new Map()
 
 function buildEngine(entry) {
+  const def = getDbEngineDef(entry.type)
+  if (!def) {
+    throw new Error(`Unknown DB engine type: ${entry.type}`)
+  }
   // Lazy-getters: каждый раз перечитываем актуальную запись из конфига,
   // чтобы edits в Settings подхватывались без пересоздания инстанса
   // (restoreJobs Map пережил бы такие правки, что важно).
-  const lazy = {
+  return def.factory({
     getHost: () => {
       const fresh = getDatabases().find((e) => e.id === entry.id)
       return fresh?.host || entry.host
@@ -86,10 +89,7 @@ function buildEngine(entry) {
       const fresh = getDatabases().find((e) => e.id === entry.id)
       return fresh?.executable || entry.executable
     }
-  }
-  if (entry.type === 'mysql') return createMysqlEngine(lazy)
-  if (entry.type === 'postgres') return createPostgresEngine(lazy)
-  throw new Error(`Unknown DB engine type: ${entry.type}`)
+  })
 }
 
 /**
@@ -149,21 +149,30 @@ export function getEngineForProject(slug) {
 export function resolveProjectDb(slug) {
   const config = getConfig()
   const ov = (config.databaseOverrides || {})[slug] || {}
-  const dbName = (ov.name && ov.name.trim()) || (slug || '').toLowerCase()
 
   let engine = null
   let engineId = null
+  let engineType = null
   if (ov.databaseId) {
     engine = getEngine(ov.databaseId)
-    if (engine) engineId = ov.databaseId
+    if (engine) {
+      engineId = ov.databaseId
+      engineType = engine.type
+    }
   }
   if (!engine) {
     const dbs = getDatabases()
     if (dbs.length > 0) {
       engineId = dbs[0].id
       engine = getEngine(engineId)
+      engineType = dbs[0].type
     }
   }
+  // Имя БД: explicit override > per-engine normalize(slug). Раньше тут
+  // был хардкод slug.toLowerCase() — для будущих движков типа Mongo
+  // (допускают дефис) дефолтная нормализация может отличаться.
+  const dbName =
+    (ov.name && ov.name.trim()) || defaultDbNameFor(engineType, slug)
   return { engineId, engine, dbName }
 }
 

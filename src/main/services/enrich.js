@@ -18,6 +18,7 @@
 
 import * as fsService from './fs-service.js'
 import { getEngine, getDefaultEngine } from './db/registry.js'
+import { defaultDbNameFor } from './db/engines.js'
 import { getConfig } from './config-store.js'
 
 /**
@@ -61,7 +62,6 @@ export async function enrichProjects(projects) {
 
   for (const p of projects) {
     const ov = dbOverrides[p.slug] || {}
-    const dbName = (ov.name && ov.name.trim()) || p.slug.toLowerCase()
     let engine = null
     let engineKey = null
     if (ov.databaseId) {
@@ -76,6 +76,10 @@ export async function enrichProjects(projects) {
       // Нет ни override'а, ни default — db остаётся в нулевом состоянии.
       continue
     }
+    // Имя БД по дефолту нормализуется per-engine (SQL-движки → lowercase;
+    // будущие движки могут иметь другие правила, см. defaultDbNameFor).
+    const dbName =
+      (ov.name && ov.name.trim()) || defaultDbNameFor(engine.type, p.slug)
     const resolved = { engineId: engineKey, engine, dbName }
     resolvedBySlug.set(p.slug, resolved)
     if (!projectsByEngine.has(engineKey)) {
@@ -109,12 +113,6 @@ export async function enrichProjects(projects) {
         // ignore — size фолбэкнется на null
       }
     }
-    for (const item of items) {
-      // Найти, какой проект соответствует этому resolved-объекту: ищем
-      // по dbName и engineKey (slug сам в `resolved` не лежит).
-      // Проще: пройдёмся по resolvedBySlug.
-    }
-    // Проще: bulk-обход — ниже соберём по slug'у напрямую.
     for (const [slug, resolved] of resolvedBySlug.entries()) {
       if (resolved.engineId !== engineKey) continue
       dbInfoBySlug.set(slug, {
@@ -135,13 +133,30 @@ export async function enrichProjects(projects) {
         ? fsService.projectExists(projectsRoot, p.slug)
         : false
 
-      const runnableSubpath = cloned
-        ? await fsService.resolveRunnableSubpath(
+      // runnableSubpath — .NET-специфичная подсказка (.sln + Program.cs).
+      // Для не-.NET стеков подкаталог берётся из runOverrides[slug].cwd
+      // напрямую и UI это и так показывает; запускать .sln-эвристику
+      // не нужно. Skip'аем, если стек определяется и не равен 'dotnet'.
+      let runnableSubpath = null
+      if (cloned) {
+        let stackKind = null
+        try {
+          const detected = await fsService.detectStack(localPath)
+          stackKind = detected?.stackKind || null
+        } catch {
+          // ignore
+        }
+        // Stack может быть unknown (rare). Тогда всё-таки запускаем
+        // эвристику — backward compat для миксованных проектов где
+        // detectStack ничего не вернул.
+        if (stackKind === 'dotnet' || stackKind === null) {
+          runnableSubpath = await fsService.resolveRunnableSubpath(
             localPath,
             slugLower,
             cwdOverrides
           )
-        : null
+        }
+      }
 
       const dump = await fsService.findDump(dumpsRoot, p.slug)
 
@@ -150,6 +165,11 @@ export async function enrichProjects(projects) {
         exists: false,
         sizeBytes: null
       }
+      // skipDb — намерение проекта «у меня нет БД», ставится в Setup
+      // dialog. UI на странице проекта прячет Database override-секцию
+      // когда выставлено, чтобы не сбивать пользователя выбором имени
+      // БД для no-db проекта (frontend / library).
+      const skipDb = !!dbOverrides[p.slug]?.skipDb
 
       return {
         ...p,
@@ -166,7 +186,8 @@ export async function enrichProjects(projects) {
           sizeBytes: info.sizeBytes,
           dumpPath: dump?.path ?? null,
           dumpFilename: dump?.filename ?? null,
-          dumpMtime: dump?.mtime ?? null
+          dumpMtime: dump?.mtime ?? null,
+          skipDb
         }
       }
     })

@@ -19,8 +19,31 @@ import { getConfig } from './config-store.js'
 import {
   projectExists,
   projectPath,
-  resolveRunnableSubpath
+  resolveRunnableSubpath,
+  detectStack
 } from './fs-service.js'
+
+/**
+ * Per-stack hooks: cwd-fallback и доп-environment. Раньше dotnet-логика
+ * (resolveRunnableSubpath + DOTNET_NOLOGO=1) выполнялась для каждого
+ * проекта, что и неправильно семантически (Node-проект не нуждается в
+ * .sln-эвристике), и шумит в env незвёзвщими переменными.
+ *
+ * Контракт хука:
+ *   resolveCwd(repoPath, slug) → string|null   путь относительно repo
+ *                                               (или null если
+ *                                               авто-cwd не нужен)
+ *   env: Record<string,string>                 дополнительные env-vars
+ *
+ * Stack без хука = run из repo root, env только process.env.
+ */
+const STACK_HOOKS = {
+  dotnet: {
+    resolveCwd: async (repoPath, slug) =>
+      resolveRunnableSubpath(repoPath, slug.toLowerCase(), {}),
+    env: { DOTNET_NOLOGO: '1' }
+  }
+}
 
 // Расширенный URL_REGEX: ловит .NET (Now listening on:), Node/Express
 // (listening on http...), Vite (Local: http...), общий «Server running at».
@@ -85,8 +108,9 @@ function parseCommand(cmdline) {
  *      C:\affiliatecrm и spawn упал бы с ENOENT). Реальные абсолютные
  *      пути с drive-letter (Windows: «C:\…») / POSIX-абсолютные на
  *      *nix остаются абсолютными.
- *   2. Auto-detect через resolveRunnableSubpath (.NET-эвристика по
- *      .sln/Program.cs) — fallback для .NET-проектов без явного cwd.
+ *   2. Auto-detect через STACK_HOOKS[stackKind].resolveCwd (.NET-логика
+ *      раньше единственная и применялась ко всем стекам — теперь
+ *      gated за stackKind=='dotnet').
  *   3. Сам project root.
  */
 function resolveOverrideCwd(repoPath, raw) {
@@ -105,16 +129,15 @@ function resolveOverrideCwd(repoPath, raw) {
   return path.join(repoPath, cwd.replace(/^[\\/]+/, ''))
 }
 
-async function resolveCwd(slug, repoPath, override) {
+async function resolveCwd(slug, repoPath, override, stackKind) {
   const overrideCwd = resolveOverrideCwd(repoPath, override?.cwd)
   if (overrideCwd) return overrideCwd
 
-  const subpath = await resolveRunnableSubpath(
-    repoPath,
-    slug.toLowerCase(),
-    {}
-  )
-  if (subpath) return path.join(repoPath, subpath)
+  const hook = STACK_HOOKS[stackKind]
+  if (hook?.resolveCwd) {
+    const subpath = await hook.resolveCwd(repoPath, slug)
+    if (subpath) return path.join(repoPath, subpath)
+  }
   return repoPath
 }
 
@@ -153,9 +176,21 @@ export async function run(slug) {
       `Run command is empty for ${slug}. Set it in Settings → Defaults or per-project in the drawer.`
     )
   }
-  const [bin, ...args] = tokens
+  const [bin] = tokens
 
-  const cwd = await resolveCwd(slug, repoPath, override)
+  // Стек определяем один раз: и cwd-fallback, и доп-env читают его
+  // через STACK_HOOKS. Best-effort — если detect упал, считаем что
+  // stack unknown (хук не сработает, что эквивалентно прежнему
+  // поведению non-.NET проекта).
+  let stackKind = null
+  try {
+    const detected = await detectStack(repoPath)
+    stackKind = detected?.stackKind || null
+  } catch {
+    // ignore
+  }
+
+  const cwd = await resolveCwd(slug, repoPath, override, stackKind)
   // Проверяем cwd ДО spawn'а: иначе spawn упадёт с ENOENT, который
   // неотличим от «binary not found», и пользователь увидит вводящее
   // в заблуждение сообщение про dotnet хотя проблема в неверном
@@ -166,15 +201,33 @@ export async function run(slug) {
     )
   }
 
-  const child = spawn(bin, args, {
-    cwd,
-    shell: false,
-    detached: false,
-    windowsHide: true,
-    // DOTNET_NOLOGO для .NET-стека убирает баннер в stdout. Не вредит
-    // другим стекам (для них переменная игнорируется), оставляем.
-    env: { ...process.env, DOTNET_NOLOGO: '1' }
-  })
+  // На Windows многие реальные dev-команды (`npm`, `yarn`, `pnpm`, `npx`,
+  // `vite`, `next`, etc.) — это `.cmd`/`.bat`-шимы. Node со starting from
+  // 16+ не запускает их напрямую через spawn без shell:true (CVE-2024-27980).
+  // Поэтому на Windows пускаем через cmd.exe целым cmdline'ом — он сам
+  // разрезолвит шим через PATHEXT и обработает quoting как пользователь
+  // ожидает. На POSIX оставляем direct exec — там npm и компания обычно
+  // нативные исполняемые с shebang и shell:true только мешает
+  // (промежуточный sh-процесс между нами и реальной программой,
+  // tree-kill сложнее). Если detected `bin` уже выглядит как абсолютный
+  // .exe-путь — тоже не нужен shell.
+  const isWin = process.platform === 'win32'
+  const useShell =
+    isWin && !/^[a-z]:[\\/].+\.exe$/i.test(bin)
+
+  const spawnArgs = useShell
+    ? [cmdline, [], { cwd, shell: true, detached: false, windowsHide: true }]
+    : [bin, tokens.slice(1), { cwd, shell: false, detached: false, windowsHide: true }]
+
+  // Per-stack env: только то, что нужно конкретному стеку. Раньше
+  // DOTNET_NOLOGO ставился на каждый spawn независимо от стека —
+  // безвредно, но шумно в env у Node/Rust/Go.
+  spawnArgs[2].env = {
+    ...process.env,
+    ...(STACK_HOOKS[stackKind]?.env || {})
+  }
+
+  const child = spawn(...spawnArgs)
 
   await new Promise((resolve, reject) => {
     const onSpawn = () => {
@@ -227,7 +280,32 @@ export async function run(slug) {
 
   child.on('exit', (code, signal) => {
     processes.delete(slug)
-    emit('exit', { slug, code, signal: signal || null })
+    // Когда процесс умирает, не успев забиндить порт — это почти всегда
+    // ошибка пользователя (`npm install` не пробежал, нет start-скрипта,
+    // упало с module-not-found, etc.) Отдаём в renderer достаточно
+    // диагностики чтобы показать toast: код выхода, был ли это
+    // «ранний» exit (без порта), и tail последних логов.
+    // userStopped — если юзер сам нажал Stop, не алармируем: на Windows
+    // tree-kill даёт code=1, signal=null (taskkill /F), что иначе
+    // выглядит как fail.
+    const exitedEarly = handle.port == null
+    const tail = handle.logs.snapshot().slice(-25)
+    const tailText = tail
+      .map((l) => l.text)
+      .join('')
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .slice(-12)
+      .join('\n')
+    emit('exit', {
+      slug,
+      code,
+      signal: signal || null,
+      exitedEarly,
+      userStopped: !!handle.userStopped,
+      tail: tailText
+    })
   })
 
   return { pid: child.pid, cwd }
@@ -249,6 +327,10 @@ export function stop(slug) {
   if (!handle) {
     throw new Error(`${slug} is not running`)
   }
+  // Помечаем handle до tree-kill: child.on('exit') может выстрелить
+  // прежде чем callback tree-kill'а вернётся — тогда exit-event прилетит
+  // в renderer без флага userStopped и юзер увидит ложный toast.
+  handle.userStopped = true
   return new Promise((resolve, reject) => {
     treeKill(handle.pid, 'SIGTERM', (err) => {
       if (err) reject(err)
@@ -278,6 +360,7 @@ export function logs(slug) {
 
 export function killAll() {
   for (const [, h] of processes) {
+    h.userStopped = true
     try {
       treeKill(h.pid, 'SIGTERM')
     } catch {

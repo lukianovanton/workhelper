@@ -580,6 +580,7 @@ const STEPS_ORDER = [
   { kind: 'clone', label: 'Clone repository' },
   { kind: 'db-create', label: 'Create database' },
   { kind: 'db-restore', label: 'Restore dump' },
+  { kind: 'deps', label: 'Install dependencies' },
   { kind: 'workspace', label: 'Open VS Code workspace' }
 ]
 
@@ -598,8 +599,7 @@ function RunningSteps({ project, steps, phase, error, runAfter }) {
 
       {phase === 'finished' && runAfter && (
         <div className="text-sm text-muted-foreground pl-7">
-          dotnet starting in background — runtime status updates in the
-          drawer.
+          Starting in background — runtime status updates in the drawer.
         </div>
       )}
 

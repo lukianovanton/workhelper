@@ -661,6 +661,12 @@ export function createGitHubProvider({
 
   return {
     type: 'github',
+    capabilities: {
+      builds: true,
+      branches: true,
+      commits: true,
+      commitDiff: true
+    },
     testConnection,
     listRepos,
     getRepo,

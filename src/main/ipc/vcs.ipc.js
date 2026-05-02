@@ -43,18 +43,51 @@ export function registerVcsIpc() {
     return enrichProjects(projects)
   })
 
-  ipcMain.handle('vcs:test', () => {
-    // Smoke-test: первый сконфигурированный source. Для конкретного
-    // подключения есть sources:test(id).
-    const first = listSources()[0]
-    if (!first) {
-      return Promise.resolve({
+  ipcMain.handle('vcs:test', async () => {
+    // Smoke-test всех source'ов параллельно. Возвращает массив
+    // { sourceId, sourceName, sourceType, result } чтобы UI мог
+    // показать состояние каждого. Для теста конкретного подключения
+    // используется sources:test(id).
+    const sources = listSources()
+    if (sources.length === 0) {
+      return {
         ok: false,
         stage: 'config',
-        message: 'No VCS source configured.'
-      })
+        message: 'No VCS source configured.',
+        sources: []
+      }
     }
-    return getProvider(first.id).testConnection()
+    const results = await Promise.all(
+      sources.map(async (s) => {
+        const provider = getProvider(s.id)
+        if (!provider) {
+          return {
+            sourceId: s.id,
+            sourceName: s.name,
+            sourceType: s.type,
+            result: { ok: false, stage: 'config', message: 'Provider not built' }
+          }
+        }
+        try {
+          const result = await provider.testConnection()
+          return {
+            sourceId: s.id,
+            sourceName: s.name,
+            sourceType: s.type,
+            result
+          }
+        } catch (e) {
+          return {
+            sourceId: s.id,
+            sourceName: s.name,
+            sourceType: s.type,
+            result: { ok: false, stage: 'http', message: e?.message || String(e) }
+          }
+        }
+      })
+    )
+    const allOk = results.every((r) => r.result.ok)
+    return { ok: allOk, sources: results }
   })
 
   ipcMain.handle('vcs:lastCommit', (_event, slug) =>
@@ -99,7 +132,7 @@ export function registerVcsIpc() {
  * Маппинг {sourceId, sourceType, repo} → Project. Source.type попадает
  * в shape чтобы UI мог рисовать бейдж GH/BB без отдельного запроса.
  */
-function toProjectShape({ sourceId, sourceType, repo }) {
+function toProjectShape({ sourceId, sourceType, sourceName, repo }) {
   const slugLower = (repo.slug || '').toLowerCase()
   return {
     slug: repo.slug,
@@ -109,6 +142,7 @@ function toProjectShape({ sourceId, sourceType, repo }) {
     source: {
       providerId: sourceId,
       type: sourceType,
+      name: sourceName || sourceType,
       repoSlug: repo.slug,
       providerData: repo.projectKey ? { projectKey: repo.projectKey } : {}
     },

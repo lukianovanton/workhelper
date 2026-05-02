@@ -15,6 +15,7 @@ import { api } from './api'
 export default function App() {
   useRestoreSubscription()
   useSetupSubscription()
+  useProcessExitSubscription()
   const update = useUpdateBanner()
 
   return (
@@ -120,6 +121,42 @@ function useSetupSubscription() {
     })
     return unsub
   }, [queryClient])
+}
+
+/**
+ * Подписка на process:exit. Когда процесс падает — особенно
+ * рано (без обнаруженного порта) или с ненулевым exit code —
+ * показываем toast с tail логов чтобы юзер увидел причину.
+ * Раньше падение было «тихим»: «Started... Waiting for port…», а
+ * потом просто исчезало без объяснения.
+ */
+function useProcessExitSubscription() {
+  useEffect(() => {
+    return api.process.on('exit', (evt) => {
+      if (!evt || typeof evt.slug !== 'string') return
+      const { slug, code, signal, exitedEarly, userStopped, tail } = evt
+      // Юзер сам нажал Stop — не алармируем независимо от exit code'а.
+      // На Windows tree-kill = taskkill /F, exit code обычно 1 без
+      // signal'а; иначе мы бы орали «exit 1 before binding a port» на
+      // совершенно нормальном завершении.
+      if (userStopped) return
+      // Чистый SIGTERM без кода — внешний kill (редко). Не шумим.
+      if (signal === 'SIGTERM' && code == null) return
+      // Завершение с кодом 0 после нормальной работы — обычное «готов»
+      // (короткие скрипты типа build). Не алармируем.
+      const failedExit = code !== 0 && code != null
+      if (!failedExit && !exitedEarly) return
+
+      const codeLabel =
+        code != null ? `exit ${code}` : signal ? `signal ${signal}` : 'exited'
+      const earlyHint = exitedEarly ? ' before binding a port' : ''
+      const tailLines =
+        tail && tail.length > 0
+          ? `\n${tail.split('\n').slice(-4).join('\n')}`
+          : ''
+      toast.error(`${slug}: ${codeLabel}${earlyHint}.${tailLines}`)
+    })
+  }, [])
 }
 
 function useRestoreSubscription() {

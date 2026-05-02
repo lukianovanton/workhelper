@@ -19,30 +19,29 @@
 
 import { getConfig } from '../config-store.js'
 import { getSecret } from '../secrets.js'
-import { createBitbucketProvider } from './bitbucket-provider.js'
-import { createGitHubProvider } from './github-provider.js'
+import {
+  getVcsProviderDef,
+  isSupportedVcsType
+} from './providers.js'
 
 /**
  * @typedef {Object} VcsSource
  * @property {string} id
- * @property {'bitbucket' | 'github'} type
+ * @property {string} type             'bitbucket' | 'github' | <future>
  * @property {string} name             user-facing label
- * @property {string} workspace        BB workspace slug / GH owner
- * @property {string} username         Atlassian email / GitHub login
+ * @property {string} workspace        BB workspace slug / GH owner / GitLab group / etc.
+ * @property {string} username         Atlassian email / VCS login
  * @property {string} gitUsername      git URL username
  * @property {string} secretKey        ключ в secrets store для API token'а
  */
 
-const SUPPORTED_TYPES = new Set(['bitbucket', 'github'])
-
 /**
  * Список источников из config.sources[]. config-store сам мигрирует
- * legacy `bitbucket: {}` в sources[0] на первом чтении, поэтому здесь
- * никаких fallback'ов больше не нужно.
+ * legacy `bitbucket: {}` в sources[0] на первом чтении.
  *
- * Phase B: фильтруем на known типы (bitbucket / github). Неизвестные
- * type'ы (например при downgrade c новой версии) просто скипаются —
- * registry такие игнорирует, чтобы не упасть.
+ * Фильтруем на known types по VCS_PROVIDER_DEFS (см. providers.js).
+ * Неизвестные type'ы (например при downgrade c новой версии) просто
+ * скипаются — registry такие игнорирует, чтобы не упасть.
  *
  * @returns {VcsSource[]}
  */
@@ -50,17 +49,19 @@ function getSources() {
   const config = getConfig()
   const sources = Array.isArray(config.sources) ? config.sources : []
   return sources
-    .filter((s) => s && SUPPORTED_TYPES.has(s.type))
+    .filter((s) => s && isSupportedVcsType(s.type))
     .map((s) => ({
       id: s.id,
       type: s.type,
-      name:
-        s.name ||
-        s.workspace ||
-        (s.type === 'github' ? 'GitHub' : 'Bitbucket'),
+      name: s.name || s.workspace || getVcsProviderDef(s.type).fallbackName,
       workspace: s.workspace || '',
       username: s.username || '',
       gitUsername: s.gitUsername || '',
+      // Provider-specific options. Каждый provider читает только свои
+      // ключи из этого блока; неизвестные игнорятся. Это даёт расширяемый
+      // канал для per-source настроек без расширения базового shape'а
+      // (BB: templatePrefix; будущие GitLab/Azure DevOps добавят свои).
+      providerOptions: s.providerOptions || {},
       secretKey: `vcs:${s.id}:token`
     }))
 }
@@ -69,35 +70,30 @@ function getSources() {
 const providers = new Map()
 
 function buildProvider(source) {
-  if (source.type === 'bitbucket') {
-    return createBitbucketProvider({
-      getWorkspace: () => {
-        const fresh = getSources().find((s) => s.id === source.id)
-        return fresh?.workspace || source.workspace
-      },
-      getUsername: () => {
-        const fresh = getSources().find((s) => s.id === source.id)
-        return fresh?.username || source.username
-      },
-      getToken: () => getSecret(source.secretKey),
-      cacheKey: `vcs-cache-${source.id}`
-    })
+  const def = getVcsProviderDef(source.type)
+  if (!def) {
+    throw new Error(`Unknown VCS source type: ${source.type}`)
   }
-  if (source.type === 'github') {
-    return createGitHubProvider({
-      getOwner: () => {
-        const fresh = getSources().find((s) => s.id === source.id)
-        return fresh?.workspace || source.workspace
-      },
-      getUsername: () => {
-        const fresh = getSources().find((s) => s.id === source.id)
-        return fresh?.username || source.username
-      },
-      getToken: () => getSecret(source.secretKey),
-      cacheKey: `vcs-cache-${source.id}`
-    })
-  }
-  throw new Error(`Unknown VCS source type: ${source.type}`)
+  return def.factory({
+    getWorkspace: () => {
+      const fresh = getSources().find((s) => s.id === source.id)
+      return fresh?.workspace || source.workspace
+    },
+    getUsername: () => {
+      const fresh = getSources().find((s) => s.id === source.id)
+      return fresh?.username || source.username
+    },
+    getToken: () => getSecret(source.secretKey),
+    cacheKey: `vcs-cache-${source.id}`,
+    // BB-специфичный template-prefix: legacy default 'TP' если в
+    // source.providerOptions ничего не задано. Другие провайдеры этот
+    // getter получают, но игнорируют.
+    getTemplatePrefix: () => {
+      const fresh = getSources().find((s) => s.id === source.id) || source
+      const opt = fresh.providerOptions?.templatePrefix
+      return typeof opt === 'string' ? opt : 'TP'
+    }
+  })
 }
 
 /**
@@ -195,6 +191,7 @@ export async function listAllRepos(forceRefresh = false) {
         out.push({
           sourceId: source.id,
           sourceType: source.type,
+          sourceName: source.name,
           repo
         })
       }

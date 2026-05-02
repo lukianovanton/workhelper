@@ -11,6 +11,11 @@ import {
   invalidateEngines,
   listDatabaseConfigs
 } from '../services/db/registry.js'
+import {
+  getDbEngineDef,
+  isSupportedDbType
+} from '../services/db/engines.js'
+import * as fsService from '../services/fs-service.js'
 
 /**
  * IPC для управления DB-подключениями (Phase A.5b).
@@ -42,16 +47,11 @@ export function registerDatabasesIpc() {
     if (!payload || typeof payload !== 'object') {
       throw new Error('Invalid database payload')
     }
-    if (payload.type !== 'mysql' && payload.type !== 'postgres') {
+    if (!isSupportedDbType(payload.type)) {
       throw new Error(`Unsupported database type: ${payload.type}`)
     }
-    const isPostgres = payload.type === 'postgres'
-    const defaultPort = isPostgres ? 5432 : 3306
-    const defaultUser = isPostgres ? 'postgres' : 'root'
-    const fallbackName = isPostgres ? 'PostgreSQL' : 'MySQL'
-    const id =
-      payload.id ||
-      `${payload.type}-${randomUUID()}`
+    const def = getDbEngineDef(payload.type)
+    const id = payload.id || `${payload.type}-${randomUUID()}`
     const config = getConfig()
     const databases = Array.isArray(config.databases)
       ? [...config.databases]
@@ -65,11 +65,11 @@ export function registerDatabasesIpc() {
       name:
         payload.name ||
         (payload.host
-          ? `${payload.user || defaultUser}@${payload.host}`
-          : fallbackName),
+          ? `${payload.user || def.defaultUser}@${payload.host}`
+          : def.fallbackName),
       host: payload.host || 'localhost',
-      port: payload.port || defaultPort,
-      user: payload.user || defaultUser,
+      port: payload.port || def.defaultPort,
+      user: payload.user || def.defaultUser,
       executable: payload.executable || ''
     })
     setConfig({ databases })
@@ -159,19 +159,53 @@ export function registerDatabasesIpc() {
     }
   })
 
-  // Авто-детект подходящего DB-подключения для проекта. Перебираем
-  // все сконфигурированные engines, на каждом ищем БД совпадающую со
-  // slug.toLowerCase() (exact). Если exact-нет — пробуем fuzzy (имя
-  // содержит slug или slug содержит имя).
-  //   exact > fuzzy > null. Возвращаем первый exact, иначе первый fuzzy.
+  // Авто-детект подходящего DB-подключения для проекта.
+  //
+  // Логика приоритетов (best → worst):
+  //   1. exact name match на любом engine        → confidence='exact'
+  //   2. fuzzy name match на engine типа,
+  //      совпадающего с детектом стека            → confidence='fuzzy'
+  //   3. fuzzy name match на любом engine        → confidence='fuzzy'
+  //   4. engine-only: stack-detect нашёл тип
+  //      (Postgres/MySQL по сигналам в коде),
+  //      но имя БД не угадали → возвращаем
+  //      первое подключение этого типа           → confidence='engine-only'
+  //
+  // (4) — именно для случая «slug AffiliateCRM, БД на постгресе называется
+  // qacrm»: имя не fuzzy-матчится со slug'ом, но в коде .csproj есть
+  // Npgsql → подсветим Postgres-подключение, юзер дальше выберет имя
+  // из dropdown'а сам.
   ipcMain.handle('databases:detectForProject', async (_event, slug) => {
     if (!slug || typeof slug !== 'string') return null
     const target = slug.toLowerCase()
     const dbs = listDatabaseConfigs()
-    let firstFuzzy = null
+
+    // Stack-engine — best-effort. Если проект не клонирован или detect
+    // не дал результата, просто null'ом.
+    let stackEngineType = null
+    try {
+      const projectsRoot = getConfig().paths?.projectsRoot
+      if (projectsRoot && fsService.projectExists(projectsRoot, slug)) {
+        const detected = await fsService.detectStack(
+          fsService.projectPath(projectsRoot, slug)
+        )
+        stackEngineType = detected?.databaseEngine || null
+      }
+    } catch {
+      // ignore — детект не critical path
+    }
+
+    let fuzzyOnSameType = null
+    let fuzzyAny = null
+    let firstOfDetectedType = null
+
     for (const d of dbs) {
       const engine = getEngine(d.id)
       if (!engine) continue
+      const isSameType = stackEngineType && d.type === stackEngineType
+      if (isSameType && !firstOfDetectedType) {
+        firstOfDetectedType = { databaseId: d.id, dbType: d.type }
+      }
       let names
       try {
         names = await engine.listDatabases()
@@ -185,19 +219,28 @@ export function registerDatabasesIpc() {
           confidence: 'exact'
         }
       }
-      if (!firstFuzzy) {
-        const fuzzy = [...names].find(
-          (n) => n.includes(target) || target.includes(n)
-        )
-        if (fuzzy) {
-          firstFuzzy = {
-            databaseId: d.id,
-            dbName: fuzzy,
-            confidence: 'fuzzy'
-          }
+      const fuzzy = [...names].find(
+        (n) => n.includes(target) || target.includes(n)
+      )
+      if (fuzzy) {
+        const candidate = {
+          databaseId: d.id,
+          dbName: fuzzy,
+          confidence: 'fuzzy'
         }
+        if (isSameType && !fuzzyOnSameType) fuzzyOnSameType = candidate
+        if (!fuzzyAny) fuzzyAny = candidate
       }
     }
-    return firstFuzzy
+    if (fuzzyOnSameType) return fuzzyOnSameType
+    if (fuzzyAny) return fuzzyAny
+    if (firstOfDetectedType) {
+      return {
+        databaseId: firstOfDetectedType.databaseId,
+        dbName: '',
+        confidence: 'engine-only'
+      }
+    }
+    return null
   })
 }

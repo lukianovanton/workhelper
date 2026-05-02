@@ -1,7 +1,7 @@
 {
   "name": "project-hub",
-  "version": "0.5.1",
-  "description": "Project hub for Bitbucket-based .NET projects",
+  "version": "0.6.0",
+  "description": "One-click local dev environment manager — multi-source VCS, multi-engine DB, generic stack detection",
   "author": "Anton",
   "main": "./out/main/index.js",
   "scripts": {

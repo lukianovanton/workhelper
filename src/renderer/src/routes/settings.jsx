@@ -59,34 +59,30 @@ import {
   AlertDialogHeader,
   AlertDialogTitle
 } from '@/components/ui/alert-dialog'
-import { BitbucketSetupGuide } from '@/components/setup-guides/bitbucket'
-import { GitHubSetupGuide } from '@/components/setup-guides/github'
 import { JiraSetupGuide } from '@/components/setup-guides/jira'
 import { PathsSetupGuide } from '@/components/setup-guides/paths'
-import { DatabaseSetupGuide } from '@/components/setup-guides/database'
-import { PostgresSetupGuide } from '@/components/setup-guides/postgres'
 import { DotnetSetupGuide } from '@/components/setup-guides/dotnet'
 import { PresenceSetupGuide } from '@/components/setup-guides/presence'
 import { AppearanceSetupGuide } from '@/components/setup-guides/appearance'
+import {
+  VCS_PROVIDERS,
+  getVcsProvider,
+  listVcsProviders
+} from '@/lib/vcs-providers'
+import {
+  DB_ENGINES,
+  getDbEngine,
+  listDbEngines
+} from '@/lib/db-engines'
 import { useT, SUPPORTED_LANGUAGES } from '@/i18n'
 import { api } from '@/api'
 
-// Реестр всех setup-гайдов: вместо отдельного Dialog на секцию у
-// нас один централизованный, переключающий контент по id. Так
-// проще добавить ещё гайдов и не размножать boilerplate. Заголовки
-// и описания берутся из i18n внутри Dialog'а; здесь только фиксы
-// по компоненту и translation-ключам.
-const SETUP_GUIDES = {
-  bitbucket: {
-    titleKey: 'settings.bitbucket.title',
-    descriptionKey: 'settings.guide.bitbucket.dialogDescription',
-    Component: BitbucketSetupGuide
-  },
-  github: {
-    titleKey: 'settings.github.guide.title',
-    descriptionKey: 'settings.guide.github.dialogDescription',
-    Component: GitHubSetupGuide
-  },
+// Гайды для секций (paths / jira / defaults / presence / appearance) —
+// один централизованный Dialog с переключаемым контентом по id.
+// Гайды для VCS-провайдеров и DB-движков идут из их соответствующих
+// renderer-side реестров (lib/vcs-providers.jsx, lib/db-engines.jsx) —
+// добавление нового провайдера/движка не требует правки этого файла.
+const SECTION_GUIDES = {
   jira: {
     titleKey: 'settings.jira.title',
     descriptionKey: 'settings.guide.jira.dialogDescription',
@@ -96,16 +92,6 @@ const SETUP_GUIDES = {
     titleKey: 'settings.paths.title',
     descriptionKey: 'settings.guide.paths.dialogDescription',
     Component: PathsSetupGuide
-  },
-  database: {
-    titleKey: 'settings.database.title',
-    descriptionKey: 'settings.guide.database.dialogDescription',
-    Component: DatabaseSetupGuide
-  },
-  postgres: {
-    titleKey: 'settings.postgres.guide.title',
-    descriptionKey: 'settings.guide.postgres.dialogDescription',
-    Component: PostgresSetupGuide
   },
   defaults: {
     titleKey: 'settings.defaults.title',
@@ -122,6 +108,32 @@ const SETUP_GUIDES = {
     descriptionKey: 'settings.guide.appearance.dialogDescription',
     Component: AppearanceSetupGuide
   }
+}
+
+/**
+ * Резолв гайда по его id. id может быть:
+ *   - тип VCS-провайдера ('bitbucket', 'github', ...) → берём из VCS_PROVIDERS
+ *   - тип DB-engine'а ('mysql', 'postgres', ...) → DB_ENGINES
+ *   - id секции ('jira', 'paths', etc.) → SECTION_GUIDES
+ */
+function resolveGuide(id) {
+  const vcs = getVcsProvider(id)
+  if (vcs) {
+    return {
+      titleKey: vcs.guideTitleKey,
+      descriptionKey: vcs.guideDescriptionKey,
+      Component: vcs.GuideComponent
+    }
+  }
+  const db = getDbEngine(id)
+  if (db) {
+    return {
+      titleKey: db.guideTitleKey,
+      descriptionKey: db.guideDescriptionKey,
+      Component: db.GuideComponent
+    }
+  }
+  return SECTION_GUIDES[id] || null
 }
 
 // Persistent: при возврате в Settings показывается тот же раздел,
@@ -169,8 +181,10 @@ export default function Settings() {
   })
   const [jiraApiToken, setJiraApiToken] = useState('')
   const [vscodeDetected, setVscodeDetected] = useState(null)
-  const [mysqlDetected, setMysqlDetected] = useState(null)
-  const [psqlDetected, setPsqlDetected] = useState(null)
+  // Per-engine detected executable, ключ = engine.type. Динамически
+  // строится по DB_ENGINES чтобы добавление нового движка (mssql, mongo)
+  // не требовало правки этого useState.
+  const [dbExecutablesDetected, setDbExecutablesDetected] = useState({})
   const [saving, setSaving] = useState(false)
   const [saveStatus, setSaveStatus] = useState(null)
   const [testingJira, setTestingJira] = useState(false)
@@ -215,8 +229,17 @@ export default function Settings() {
   useEffect(() => {
     if (!config) return
     api.config.whichBinary('code').then(setVscodeDetected)
-    api.config.whichBinary('mysql').then(setMysqlDetected)
-    api.config.whichBinary('psql').then(setPsqlDetected)
+    // Парсим список движков из реестра — добавление mssql / mongo
+    // подхватится без правок здесь. Каждый detect асинхронно складывает
+    // результат в dbExecutablesDetected[engine.type].
+    for (const engine of listDbEngines()) {
+      api.config.whichBinary(engine.executableName).then((path) => {
+        setDbExecutablesDetected((prev) => ({
+          ...prev,
+          [engine.type]: path
+        }))
+      })
+    }
   }, [config])
 
   if (!config) {
@@ -325,51 +348,29 @@ export default function Settings() {
               типа. Остальные секции (paths, defaults, jira, presence,
               appearance) пишут в config — там остаётся обычный Save. */}
           {activeSection === 'sources' ? (
-            <>
+            listVcsProviders().map((p) => (
               <Button
+                key={p.type}
                 variant="outline"
                 size="sm"
-                onClick={() =>
-                  sourcesSectionRef.current?.startAdd('bitbucket')
-                }
+                onClick={() => sourcesSectionRef.current?.startAdd(p.type)}
               >
                 <Plus />
-                {t('settings.sources.add.bitbucket')}
+                {t(p.addButtonLabelKey)}
               </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() =>
-                  sourcesSectionRef.current?.startAdd('github')
-                }
-              >
-                <Plus />
-                {t('settings.sources.add.github')}
-              </Button>
-            </>
+            ))
           ) : activeSection === 'database' ? (
-            <>
+            listDbEngines().map((e) => (
               <Button
+                key={e.type}
                 variant="outline"
                 size="sm"
-                onClick={() =>
-                  databasesSectionRef.current?.startAdd('mysql')
-                }
+                onClick={() => databasesSectionRef.current?.startAdd(e.type)}
               >
                 <Plus />
-                {t('settings.databases.add.mysql')}
+                {t(e.addButtonLabelKey)}
               </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() =>
-                  databasesSectionRef.current?.startAdd('postgres')
-                }
-              >
-                <Plus />
-                {t('settings.databases.add.postgres')}
-              </Button>
-            </>
+            ))
           ) : (
             <Button onClick={onSave} disabled={saving}>
               {saving && <Loader2 className="animate-spin" />}
@@ -531,7 +532,7 @@ export default function Settings() {
               <DatabasesSection
                 ref={databasesSectionRef}
                 onOpenGuide={(id) => setGuideOpen(id)}
-                detected={{ mysql: mysqlDetected, postgres: psqlDetected }}
+                detected={dbExecutablesDetected}
               />
             )}
 
@@ -584,22 +585,22 @@ export default function Settings() {
         onOpenChange={(o) => !o && setGuideOpen(null)}
       >
         <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
-          {guideOpen && SETUP_GUIDES[guideOpen] && (
-            <>
-              <DialogHeader>
-                <DialogTitle>
-                  {t(SETUP_GUIDES[guideOpen].titleKey)}
-                </DialogTitle>
-                <DialogDescription>
-                  {t(SETUP_GUIDES[guideOpen].descriptionKey)}
-                </DialogDescription>
-              </DialogHeader>
-              {(() => {
-                const G = SETUP_GUIDES[guideOpen].Component
-                return <G />
-              })()}
-            </>
-          )}
+          {(() => {
+            const guide = guideOpen ? resolveGuide(guideOpen) : null
+            if (!guide) return null
+            const G = guide.Component
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle>{t(guide.titleKey)}</DialogTitle>
+                  <DialogDescription>
+                    {t(guide.descriptionKey)}
+                  </DialogDescription>
+                </DialogHeader>
+                <G />
+              </>
+            )
+          })()}
         </DialogContent>
       </Dialog>
     </div>
@@ -937,11 +938,15 @@ const SourcesSection = forwardRef(function SourcesSection(
 
   const startAdd = useCallback((type) => {
     const tempId = `__new_${Date.now()}`
+    // Fallback на первый зарегистрированный провайдер если type не
+    // передали (page-header всегда передаёт; защищаемся от программных
+    // ошибок).
+    const resolvedType = type || listVcsProviders()[0]?.type
     setDrafts((prev) => ({
       ...prev,
       [tempId]: {
         id: tempId,
-        type: type || 'bitbucket',
+        type: resolvedType,
         name: '',
         workspace: '',
         username: '',
@@ -984,11 +989,20 @@ const SourcesSection = forwardRef(function SourcesSection(
       // отрабатывает за 30мс и кнопка моргает; пользователь не успевает
       // понять что что-то произошло.
       const work = (async () => {
+        // Провайдеры с одним логином (GitHub: gitUsernameMirrorsUsername=true)
+        // биндят "username"-поле в draft.username, но backend читает
+        // gitUsername при clone(). Зеркалим — как делает saveNew(). Без
+        // этого Apply сохранял пустой gitUsername и git clone падал с
+        // "Git username not configured for source ...".
+        const provider = getVcsProvider(draft.type)
+        const gitUsernameToSave = provider?.form.gitUsernameMirrorsUsername
+          ? draft.username || ''
+          : draft.gitUsername
         await api.sources.update(id, {
           name: draft.name,
           workspace: draft.workspace,
           username: draft.username,
-          gitUsername: draft.gitUsername
+          gitUsername: gitUsernameToSave
         })
         const newToken = tokens[id]
         if (newToken && newToken.trim()) {
@@ -1213,34 +1227,16 @@ function SourceCard({
 }) {
   const t = useT()
   const isNew = !!draft.unsaved
-  const isGithub = draft.type === 'github'
-  const typeLabel = isGithub ? 'GitHub' : 'Bitbucket'
-
-  const workspaceLabelKey = isGithub
-    ? 'settings.github.owner'
-    : 'settings.bitbucket.workspace'
-  const workspaceHintKey = isGithub
-    ? 'settings.github.owner.hint'
-    : 'settings.bitbucket.workspace.hint'
-  const workspacePlaceholder = isGithub ? 'octocat' : 'techgurusit'
-  const gitUsernameLabelKey = isGithub
-    ? 'settings.github.gitUsername'
-    : 'settings.bitbucket.gitUsername'
-  const gitUsernameHintKey = isGithub
-    ? 'settings.github.gitUsername.hint'
-    : 'settings.bitbucket.gitUsername.hint'
-  const tokenLabelKey = isGithub
-    ? 'settings.github.token'
-    : 'settings.bitbucket.token'
-  const tokenHintKey = isGithub
-    ? 'settings.github.token.hint'
-    : 'settings.bitbucket.token.hint'
+  const provider = getVcsProvider(draft.type)
+  // Fallback на bitbucket-форму чтобы карточка не падала, если в конфиге
+  // оказался unknown type (например downgrade с новой версии). Это
+  // лучше, чем render-краш — пользователь видит карточку и может удалить.
+  const form = (provider || VCS_PROVIDERS.bitbucket).form
+  const typeLabel = (provider || VCS_PROVIDERS.bitbucket).label
 
   const titleText = isNew
     ? t(
-        isGithub
-          ? 'settings.sources.newSource.github'
-          : 'settings.sources.newSource.bitbucket'
+        (provider || VCS_PROVIDERS.bitbucket).newSourceTitleKey
       )
     : draft.name || draft.workspace || typeLabel
   const subtitleText = isNew
@@ -1262,9 +1258,7 @@ function SourceCard({
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() =>
-                  onOpenGuide(isGithub ? 'github' : 'bitbucket')
-                }
+                onClick={() => onOpenGuide(draft.type)}
                 title={t('settings.openSetupGuide')}
               >
                 <BookOpen size={13} />
@@ -1275,8 +1269,10 @@ function SourceCard({
                 <Button
                   size="sm"
                   onClick={() => {
-                    // Для GitHub username = git-username (один логин).
-                    if (isGithub) {
+                    // Провайдеры с одним логином (GitHub) сохраняют username
+                    // и в gitUsername — один источник истины. С отдельным
+                    // login + git-username (BB) поля независимы.
+                    if (form.gitUsernameMirrorsUsername) {
                       onUpdate('gitUsername', draft.username || '')
                     }
                     onSave()
@@ -1351,48 +1347,55 @@ function SourceCard({
           <Input
             value={draft.name}
             onChange={(e) => onUpdate('name', e.target.value)}
-            placeholder={isGithub ? 'GitHub' : 'techgurusit'}
+            placeholder={form.namePlaceholder}
           />
         </Field>
 
-        {!isGithub && (
+        {form.showEmailField && (
           <Field
-            label={t('settings.bitbucket.email')}
-            hint={t('settings.bitbucket.email.hint')}
+            label={t(form.emailLabelKey)}
+            hint={t(form.emailHintKey)}
           >
             <Input
               type="email"
               value={draft.username}
               onChange={(e) => onUpdate('username', e.target.value)}
-              placeholder="you@example.com"
+              placeholder={form.emailPlaceholder}
             />
           </Field>
         )}
-        <Field label={t(workspaceLabelKey)} hint={t(workspaceHintKey)}>
+        <Field
+          label={t(form.workspaceLabelKey)}
+          hint={t(form.workspaceHintKey)}
+        >
           <Input
             value={draft.workspace}
             onChange={(e) => onUpdate('workspace', e.target.value)}
-            placeholder={workspacePlaceholder}
+            placeholder={form.workspacePlaceholder}
           />
         </Field>
         <Field
-          label={t(gitUsernameLabelKey)}
-          hint={t(gitUsernameHintKey)}
+          label={t(form.gitUsernameLabelKey)}
+          hint={t(form.gitUsernameHintKey)}
         >
           <Input
-            value={isGithub ? draft.username : draft.gitUsername}
+            value={
+              form.gitUsernameMirrorsUsername
+                ? draft.username
+                : draft.gitUsername
+            }
             onChange={(e) =>
               onUpdate(
-                isGithub ? 'username' : 'gitUsername',
+                form.gitUsernameMirrorsUsername ? 'username' : 'gitUsername',
                 e.target.value
               )
             }
-            placeholder={isGithub ? 'octocat' : 'antonreact1'}
+            placeholder={form.gitUsernamePlaceholder}
           />
         </Field>
         <SecretField
-          label={t(tokenLabelKey)}
-          hint={t(tokenHintKey)}
+          label={t(form.tokenLabelKey)}
+          hint={t(form.tokenHintKey)}
           status={!isNew && draft.hasToken}
           value={token}
           onChange={onSetToken}
@@ -1490,16 +1493,16 @@ const DatabasesSection = forwardRef(function DatabasesSection(
 
   const startAdd = useCallback((type) => {
     const tempId = `__new_${Date.now()}`
-    const isPostgres = type === 'postgres'
+    const engine = getDbEngine(type) || DB_ENGINES.mysql
     setDrafts((prev) => ({
       ...prev,
       [tempId]: {
         id: tempId,
-        type: type || 'mysql',
+        type: engine.type,
         name: '',
         host: 'localhost',
-        port: isPostgres ? 5432 : 3306,
-        user: isPostgres ? 'postgres' : 'root',
+        port: engine.defaultPort,
+        user: engine.defaultUser,
         executable: '',
         hasPassword: false,
         unsaved: true
@@ -1765,38 +1768,20 @@ function DatabaseCard({
 }) {
   const t = useT()
   const isNew = !!draft.unsaved
-  const isPostgres = draft.type === 'postgres'
-  const typeLabel = isPostgres ? 'PostgreSQL' : 'MySQL'
+  // Fallback на mysql-форму если в конфиге unknown type (downgrade-сценарий).
+  const engine = getDbEngine(draft.type) || DB_ENGINES.mysql
+  const form = engine.form
+  const typeLabel = engine.label
 
-  const portPlaceholder = isPostgres ? '5432' : '3306'
-  const userPlaceholder = isPostgres ? 'postgres' : 'root'
-  const execLabelKey = isPostgres
-    ? 'settings.database.psqlExecutable'
-    : 'settings.database.mysqlExecutable'
-  const execPlaceholder = isPostgres
-    ? 'C:\\path\\to\\psql.exe'
-    : 'C:\\path\\to\\mysql.exe'
-  const execNotFoundKey = isPostgres
-    ? 'settings.database.psqlExecutable.notFound'
-    : 'settings.database.mysqlExecutable.notFound'
-  const execOptionalKey = isPostgres
-    ? 'settings.database.psqlExecutable.optional'
-    : 'settings.database.mysqlExecutable.optional'
-  // detected — { mysql, postgres } из родителя; берём свою ветку.
+  // detected — карта по type'у движка из родителя ({ mysql, postgres, ... }).
   // Для bin-директории Postgres лежит в C:\Program Files\PostgreSQL\<v>\bin\,
   // detect возвращает абсолютный путь к psql.exe — kept as-is. У нас
   // engine.resolveCli умеет принимать как path/psql.exe, так и
   // path/pg_restore.exe — он сам разрулит соседний бинарь.
-  const detectedForType = isPostgres
-    ? detected?.postgres ?? null
-    : detected?.mysql ?? null
+  const detectedForType = detected?.[draft.type] ?? null
 
   const titleText = isNew
-    ? t(
-        isPostgres
-          ? 'settings.databases.newDatabase.postgres'
-          : 'settings.databases.newDatabase.mysql'
-      )
+    ? t(engine.newDatabaseTitleKey)
     : draft.name || `${draft.user || typeLabel}@${draft.host || ''}`
   const subtitleText = isNew
     ? null
@@ -1817,9 +1802,7 @@ function DatabaseCard({
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() =>
-                  onOpenGuide(isPostgres ? 'postgres' : 'database')
-                }
+                onClick={() => onOpenGuide(draft.type)}
                 title={t('settings.openSetupGuide')}
               >
                 <BookOpen size={13} />
@@ -1900,7 +1883,7 @@ function DatabaseCard({
           <Input
             value={draft.name}
             onChange={(e) => onUpdate('name', e.target.value)}
-            placeholder={`${userPlaceholder}@localhost`}
+            placeholder={`${form.userPlaceholder}@localhost`}
           />
         </Field>
         <div className="grid grid-cols-3 gap-4">
@@ -1911,7 +1894,7 @@ function DatabaseCard({
             <Input
               value={draft.host}
               onChange={(e) => onUpdate('host', e.target.value)}
-              placeholder="localhost"
+              placeholder={form.hostPlaceholder}
             />
           </Field>
           <Field label={t('settings.database.port')}>
@@ -1921,7 +1904,7 @@ function DatabaseCard({
               onChange={(e) =>
                 onUpdate('port', Number(e.target.value) || 0)
               }
-              placeholder={portPlaceholder}
+              placeholder={form.portPlaceholder}
             />
           </Field>
         </div>
@@ -1929,7 +1912,7 @@ function DatabaseCard({
           <Input
             value={draft.user}
             onChange={(e) => onUpdate('user', e.target.value)}
-            placeholder={userPlaceholder}
+            placeholder={form.userPlaceholder}
           />
         </Field>
         <SecretField
@@ -1942,14 +1925,14 @@ function DatabaseCard({
           }
         />
         <BinaryPathField
-          label={t(execLabelKey)}
+          label={t(form.executableLabelKey)}
           value={draft.executable}
           detected={detectedForType}
-          placeholder={execPlaceholder}
+          placeholder={form.executablePathPlaceholder}
           notFoundHint={
             draft.executable
-              ? t(execNotFoundKey)
-              : t(execOptionalKey)
+              ? t(form.executableNotFoundKey)
+              : t(form.executableOptionalKey)
           }
           onChange={(v) => onUpdate('executable', v)}
         />

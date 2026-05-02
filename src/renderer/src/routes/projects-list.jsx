@@ -41,6 +41,7 @@ import {
 import { PipelineStateBadge } from '@/routes/project-detail'
 import { WorkspaceNav } from '@/routes/my-tasks'
 import { useT } from '@/i18n'
+import { getVcsProvider } from '@/lib/vcs-providers'
 import {
   EmptyState as SharedEmptyState,
   ErrorState as SharedErrorState
@@ -925,7 +926,10 @@ function ProjectRow({
       </td>
       <td className={cn(cellPad, 'font-mono text-xs')}>
         <div className="inline-flex items-center gap-2">
-          <SourceBadge type={p.source?.type} />
+          <SourceBadge
+            type={p.source?.type}
+            sourceName={p.source?.name}
+          />
           <Highlight text={p.slug} match={search} />
           {taskCount > 0 && (
             <span
@@ -1449,36 +1453,38 @@ function StatusDots({ project, runtime, lastPipeline, pipelineLoaded }) {
 }
 
 /**
- * Маленький бейдж типа источника (GH / BB) рядом со slug в таблице.
- * Делает однозначно понятным, откуда приехал репозиторий, при
- * настроенных нескольких источниках разного типа.
+ * Маленький бейдж типа источника рядом со slug в таблице. Делает
+ * однозначно понятным, откуда приехал репозиторий, при настроенных
+ * нескольких источниках разного типа.
  *
- * Lucide не имеет официальной иконки Bitbucket, поэтому BB рендерим
- * через Cloud + цвет, GH через нативный Github icon.
+ * Иконки/цвета берутся из VCS_PROVIDERS (renderer-side реестр).
+ * Unknown type рендерится initials'ами имени источника — на случай
+ * downgrade'а с провайдером, которого ещё нет в текущей версии.
  */
-function SourceBadge({ type }) {
+function SourceBadge({ type, sourceName }) {
   if (!type) return null
-  if (type === 'github') {
+  const provider = getVcsProvider(type)
+  if (provider) {
+    const Icon = provider.BadgeIcon
     return (
       <span
-        title="GitHub"
-        className="inline-flex items-center text-muted-foreground/60 shrink-0"
+        title={provider.label}
+        className={`inline-flex items-center shrink-0 ${provider.badgeClassName}`}
       >
-        <Github size={12} />
+        <Icon size={12} />
       </span>
     )
   }
-  if (type === 'bitbucket') {
-    return (
-      <span
-        title="Bitbucket"
-        className="inline-flex items-center text-sky-500/70 shrink-0"
-      >
-        <Cloud size={12} />
-      </span>
-    )
-  }
-  return null
+  // Fallback для неизвестного провайдера: 2 буквы из имени.
+  const initials = (sourceName || type).slice(0, 2).toUpperCase()
+  return (
+    <span
+      title={sourceName || type}
+      className="inline-flex items-center justify-center shrink-0 text-[9px] font-mono text-muted-foreground/60 px-1 border border-border rounded"
+    >
+      {initials}
+    </span>
+  )
 }
 
 function KindBadge({ kind, projectKey }) {
