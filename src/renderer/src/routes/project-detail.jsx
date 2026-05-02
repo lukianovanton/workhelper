@@ -2411,6 +2411,128 @@ function LastCommitSection({ slug }) {
 }
 
 /**
+ * Универсальный combobox для drawer-override полей. Визуально
+ * идентичен «нативному» select, но с двумя режимами:
+ *
+ *   - select-mode (`allowFreeText={false}`, default): инпут readonly,
+ *     показывает label выбранной опции; клик — открывает dropdown,
+ *     клик по опции — set value.
+ *   - combobox-mode (`allowFreeText={true}`): инпут редактируемый,
+ *     ввод фильтрует dropdown И сохраняется как value (пользователь
+ *     может ввести значение которого нет в options); клик по опции —
+ *     set value.
+ *
+ * Один компонент → одинаковая стилистика для DB connection и Database
+ * name (раньше один был native `<select>`, другой `<input list>` — они
+ * выглядят кардинально разно в браузере).
+ *
+ * @param {Object} props
+ * @param {string} props.value
+ * @param {(v: string) => void} props.onChange
+ * @param {Array<{ value: string, label: string }>} props.options
+ * @param {string} [props.placeholder]
+ * @param {boolean} [props.allowFreeText]
+ * @param {string} [props.className]
+ */
+function Combobox({
+  value,
+  onChange,
+  options,
+  placeholder,
+  allowFreeText = false,
+  className
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false)
+    }
+    const onKey = (e) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  // Display: для select-mode показываем label выбранной опции; для
+  // combobox-mode — сырой value (юзер может ввести своё).
+  const selectedOption = options.find((o) => o.value === value)
+  const display = allowFreeText
+    ? value
+    : (selectedOption?.label ?? value ?? '')
+
+  // Filtering для combobox-mode по введённому значению.
+  const filtered =
+    allowFreeText && value
+      ? options.filter((o) =>
+          o.label.toLowerCase().includes(value.toLowerCase())
+        )
+      : options
+
+  return (
+    <div ref={ref} className={cn('relative', className)}>
+      <input
+        type="text"
+        value={display ?? ''}
+        readOnly={!allowFreeText}
+        onChange={
+          allowFreeText
+            ? (e) => {
+                onChange(e.target.value)
+                if (!open) setOpen(true)
+              }
+            : undefined
+        }
+        onClick={() => setOpen((o) => !o)}
+        onFocus={() => setOpen(true)}
+        placeholder={placeholder}
+        className={cn(
+          // pr-8: оставляем место под chevron справа, чтобы он не лип к
+          // правому border'у инпута. text-input-style идентичный с
+          // другими инпутами в settings/drawer.
+          'w-full bg-background border border-input rounded-md pl-3 pr-8 py-1.5 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          !allowFreeText && 'cursor-pointer'
+        )}
+      />
+      <ChevronDown
+        size={14}
+        className={cn(
+          'absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none transition-transform',
+          open && 'rotate-180'
+        )}
+      />
+      {open && filtered.length > 0 && (
+        <div className="absolute top-full left-0 right-0 z-30 mt-1 bg-popover border border-border rounded-md shadow-lg max-h-48 overflow-auto py-1">
+          {filtered.map((o, i) => (
+            <button
+              key={`${o.value}-${i}`}
+              type="button"
+              onClick={() => {
+                onChange(o.value)
+                setOpen(false)
+              }}
+              className={cn(
+                'w-full text-left px-3 py-1.5 text-sm hover:bg-accent transition-colors',
+                o.value === value && 'bg-accent/50'
+              )}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
  * Per-project override для runCommand и cwd. Хранится в
  * config.runOverrides[slug] = { runCommand?, cwd? }. Если поля
  * пустые — при run() используется дефолт из Settings → Defaults.
@@ -2695,7 +2817,15 @@ function DatabaseOverrideSection({ slug }) {
     databases.length > 0
       ? `${databases[0].name} (default)`
       : t('drawer.dbOverride.noDatabases')
-  const datalistId = `db-override-names-${slug}`
+
+  const connectionOptions = [
+    { value: '', label: defaultLabel },
+    ...databases.map((d) => ({
+      value: d.id,
+      label: `${d.name} (${d.type})`
+    }))
+  ]
+  const nameOptions = namesOnEngine.map((n) => ({ value: n, label: n }))
 
   return (
     <div className="space-y-2">
@@ -2713,18 +2843,11 @@ function DatabaseOverrideSection({ slug }) {
             <label className="text-xs text-muted-foreground block mb-1">
               {t('drawer.dbOverride.connection')}
             </label>
-            <select
+            <Combobox
               value={databaseId}
-              onChange={(e) => setDatabaseId(e.target.value)}
-              className="w-full bg-background border border-input rounded-md px-3 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <option value="">{defaultLabel}</option>
-              {databases.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name} ({d.type})
-                </option>
-              ))}
-            </select>
+              onChange={setDatabaseId}
+              options={connectionOptions}
+            />
             <p className="text-[10px] text-muted-foreground/70 mt-1">
               {t('drawer.dbOverride.connection.hint')}
             </p>
@@ -2733,19 +2856,13 @@ function DatabaseOverrideSection({ slug }) {
             <label className="text-xs text-muted-foreground block mb-1">
               {t('drawer.dbOverride.name')}
             </label>
-            <input
-              type="text"
-              list={datalistId}
+            <Combobox
               value={dbName}
-              onChange={(e) => setDbName(e.target.value)}
+              onChange={setDbName}
+              options={nameOptions}
               placeholder={defaultDbName}
-              className="w-full bg-background border border-input rounded-md px-3 py-1.5 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              allowFreeText
             />
-            <datalist id={datalistId}>
-              {namesOnEngine.map((n) => (
-                <option key={n} value={n} />
-              ))}
-            </datalist>
             <p className="text-[10px] text-muted-foreground/70 mt-1">
               {t('drawer.dbOverride.name.hint')}
             </p>
