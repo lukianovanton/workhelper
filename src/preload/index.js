@@ -154,6 +154,13 @@ const api = {
     writeNvmrc: (slug, version) =>
       ipcRenderer.invoke('node:writeNvmrc', slug, version)
   },
+  toolchain: {
+    status: (slug) => ipcRenderer.invoke('toolchain:status', slug),
+    installBuildTools: () =>
+      ipcRenderer.invoke('toolchain:installBuildTools'),
+    installPython: () => ipcRenderer.invoke('toolchain:installPython'),
+    invalidateCache: () => ipcRenderer.invoke('toolchain:invalidateCache')
+  },
   presence: {
     list: () => ipcRenderer.invoke('presence:list'),
     isEnabled: () => ipcRenderer.invoke('presence:isEnabled'),

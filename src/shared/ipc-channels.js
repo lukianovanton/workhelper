@@ -116,5 +116,11 @@ export const IPC = {
     installVolta: 'node:installVolta',
     installVersion: 'node:installVersion',
     writeNvmrc: 'node:writeNvmrc'
+  },
+  toolchain: {
+    status: 'toolchain:status',
+    installBuildTools: 'toolchain:installBuildTools',
+    installPython: 'toolchain:installPython',
+    invalidateCache: 'toolchain:invalidateCache'
   }
 }
