@@ -195,6 +195,11 @@
   "drawer.action.stop": "Остановить",
   "drawer.action.stopWithPort": "Остановить (:{port})",
   "drawer.action.setupRemaining": "Доустановить",
+  "drawer.action.delete": "Удалить",
+  "drawer.action.deleteDisabled.running": "Сначала остановите запущенный процесс",
+  "drawer.deleteDialog.title": "Удалить локальный clone {slug}?",
+  "drawer.deleteDialog.description": "Это удалит папку {path} и сбросит per-project run / database override'ы. Проект останется в списке источника, БД не трогается — можно сделать setup заново в любой момент.",
+  "drawer.deleteDialog.confirm": "Удалить локальный clone",
 
   "drawer.checklist.cloned": "Склонирован",
   "drawer.checklist.notCloned": "Не склонирован",

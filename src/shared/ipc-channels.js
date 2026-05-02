@@ -104,6 +104,7 @@ export const IPC = {
     // (не полный список — справочно)
   },
   app: {
-    openFolder: 'app:openFolder'
+    openFolder: 'app:openFolder',
+    deleteProjectLocal: 'app:deleteProjectLocal'
   }
 }

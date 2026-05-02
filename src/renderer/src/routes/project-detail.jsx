@@ -162,6 +162,7 @@ function DrawerNotFound({ slug, onClose }) {
 
 function Drawer({ project, dbAvailable, onClose, initialTab, initialIssue }) {
   const t = useT()
+  const qc = useQueryClient()
   const cloned = project.local.cloned
   const { bySlug } = useRunningProcesses()
   const runtime = bySlug.get(project.slug) || null
@@ -181,6 +182,8 @@ function Drawer({ project, dbAvailable, onClose, initialTab, initialIssue }) {
   const [replaceDialogOpen, setReplaceDialogOpen] = useState(false)
   const [pendingDumpPath, setPendingDumpPath] = useState(null)
   const [setupDialogOpen, setSetupDialogOpen] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   // Tab внутри drawer'а. Сессионный (per-mount), не персистится —
   // когда переключаешь проекты, default снова Overview.
   // initialTab из query params (?tab=tasks) — приходит из My Tasks
@@ -365,6 +368,22 @@ function Drawer({ project, dbAvailable, onClose, initialTab, initialIssue }) {
     }
   }
 
+  const onConfirmDelete = async () => {
+    setDeleting(true)
+    try {
+      await api.app.deleteProjectLocal(project.slug)
+      // Инвалидируем список проектов: enrich пересчитает cloned=false и
+      // db.exists для slug'а. Per-slug overrides уже стёрты на бэке.
+      qc.invalidateQueries({ queryKey: ['vcs', 'projects'] })
+      setDeleteDialogOpen(false)
+      flash(`Deleted local clone of ${project.slug}`, 'ok')
+    } catch (e) {
+      flash(e?.message || String(e), 'error')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   return (
     <div className="w-1/2 border-l border-border bg-background flex flex-col overflow-hidden">
       <header className="px-6 py-4 border-b border-border space-y-3">
@@ -521,6 +540,30 @@ function Drawer({ project, dbAvailable, onClose, initialTab, initialIssue }) {
                 onClick={() => setSetupDialogOpen(true)}
                 label={t('drawer.action.setupRemaining')}
               />
+              {/* Delete-кнопка отделена ml-auto чтобы прижалась к правому
+                  краю и не вмешивалась в основные positive-actions
+                  (Run, Pull и т.д.). Видна только если проект cloned —
+                  удалять локально нечего, если ничего не клонировано. */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setDeleteDialogOpen(true)}
+                disabled={isRunning}
+                title={
+                  isRunning
+                    ? t('drawer.action.deleteDisabled.running')
+                    : t('drawer.action.delete')
+                }
+                className={cn(
+                  'ml-auto px-2',
+                  isRunning
+                    ? 'text-destructive/40'
+                    : 'text-destructive border-destructive/40 hover:bg-destructive/10 hover:text-destructive'
+                )}
+              >
+                <Trash2 size={13} />
+                <span className="ml-1">{t('drawer.action.delete')}</span>
+              </Button>
             </>
           )}
         </div>
@@ -767,6 +810,44 @@ function Drawer({ project, dbAvailable, onClose, initialTab, initialIssue }) {
               )}
             >
               {t('drawer.replaceDialog.confirm')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={deleteDialogOpen}
+        onOpenChange={(open) => {
+          if (!deleting) setDeleteDialogOpen(open)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t('drawer.deleteDialog.title', { slug: project.slug })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('drawer.deleteDialog.description', {
+                path: project.local.path || ''
+              })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>
+              {t('common.cancel')}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault()
+                onConfirmDelete()
+              }}
+              disabled={deleting}
+              className={cn(
+                'bg-destructive text-destructive-foreground hover:bg-destructive/90'
+              )}
+            >
+              {deleting && <Loader2 className="animate-spin mr-1" size={13} />}
+              {t('drawer.deleteDialog.confirm')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

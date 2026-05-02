@@ -195,6 +195,11 @@
   "drawer.action.stop": "Stop",
   "drawer.action.stopWithPort": "Stop (:{port})",
   "drawer.action.setupRemaining": "Setup remaining",
+  "drawer.action.delete": "Delete",
+  "drawer.action.deleteDisabled.running": "Stop the running process before deleting",
+  "drawer.deleteDialog.title": "Delete local clone of {slug}?",
+  "drawer.deleteDialog.description": "This removes the cloned folder at {path} and clears any per-project run / database overrides. The project stays in the source list and the database is untouched — you can re-setup any time.",
+  "drawer.deleteDialog.confirm": "Delete local clone",
 
   "drawer.checklist.cloned": "Cloned",
   "drawer.checklist.notCloned": "Not cloned",

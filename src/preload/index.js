@@ -138,7 +138,9 @@ const api = {
     }
   },
   app: {
-    openFolder: (path) => ipcRenderer.invoke('app:openFolder', path)
+    openFolder: (path) => ipcRenderer.invoke('app:openFolder', path),
+    deleteProjectLocal: (slug) =>
+      ipcRenderer.invoke('app:deleteProjectLocal', slug)
   },
   presence: {
     list: () => ipcRenderer.invoke('presence:list'),
