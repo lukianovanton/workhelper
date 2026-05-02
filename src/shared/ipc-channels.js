@@ -1,23 +1,53 @@
 /**
- * Список IPC-каналов. Использовать как единственный источник правды,
- * чтобы избежать рассинхрона между preload и main-handler'ами.
+ * Список IPC-каналов. Документация для глаза разработчика —
+ * preload и main-handler'ы используют свои литералы напрямую.
+ *
+ * Переименование (post-rename pass):
+ *   bitbucket:* → vcs:*  (provider-agnostic; роутится по slug → registry)
+ *   bitbucket:pipelines → vcs:builds (pipelines BB / Actions GH)
  */
 export const IPC = {
-  bitbucket: {
-    list: 'bitbucket:list',
-    refresh: 'bitbucket:refresh',
-    test: 'bitbucket:test',
-    lastCommit: 'bitbucket:lastCommit'
+  vcs: {
+    list: 'vcs:projects:list',
+    refresh: 'vcs:projects:refresh',
+    test: 'vcs:test',
+    lastCommit: 'vcs:lastCommit',
+    commits: 'vcs:commits',
+    commitDetail: 'vcs:commit-detail',
+    commitFileDiff: 'vcs:commit-file-diff',
+    branches: 'vcs:branches',
+    builds: 'vcs:builds',
+    buildSteps: 'vcs:build-steps',
+    buildStepLog: 'vcs:build-step-log'
+  },
+  sources: {
+    list: 'sources:list',
+    add: 'sources:add',
+    update: 'sources:update',
+    remove: 'sources:remove',
+    test: 'sources:test',
+    setSecret: 'sources:setSecret',
+    clearSecret: 'sources:clearSecret'
+  },
+  databases: {
+    list: 'databases:list',
+    add: 'databases:add',
+    update: 'databases:update',
+    remove: 'databases:remove',
+    test: 'databases:test',
+    setSecret: 'databases:setSecret',
+    clearSecret: 'databases:clearSecret',
+    listDbNames: 'databases:listDbNames',
+    detectForProject: 'databases:detectForProject'
   },
   git: {
     clone: 'git:clone',
     pull: 'git:pull',
-    status: 'git:status'
+    status: 'git:status',
+    branches: 'git:branches',
+    checkout: 'git:checkout'
   },
   db: {
-    list: 'db:list',
-    exists: 'db:exists',
-    size: 'db:size',
     test: 'db:test',
     create: 'db:create',
     drop: 'db:drop',
@@ -38,7 +68,8 @@ export const IPC = {
     logs: 'process:logs',
     log: 'process:log',
     port: 'process:port',
-    exit: 'process:exit'
+    exit: 'process:exit',
+    detectRunCommand: 'process:detectRunCommand'
   },
   editor: {
     openInVSCode: 'editor:openInVSCode'
@@ -55,6 +86,7 @@ export const IPC = {
     runFull: 'setup:run-full',
     cancel: 'setup:cancel',
     isActive: 'setup:is-active',
+    detectStack: 'setup:detectStack',
     event: 'setup:event'
   },
   updater: {
@@ -65,5 +97,13 @@ export const IPC = {
     list: 'presence:list',
     isEnabled: 'presence:isEnabled',
     setEnabled: 'presence:setEnabled'
+  },
+  jira: {
+    test: 'jira:test',
+    projects: 'jira:projects'
+    // (не полный список — справочно)
+  },
+  app: {
+    openFolder: 'app:openFolder'
   }
 }

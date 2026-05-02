@@ -1408,7 +1408,7 @@ function SourceCard({
           </div>
         )}
 
-        {!isNew && <BitbucketTestResult result={testResult} />}
+        {!isNew && <SourceTestResult result={testResult} />}
       </CardContent>
     </Card>
   )
@@ -1967,7 +1967,7 @@ function DatabaseCard({
   )
 }
 
-function BitbucketTestResult({ result }) {
+function SourceTestResult({ result }) {
   if (!result) return null
   if (result.ok) {
     const sameWsName = result.workspace.name === result.workspace.slug

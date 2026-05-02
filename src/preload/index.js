@@ -33,29 +33,28 @@ const api = {
     detectForProject: (slug) =>
       ipcRenderer.invoke('databases:detectForProject', slug)
   },
-  bitbucket: {
-    list: () => ipcRenderer.invoke('bitbucket:list'),
-    refresh: () => ipcRenderer.invoke('bitbucket:refresh'),
-    testConnection: () => ipcRenderer.invoke('bitbucket:test'),
-    lastCommit: (slug) => ipcRenderer.invoke('bitbucket:lastCommit', slug),
+  // VCS-операции (provider-agnostic). Раньше неймспейс был
+  // api.bitbucket; сейчас api.vcs — каналы и логика одинаково обслуживают
+  // любой настроенный source (BB, GH, в будущем GitLab и т.д.).
+  // Pipelines BB / Actions GH унифицированы как «builds».
+  vcs: {
+    list: () => ipcRenderer.invoke('vcs:projects:list'),
+    refresh: () => ipcRenderer.invoke('vcs:projects:refresh'),
+    testConnection: () => ipcRenderer.invoke('vcs:test'),
+    lastCommit: (slug) => ipcRenderer.invoke('vcs:lastCommit', slug),
     commits: (slug, opts) =>
-      ipcRenderer.invoke('bitbucket:commits', slug, opts),
+      ipcRenderer.invoke('vcs:commits', slug, opts),
     commitDetail: (slug, hash) =>
-      ipcRenderer.invoke('bitbucket:commit-detail', slug, hash),
+      ipcRenderer.invoke('vcs:commit-detail', slug, hash),
     commitFileDiff: (slug, hash, path) =>
-      ipcRenderer.invoke('bitbucket:commit-file-diff', slug, hash, path),
-    pipelines: (slug, opts) =>
-      ipcRenderer.invoke('bitbucket:pipelines', slug, opts),
-    pipelineSteps: (slug, pipelineUuid) =>
-      ipcRenderer.invoke('bitbucket:pipeline-steps', slug, pipelineUuid),
-    pipelineStepLog: (slug, pipelineUuid, stepUuid) =>
-      ipcRenderer.invoke(
-        'bitbucket:pipeline-step-log',
-        slug,
-        pipelineUuid,
-        stepUuid
-      ),
-    branches: (slug) => ipcRenderer.invoke('bitbucket:branches', slug)
+      ipcRenderer.invoke('vcs:commit-file-diff', slug, hash, path),
+    builds: (slug, opts) =>
+      ipcRenderer.invoke('vcs:builds', slug, opts),
+    buildSteps: (slug, buildUuid) =>
+      ipcRenderer.invoke('vcs:build-steps', slug, buildUuid),
+    buildStepLog: (slug, buildUuid, stepUuid) =>
+      ipcRenderer.invoke('vcs:build-step-log', slug, buildUuid, stepUuid),
+    branches: (slug) => ipcRenderer.invoke('vcs:branches', slug)
   },
   git: {
     clone: (slug) => ipcRenderer.invoke('git:clone', slug),

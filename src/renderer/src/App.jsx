@@ -97,7 +97,7 @@ function useSetupSubscription() {
           store.finished(evt.slug)
           toast.ok(`Setup of ${evt.slug} finished`)
           queryClient.invalidateQueries({
-            queryKey: ['bitbucket', 'projects']
+            queryKey: ['vcs', 'projects']
           })
           break
         case 'failed':
@@ -106,14 +106,14 @@ function useSetupSubscription() {
             `Setup of ${evt.slug} failed: ${evt.message || 'unknown error'}`
           )
           queryClient.invalidateQueries({
-            queryKey: ['bitbucket', 'projects']
+            queryKey: ['vcs', 'projects']
           })
           break
         case 'cancelled':
           store.cancelled(evt.slug)
           toast.info(`Setup of ${evt.slug} cancelled`)
           queryClient.invalidateQueries({
-            queryKey: ['bitbucket', 'projects']
+            queryKey: ['vcs', 'projects']
           })
           break
       }
@@ -146,7 +146,7 @@ function useRestoreSubscription() {
             `Restored ${evt.slug}${evt.dumpFile ? ` from ${evt.dumpFile}` : ''}`
           )
           queryClient.invalidateQueries({
-            queryKey: ['bitbucket', 'projects']
+            queryKey: ['vcs', 'projects']
           })
           setTimeout(() => useRestoreStore.getState().clear(evt.slug), 4000)
           break

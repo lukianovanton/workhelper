@@ -5,8 +5,8 @@ const FIVE_MIN = 5 * 60 * 1000
 
 export function useLastCommit(slug) {
   return useQuery({
-    queryKey: ['lastCommit', slug],
-    queryFn: () => api.bitbucket.lastCommit(slug),
+    queryKey: ['vcs', 'lastCommit', slug],
+    queryFn: () => api.vcs.lastCommit(slug),
     enabled: typeof slug === 'string' && slug.length > 0,
     staleTime: FIVE_MIN,
     retry: false
@@ -34,8 +34,8 @@ export function useCommits(slug, opts = {}) {
   const pagelen = o.pagelen ?? 30
   const branch = o.branch || null
   return useQuery({
-    queryKey: ['commits', slug, pagelen, branch],
-    queryFn: () => api.bitbucket.commits(slug, { pagelen, branch }),
+    queryKey: ['vcs', 'commits', slug, pagelen, branch],
+    queryFn: () => api.vcs.commits(slug, { pagelen, branch }),
     enabled: typeof slug === 'string' && slug.length > 0,
     staleTime: FIVE_MIN,
     retry: false

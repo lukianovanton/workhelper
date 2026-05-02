@@ -15,16 +15,16 @@ export function useProjectActions(slug) {
     onSuccess: () => {
       // local.cloned/runnableSubpath появятся при ре-enrich;
       // git-status и lastCommit подгрузятся лениво при открытии drawer'а.
-      qc.invalidateQueries({ queryKey: ['bitbucket', 'projects'] })
+      qc.invalidateQueries({ queryKey: ['vcs', 'projects'] })
       qc.invalidateQueries({ queryKey: ['git-status', slug] })
-      qc.invalidateQueries({ queryKey: ['lastCommit', slug] })
+      qc.invalidateQueries({ queryKey: ['vcs', 'lastCommit', slug] })
     }
   })
 
   const pull = useMutation({
     mutationFn: () => api.git.pull(slug),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['lastCommit', slug] })
+      qc.invalidateQueries({ queryKey: ['vcs', 'lastCommit', slug] })
       qc.invalidateQueries({ queryKey: ['git-status', slug] })
     }
   })
@@ -48,14 +48,14 @@ export function useProjectActions(slug) {
   const dbCreate = useMutation({
     mutationFn: () => api.db.create(slug),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['bitbucket', 'projects'] })
+      qc.invalidateQueries({ queryKey: ['vcs', 'projects'] })
     }
   })
 
   const dbDrop = useMutation({
     mutationFn: () => api.db.drop(slug),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['bitbucket', 'projects'] })
+      qc.invalidateQueries({ queryKey: ['vcs', 'projects'] })
     }
   })
 
@@ -75,8 +75,8 @@ export function useProjectActions(slug) {
     mutationFn: (branch) => api.git.checkout(slug, branch),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['git-status', slug] })
-      qc.invalidateQueries({ queryKey: ['lastCommit', slug] })
-      qc.invalidateQueries({ queryKey: ['commits', slug, 5] })
+      qc.invalidateQueries({ queryKey: ['vcs', 'lastCommit', slug] })
+      qc.invalidateQueries({ queryKey: ['vcs', 'commits', slug, 5] })
     }
   })
 

@@ -33,7 +33,7 @@ import { usePrefsStore } from '@/store/prefs.store.js'
 import { toast } from '@/store/toast.store.js'
 import { Checkbox } from '@/components/ui/checkbox'
 import { usePresence } from '@/hooks/use-presence'
-import { usePipelines } from '@/hooks/use-bitbucket'
+import { useBuilds } from '@/hooks/use-vcs'
 import {
   useMyJiraIssues,
   parseSlugFromProjectName
@@ -863,11 +863,11 @@ function ProjectRow({
     obs.observe(node)
     return () => obs.disconnect()
   }, [seen])
-  const { data: pipelines } = usePipelines(p.slug, {
+  const { data: builds } = useBuilds(p.slug, {
     pagelen: 1,
     enabled: seen
   })
-  const lastPipeline = pipelines?.[0] || null
+  const lastPipeline = builds?.[0] || null
 
   return (
     <tr

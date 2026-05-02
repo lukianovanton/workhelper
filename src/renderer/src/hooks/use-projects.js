@@ -2,20 +2,22 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/api'
 import { usePrefsStore } from '@/store/prefs.store.js'
 
-const KEY = ['bitbucket', 'projects']
+const KEY = ['vcs', 'projects']
 const TEN_MIN = 10 * 60 * 1000
 
 /**
- * Список проектов из Bitbucket + enrich по локальному состоянию.
+ * Список проектов со всех настроенных VCS-источников + enrich по
+ * локальному состоянию.
  *
- * Главный кэш Bitbucket-данных — в main-процессе (10 мин TTL).
- * Enrich (fs/db) пересчитывается в main на каждый list-вызов.
- * TanStack Query держит результат в renderer и шарит между экранами.
+ * Кэш per-source данных живёт в main (10 мин TTL внутри каждого
+ * provider'а). Enrich (fs/db, мульти-engine) пересчитывается на
+ * каждый list-вызов. TanStack Query держит результат в renderer и
+ * шарит между экранами.
  *
  * IPC возвращает { projects, warnings }:
  *  - projects — Project[] с заполненными local.cloned/db.exists/...
  *  - warnings — мягкие сообщения от enrich (БД недоступна и т.п.),
- *    UI показывает баннером без блокировки списка
+ *    UI показывает баннером без блокировки списка.
  *
  * @returns {{
  *   projects: import('@shared/types.js').Project[] | undefined,
@@ -31,7 +33,7 @@ export function useProjects() {
   const autoRefreshMs = usePrefsStore((s) => s.autoRefreshMs)
   const query = useQuery({
     queryKey: KEY,
-    queryFn: () => api.bitbucket.list(),
+    queryFn: () => api.vcs.list(),
     staleTime: TEN_MIN,
     refetchInterval: autoRefreshMs > 0 ? autoRefreshMs : false,
     refetchIntervalInBackground: false,
@@ -39,7 +41,7 @@ export function useProjects() {
   })
 
   const refresh = async () => {
-    const fresh = await api.bitbucket.refresh()
+    const fresh = await api.vcs.refresh()
     queryClient.setQueryData(KEY, fresh)
   }
 

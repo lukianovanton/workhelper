@@ -39,12 +39,12 @@ import { useProjects } from '@/hooks/use-projects'
 import { useLastCommit, useCommits } from '@/hooks/use-last-commit'
 import {
   useCommitDetail,
-  usePipelines,
-  usePipelineSteps,
+  useBuilds,
+  useBuildSteps,
   useBranches,
   useCommitFileDiff,
-  usePipelineStepLog
-} from '@/hooks/use-bitbucket'
+  useBuildStepLog
+} from '@/hooks/use-vcs'
 import {
   useJiraProjectForSlug,
   useProjectJiraIssues,
@@ -843,11 +843,15 @@ function TabActionBar({
 
   const refresh = () => {
     if (activeTab === 'commits') {
-      queryClient.invalidateQueries({ queryKey: ['commits', slug] })
-      queryClient.invalidateQueries({ queryKey: ['commit-detail', slug] })
+      queryClient.invalidateQueries({ queryKey: ['vcs', 'commits', slug] })
+      queryClient.invalidateQueries({
+        queryKey: ['vcs', 'commit-detail', slug]
+      })
     } else if (activeTab === 'pipelines') {
-      queryClient.invalidateQueries({ queryKey: ['pipelines', slug] })
-      queryClient.invalidateQueries({ queryKey: ['pipeline-steps', slug] })
+      queryClient.invalidateQueries({ queryKey: ['vcs', 'builds', slug] })
+      queryClient.invalidateQueries({
+        queryKey: ['vcs', 'build-steps', slug]
+      })
     } else if (activeTab === 'tasks') {
       queryClient.invalidateQueries({ queryKey: ['jira', 'project-issues'] })
       queryClient.invalidateQueries({ queryKey: ['jira', 'issue-detail'] })
@@ -1212,14 +1216,14 @@ function FileStatusIcon({ status }) {
 
 /**
  * Pipelines-таб: 20 последних пайплайнов. Auto-poll каждые 15с
- * включается на уровне хука usePipelines когда есть IN_PROGRESS /
+ * включается на уровне хука useBuilds когда есть IN_PROGRESS /
  * PENDING запись. Steps конкретного пайплайна грузятся лениво по
  * раскрытию.
  */
 function PipelinesTab({ project, branch }) {
   const t = useT()
   const slug = project.slug
-  const { data, isLoading, isError, refetch } = usePipelines(slug, {
+  const { data, isLoading, isError, refetch } = useBuilds(slug, {
     pagelen: 20,
     branch
   })
@@ -1630,7 +1634,7 @@ function PipelineRow({ slug, pipeline, expanded, onToggle }) {
 
 function PipelineSteps({ slug, pipelineUuid }) {
   const t = useT()
-  const { data, isLoading, isError } = usePipelineSteps(slug, pipelineUuid)
+  const { data, isLoading, isError } = useBuildSteps(slug, pipelineUuid)
   // Раскрытый step — для inline-log. Только один открыт за раз.
   const [openedStepUuid, setOpenedStepUuid] = useState(null)
 
@@ -1727,7 +1731,7 @@ function PipelineSteps({ slug, pipelineUuid }) {
 
 function StepLogViewer({ slug, pipelineUuid, stepUuid }) {
   const t = useT()
-  const { data, isLoading, isError } = usePipelineStepLog(
+  const { data, isLoading, isError } = useBuildStepLog(
     slug,
     pipelineUuid,
     stepUuid,
@@ -2624,7 +2628,7 @@ function RunOverrideSection({ slug }) {
       // Инвалидируем список проектов: enrich использует runOverrides[slug].cwd
       // как override для resolveRunnableSubpath, поэтому drawer сразу
       // увидит новый indicator без ручного Refresh.
-      qc.invalidateQueries({ queryKey: ['bitbucket', 'projects'] })
+      qc.invalidateQueries({ queryKey: ['vcs', 'projects'] })
       setStatus({ ok: true })
       setTimeout(() => setStatus(null), 2500)
     } catch (e) {
@@ -2844,7 +2848,7 @@ function DatabaseOverrideSection({ slug }) {
       await api.config.set({ databaseOverrides: overrides })
       // Инвалидируем список проектов: enrich передаст новый engine/имя
       // и UI сразу подсветит «БД найдена» без ручного Refresh.
-      qc.invalidateQueries({ queryKey: ['bitbucket', 'projects'] })
+      qc.invalidateQueries({ queryKey: ['vcs', 'projects'] })
       setStatus({ ok: true })
       setTimeout(() => setStatus(null), 2500)
     } catch (e) {
