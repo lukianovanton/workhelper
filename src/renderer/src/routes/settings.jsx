@@ -77,8 +77,8 @@ const SETUP_GUIDES = {
     descriptionKey: 'settings.guide.database.dialogDescription',
     Component: DatabaseSetupGuide
   },
-  dotnet: {
-    titleKey: 'settings.dotnet.title',
+  defaults: {
+    titleKey: 'settings.defaults.title',
     descriptionKey: 'settings.guide.dotnet.dialogDescription',
     Component: DotnetSetupGuide
   },
@@ -102,15 +102,18 @@ const SECTIONS = /** @type {const} */ ([
   { id: 'atlassian', labelKey: 'settings.section.atlassian', icon: Cloud },
   { id: 'paths', labelKey: 'settings.section.paths', icon: Folder },
   { id: 'database', labelKey: 'settings.section.database', icon: Database },
-  { id: 'dotnet', labelKey: 'settings.section.dotnet', icon: Code2 },
+  { id: 'defaults', labelKey: 'settings.section.defaults', icon: Code2 },
   { id: 'presence', labelKey: 'settings.section.presence', icon: Users },
   { id: 'appearance', labelKey: 'settings.section.appearance', icon: Palette }
 ])
 
-// Старые id 'bitbucket' / 'jira' маппим на новый объединённый
-// 'atlassian' — пользователи которые держали settings открытыми
-// на Bitbucket или Jira увидят то же содержимое, не «404».
-const LEGACY_SECTION_MAP = { bitbucket: 'atlassian', jira: 'atlassian' }
+// Legacy id маппинги: пользователи с сохранённой активной секцией от
+// до-A.6 версии увидят соответствующую новую секцию вместо «404».
+const LEGACY_SECTION_MAP = {
+  bitbucket: 'atlassian',
+  jira: 'atlassian',
+  dotnet: 'defaults'
+}
 
 function loadActiveSection() {
   try {
@@ -437,32 +440,27 @@ export default function Settings() {
               />
             )}
 
-            {activeSection === 'dotnet' && (
+            {activeSection === 'defaults' && (
               <Card>
                 <SectionCardHeader
-                  title={t('settings.dotnet.title')}
-                  description={t('settings.dotnet.description')}
-                  onOpenGuide={() => setGuideOpen('dotnet')}
+                  title={t('settings.defaults.title')}
+                  description={t('settings.defaults.description')}
+                  onOpenGuide={() => setGuideOpen('defaults')}
                 />
                 <CardContent className="space-y-4">
                   <Field
-                    label={t('settings.dotnet.runArgs')}
-                    hint={t('settings.dotnet.runArgs.hint')}
+                    label={t('settings.defaults.runCommand')}
+                    hint={t('settings.defaults.runCommand.hint')}
                   >
                     <Input
-                      value={(config.dotnet.runArgs || []).join(' ')}
+                      value={config.defaults?.runCommand || ''}
                       onChange={(e) =>
                         updatePath(
-                          'dotnet',
-                          'runArgs'
-                        )(
-                          e.target.value
-                            .split(/\s+/)
-                            .map((s) => s.trim())
-                            .filter(Boolean)
-                        )
+                          'defaults',
+                          'runCommand'
+                        )(e.target.value)
                       }
-                      placeholder="--no-build --launch-profile Development"
+                      placeholder="dotnet run"
                     />
                   </Field>
                 </CardContent>

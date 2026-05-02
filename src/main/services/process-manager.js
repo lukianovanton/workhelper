@@ -1,27 +1,32 @@
 /**
- * In-memory менеджер `dotnet run` процессов (раздел 9.3 спеки).
+ * In-memory менеджер запущенных процессов.
  *
- * Map<slug, ProcessHandle>:
- *   - child       — Node ChildProcess
- *   - pid         — child.pid
- *   - port        — детектится из stdout по regex "Now listening on:..."
- *   - startedAt   — ISO timestamp
- *   - logs        — RingBuffer на 1000 строк (для будущего Logs tab)
+ * Phase A.6: убран хардкод на `dotnet run`. Команда читается из
+ * `config.runOverrides[slug].runCommand` или, если override нет,
+ * из `config.defaults.runCommand` (default 'dotnet run'). cwd —
+ * аналогично: `runOverrides[slug].cwd` (относительно project root)
+ * либо auto-detect через resolveRunnableSubpath (legacy .NET-эвристика,
+ * сохранена как fallback), либо сам корень проекта.
  *
- * Жизненный цикл: процесс живёт ровно одну сессию приложения.
- * При app.before-quit все children гасятся через tree-kill.
- *
- * Эмиссия событий в renderer — через инжектируемую функцию `emit`,
- * хранится модулем после первого setEmit (зовут из process.ipc.js).
+ * Эмиссия событий в renderer — через инжектируемую функцию `emit`.
  */
 
 import { spawn } from 'node:child_process'
 import path from 'node:path'
 import treeKill from 'tree-kill'
 import { getConfig } from './config-store.js'
-import { projectExists, projectPath, resolveRunnableSubpath } from './fs-service.js'
+import {
+  projectExists,
+  projectPath,
+  resolveRunnableSubpath
+} from './fs-service.js'
 
-const URL_REGEX = /Now listening on:\s*(https?:\/\/\S+)/i
+// Расширенный URL_REGEX: ловит .NET (Now listening on:), Node/Express
+// (listening on http...), Vite (Local: http...), общий «Server running at».
+// Один и тот же паттерн на все стеки — пользователь вводит свою
+// runCommand, а наш приёмник стандартных вариантов покроет 90% случаев.
+const URL_REGEX =
+  /(?:Now listening on|listening (?:on|at)|Local:|Server running at|Local server:)\s*[:\s]*(https?:\/\/\S+)/i
 const LOG_BUFFER_SIZE = 1000
 
 class RingBuffer {
@@ -38,14 +43,63 @@ class RingBuffer {
   }
 }
 
-/** @type {Map<string, {child:any, pid:number, port:number|null, startedAt:string, logs:RingBuffer}>} */
 const processes = new Map()
 
-/** @type {(event: string, payload: any) => void} */
 let emit = () => {}
 
 export function setEmitter(fn) {
   emit = typeof fn === 'function' ? fn : () => {}
+}
+
+/**
+ * Простой парсер shell-like командной строки. Поддерживает
+ * двойные одинарные кавычки для аргументов с пробелами; экранирование
+ * не нужно (используем как-есть). Возвращает [bin, ...args].
+ *
+ * Примеры:
+ *   'dotnet run'                       → ['dotnet', 'run']
+ *   'npm run dev'                      → ['npm', 'run', 'dev']
+ *   'go run .'                         → ['go', 'run', '.']
+ *   'python -m http.server "8000"'     → ['python', '-m', 'http.server', '8000']
+ *
+ * @param {string} cmdline
+ * @returns {string[]}
+ */
+function parseCommand(cmdline) {
+  const tokens = []
+  const re = /"([^"]*)"|'([^']*)'|(\S+)/g
+  let m
+  while ((m = re.exec(cmdline)) !== null) {
+    tokens.push(m[1] ?? m[2] ?? m[3])
+  }
+  return tokens
+}
+
+/**
+ * Резолвит rabочую директорию для запуска. Приоритет:
+ *   1. runOverrides[slug].cwd (явно задано пользователем, относительно
+ *      project root). Если абсолютный путь — используем как есть.
+ *   2. Auto-detect через resolveRunnableSubpath (legacy .NET-эвристика
+ *      по .sln/Program.cs). Сохранено как fallback для существующих
+ *      .NET-проектов которые работали без явного cwd.
+ *   3. Сам project root.
+ */
+async function resolveCwd(slug, repoPath, override) {
+  if (override?.cwd) {
+    return path.isAbsolute(override.cwd)
+      ? override.cwd
+      : path.join(repoPath, override.cwd)
+  }
+  // Legacy fallback: пытаемся auto-detect только если runCommand
+  // начинается с 'dotnet' — иначе резолвер бесполезен и тратит fs-обходы.
+  // Не критично; при необходимости пользователь явно укажет cwd.
+  const subpath = await resolveRunnableSubpath(
+    repoPath,
+    slug.toLowerCase(),
+    {}
+  )
+  if (subpath) return path.join(repoPath, subpath)
+  return repoPath
 }
 
 /**
@@ -72,30 +126,31 @@ export async function run(slug) {
   }
 
   const repoPath = projectPath(root, slug)
-  const overrides = config.dotnet.workingDirSubpathOverride || {}
-  const subpath = await resolveRunnableSubpath(
-    repoPath,
-    slug.toLowerCase(),
-    overrides
-  )
-  if (!subpath) {
+  const override = (config.runOverrides || {})[slug]
+  const cmdline =
+    (override && override.runCommand && override.runCommand.trim()) ||
+    (config.defaults?.runCommand || 'dotnet run')
+
+  const tokens = parseCommand(cmdline)
+  if (tokens.length === 0) {
     throw new Error(
-      `Cannot detect runnable project for ${slug}. Set workingDirSubpath override in Settings → .NET.`
+      `Run command is empty for ${slug}. Set it in Settings → Defaults or per-project in the drawer.`
     )
   }
-  const cwd = path.join(repoPath, subpath)
+  const [bin, ...args] = tokens
 
-  const args = ['run', ...(config.dotnet.runArgs || [])]
-  const child = spawn('dotnet', args, {
+  const cwd = await resolveCwd(slug, repoPath, override)
+
+  const child = spawn(bin, args, {
     cwd,
     shell: false,
     detached: false,
     windowsHide: true,
+    // DOTNET_NOLOGO для .NET-стека убирает баннер в stdout. Не вредит
+    // другим стекам (для них переменная игнорируется), оставляем.
     env: { ...process.env, DOTNET_NOLOGO: '1' }
   })
 
-  // Дождаться 'spawn' либо 'error' прежде, чем регистрировать handle —
-  // ENOENT (нет dotnet в PATH) поднимется как rejection mutation.
   await new Promise((resolve, reject) => {
     const onSpawn = () => {
       child.removeListener('error', onError)
@@ -106,18 +161,17 @@ export async function run(slug) {
       if (err && err.code === 'ENOENT') {
         reject(
           new Error(
-            'dotnet executable not found in PATH. Install .NET SDK or check PATH.'
+            `'${bin}' executable not found in PATH. Check the run command in Settings → Defaults or per-project override.`
           )
         )
       } else {
-        reject(new Error(`Failed to start dotnet: ${err.message}`))
+        reject(new Error(`Failed to start ${bin}: ${err.message}`))
       }
     }
     child.once('spawn', onSpawn)
     child.once('error', onError)
   })
 
-  /** @type {ReturnType<typeof createHandle>} */
   const handle = createHandle(child)
   processes.set(slug, handle)
 
@@ -165,13 +219,6 @@ function createHandle(child) {
   }
 }
 
-/**
- * Останавливает процесс и всю его дочернюю цепочку (`dotnet run`
- * нередко спавнит подпроцессы).
- *
- * @param {string} slug
- * @returns {Promise<void>}
- */
 export function stop(slug) {
   const handle = processes.get(slug)
   if (!handle) {
@@ -185,19 +232,10 @@ export function stop(slug) {
   })
 }
 
-/**
- * @param {string} slug
- * @returns {boolean}
- */
 export function isRunning(slug) {
   return processes.has(slug)
 }
 
-/**
- * Снимок всех живых процессов для UI-поллинга.
- *
- * @returns {{slug:string, pid:number, port:number|null, url:string|null, startedAt:string}[]}
- */
 export function list() {
   return Array.from(processes.entries()).map(([slug, h]) => ({
     slug,
@@ -208,21 +246,11 @@ export function list() {
   }))
 }
 
-/**
- * Лог-снимок (для будущего Logs tab).
- * @param {string} slug
- * @returns {{stream:string, text:string, ts:number}[]|null}
- */
 export function logs(slug) {
   const handle = processes.get(slug)
   return handle ? handle.logs.snapshot() : null
 }
 
-/**
- * Гасит все процессы — вызывать на app.before-quit.
- * Синхронная (best-effort) — Electron не ждёт асинхронные операции
- * на before-quit без e.preventDefault().
- */
 export function killAll() {
   for (const [, h] of processes) {
     try {

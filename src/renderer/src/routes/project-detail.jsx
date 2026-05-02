@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, useMemo } from 'react'
+import { useRef, useState, useEffect, useMemo, useCallback } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   X,
@@ -651,6 +651,10 @@ function Drawer({ project, dbAvailable, onClose, initialTab, initialIssue }) {
             )}
           </div>
         )}
+
+        <Separator />
+
+        <RunOverrideSection slug={project.slug} />
 
         <Separator />
 
@@ -2395,6 +2399,132 @@ function LastCommitSection({ slug }) {
               }
             />
           ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Per-project override для runCommand и cwd. Хранится в
+ * config.runOverrides[slug] = { runCommand?, cwd? }. Если поля
+ * пустые — при run() используется дефолт из Settings → Defaults.
+ *
+ * Сохранение через api.config.set: читаем текущий runOverrides,
+ * мерджим/сбрасываем нужный slug, сохраняем целиком. Это работает
+ * без отдельного IPC-метода; race-условий нет (один пользователь,
+ * один renderer).
+ */
+function RunOverrideSection({ slug }) {
+  const t = useT()
+  const [runCommand, setRunCommand] = useState('')
+  const [cwd, setCwd] = useState('')
+  const [defaultRunCommand, setDefaultRunCommand] = useState('dotnet run')
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [status, setStatus] = useState(null)
+
+  const reload = useCallback(async () => {
+    setLoading(true)
+    try {
+      const cfg = await api.config.get()
+      const ov = (cfg.runOverrides || {})[slug] || {}
+      setRunCommand(ov.runCommand || '')
+      setCwd(ov.cwd || '')
+      setDefaultRunCommand(cfg.defaults?.runCommand || 'dotnet run')
+    } finally {
+      setLoading(false)
+    }
+  }, [slug])
+
+  useEffect(() => {
+    reload()
+  }, [reload])
+
+  const save = async () => {
+    setSaving(true)
+    setStatus(null)
+    try {
+      const cfg = await api.config.get()
+      const overrides = { ...(cfg.runOverrides || {}) }
+      const trimmedCmd = runCommand.trim()
+      const trimmedCwd = cwd.trim()
+      if (!trimmedCmd && !trimmedCwd) {
+        delete overrides[slug]
+      } else {
+        overrides[slug] = {
+          ...(trimmedCmd ? { runCommand: trimmedCmd } : {}),
+          ...(trimmedCwd ? { cwd: trimmedCwd } : {})
+        }
+      }
+      await api.config.set({ runOverrides: overrides })
+      setStatus({ ok: true })
+      setTimeout(() => setStatus(null), 2500)
+    } catch (e) {
+      setStatus({ ok: false, message: e?.message || String(e) })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="text-xs uppercase tracking-wide text-muted-foreground flex items-center gap-2">
+        <Code2 size={12} /> {t('drawer.runOverride.title')}
+      </div>
+      {loading ? (
+        <div className="text-xs text-muted-foreground inline-flex items-center gap-2">
+          <Loader2 size={12} className="animate-spin" />
+          {t('common.loading')}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <div>
+            <label className="text-xs text-muted-foreground block mb-1">
+              {t('drawer.runOverride.runCommand')}
+            </label>
+            <input
+              type="text"
+              value={runCommand}
+              onChange={(e) => setRunCommand(e.target.value)}
+              placeholder={defaultRunCommand}
+              className="w-full bg-background border border-input rounded-md px-3 py-1.5 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            />
+            <p className="text-[10px] text-muted-foreground/70 mt-1">
+              {t('drawer.runOverride.runCommand.hint')}
+            </p>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground block mb-1">
+              {t('drawer.runOverride.cwd')}
+            </label>
+            <input
+              type="text"
+              value={cwd}
+              onChange={(e) => setCwd(e.target.value)}
+              placeholder={t('drawer.runOverride.cwd.placeholder')}
+              className="w-full bg-background border border-input rounded-md px-3 py-1.5 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            />
+            <p className="text-[10px] text-muted-foreground/70 mt-1">
+              {t('drawer.runOverride.cwd.hint')}
+            </p>
+          </div>
+          <div className="flex items-center gap-2 pt-1">
+            <Button size="sm" variant="outline" onClick={save} disabled={saving}>
+              {saving && <Loader2 size={12} className="animate-spin" />}
+              {t('common.save')}
+            </Button>
+            {status?.ok && (
+              <span className="text-[11px] text-emerald-500">
+                {t('common.saved')}
+              </span>
+            )}
+            {status && !status.ok && (
+              <span className="text-[11px] text-destructive">
+                {status.message}
+              </span>
+            )}
+          </div>
         </div>
       )}
     </div>

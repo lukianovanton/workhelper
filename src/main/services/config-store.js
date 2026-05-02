@@ -37,6 +37,13 @@ const DEFAULTS = {
     user: 'root',
     mysqlExecutable: ''
   },
+  defaults: {
+    runCommand: 'dotnet run'
+  },
+  runOverrides: {},
+  // ⚠️ Legacy: оставлен для миграции. После migrateConfig() поле
+  // обнуляется, defaults.runCommand и runOverrides[slug] хранят
+  // нужное.
   dotnet: {
     runArgs: [],
     workingDirSubpathOverride: {}
@@ -97,6 +104,41 @@ function migrateConfig(config) {
     next = {
       ...next,
       bitbucket: { workspace: '', username: '', gitUsername: '' }
+    }
+    mutated = true
+  }
+
+  // --- Run command (dotnet → defaults + runOverrides) --------------
+  const dotnet = next.dotnet || {}
+  const hasLegacyDotnet =
+    (Array.isArray(dotnet.runArgs) && dotnet.runArgs.length > 0) ||
+    (dotnet.workingDirSubpathOverride &&
+      Object.keys(dotnet.workingDirSubpathOverride).length > 0)
+
+  if (hasLegacyDotnet) {
+    const defaults = next.defaults || {}
+    const overrides = { ...(next.runOverrides || {}) }
+
+    if (!defaults.runCommand) {
+      const args = dotnet.runArgs || []
+      const cmd = ['dotnet', 'run', ...args].join(' ').trim()
+      next = {
+        ...next,
+        defaults: { ...defaults, runCommand: cmd || 'dotnet run' }
+      }
+    }
+    const subpaths = dotnet.workingDirSubpathOverride || {}
+    for (const [slug, sub] of Object.entries(subpaths)) {
+      if (!sub) continue
+      const existing = overrides[slug] || {}
+      if (!existing.cwd) {
+        overrides[slug] = { ...existing, cwd: sub }
+      }
+    }
+    next = {
+      ...next,
+      runOverrides: overrides,
+      dotnet: { runArgs: [], workingDirSubpathOverride: {} }
     }
     mutated = true
   }

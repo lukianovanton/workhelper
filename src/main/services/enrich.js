@@ -31,7 +31,16 @@ export async function enrichProjects(projects) {
   const config = getConfig()
   const projectsRoot = config.paths.projectsRoot
   const dumpsRoot = config.paths.dumpsRoot
-  const overrides = config.dotnet.workingDirSubpathOverride || {}
+  // Per-project cwd-override прилетает из config.runOverrides[slug].cwd
+  // (Phase A.6). resolveRunnableSubpath fallback'ится на legacy
+  // эвристику (.sln/.csproj/Program.cs) для .NET-проектов и используется
+  // только для UI-индикации (запускаемый subpath показывается в drawer'е).
+  // Реальный cwd для process-manager собирается отдельно при run().
+  const runOverrides = config.runOverrides || {}
+  const overrides = {}
+  for (const [slug, ov] of Object.entries(runOverrides)) {
+    if (ov?.cwd) overrides[slug] = ov.cwd
+  }
   const warnings = []
 
   // БД — одним заходом для всех

@@ -140,6 +140,17 @@
  *                                              Пароль каждого хранится в
  *                                              secrets под ключом
  *                                              `db:${database.id}:password`.
+ * @property {{ runCommand: string }} defaults  дефолтные значения для всех
+ *                                              новых проектов. runCommand
+ *                                              — full command line ('dotnet
+ *                                              run' / 'npm run dev' /
+ *                                              'go run .'). Парсится в
+ *                                              process-manager на bin + args.
+ * @property {Object<string, { runCommand?: string, cwd?: string }>} runOverrides
+ *                                              per-project оверрайды
+ *                                              runCommand и/или cwd
+ *                                              (рабочей директории
+ *                                              относительно project root).
  * @property {{ workspace: string, username: string, gitUsername: string }} [bitbucket]
  *           ⚠️ DEPRECATED. Сохранён как источник миграции для случая когда
  *           пользователь обновляется с до-A.4b версии. После первого
