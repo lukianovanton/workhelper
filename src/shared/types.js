@@ -178,7 +178,7 @@
 
 /**
  * @typedef {Object} SetupStep
- * @property {'clone'|'db-create'|'db-restore'|'deps'|'workspace'} kind
+ * @property {'clone'|'db-create'|'db-restore'|'node-prep'|'deps'|'workspace'} kind
  * @property {'start'|'progress'|'done'|'error'} status
  * @property {number} [percent]                 только для db-restore
  * @property {string} [message]

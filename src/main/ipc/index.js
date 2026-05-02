@@ -12,6 +12,7 @@ import { registerAppIpc } from './app.ipc.js'
 import { registerPresenceIpc } from './presence.ipc.js'
 import { registerJiraIpc } from './jira.ipc.js'
 import { registerMetaIpc } from './meta.ipc.js'
+import { registerNodeIpc } from './node.ipc.js'
 
 /**
  * Регистрация всех IPC-хендлеров. Вызывается из main/index.js
@@ -32,4 +33,5 @@ export function registerAllIpc() {
   registerPresenceIpc()
   registerJiraIpc()
   registerMetaIpc()
+  registerNodeIpc()
 }

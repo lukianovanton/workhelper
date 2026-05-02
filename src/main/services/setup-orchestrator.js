@@ -26,6 +26,13 @@ import * as processManager from './process-manager.js'
 import { getConfig, setConfig } from './config-store.js'
 import { resolveProjectDb } from './db/registry.js'
 import { resolvePackageManager, runPmCommand } from './node-deps.js'
+import {
+  detectRequiredNodeVersion,
+  getVoltaInfo,
+  installNodeViaVolta,
+  nodeVersionSatisfies,
+  getSystemNodeVersion
+} from './node-version.js'
 
 const activeSetups = new Map()
 
@@ -243,6 +250,35 @@ export async function runFull(slug, options, emitStep) {
       }
     }
 
+    // ─── c.4) node-prep — Volta + правильная Node-версия ─────────────
+    // Если у проекта закреплена Node-версия (package.json#engines /
+    // .nvmrc / volta.node) и она отличается от системной, пытаемся
+    // подтянуть нужную через Volta. Если Volta установлен — install
+    // идемпотентно и pin не пишем (Volta auto-switch'ит по project-
+    // файлам через PATH-shim). Если Volta нет — done с предупреждением,
+    // дальнейший npm install пойдёт с системного node (может упасть
+    // на gyp/native deps если major'ы расходятся, но это лучше чем
+    // блокировать установку без Volta).
+    checkCancel()
+    if (config.paths.projectsRoot) {
+      try {
+        await runNodePrepStep(
+          fsService.projectPath(config.paths.projectsRoot, slug),
+          beginStep,
+          endStep,
+          errorStep,
+          emitStep
+        )
+      } catch (e) {
+        // Не фатально для setup'а — пропускаем дальше с warning'ом.
+        // Volta может фейлить из-за network'а, миссинг winget и т.п.
+        // npm install попробует на системном node.
+        console.warn('[setup] node-prep failed:', e?.message || e)
+      }
+    } else {
+      emitStep({ kind: 'node-prep', status: 'done', message: 'Skipped' })
+    }
+
     // ─── c.5) deps install ───────────────────────────────────────────
     // Свежеклонированные Node-проекты не запустятся без `npm install`:
     // `npm run start` упадёт с module-not-found как только spawn найдёт
@@ -303,6 +339,75 @@ export async function runFull(slug, options, emitStep) {
     }
   } finally {
     activeSetups.delete(slug)
+  }
+}
+
+async function runNodePrepStep(
+  repoPath,
+  beginStep,
+  endStep,
+  errorStep,
+  emitStep
+) {
+  // Не Node-проект → no-op done
+  const required = detectRequiredNodeVersion(repoPath)
+  if (!required) {
+    emitStep({
+      kind: 'node-prep',
+      status: 'done',
+      message: 'No Node version pinned'
+    })
+    return
+  }
+
+  // Сравним с системным
+  const sys = await getSystemNodeVersion()
+  if (sys && nodeVersionSatisfies(sys, required.version)) {
+    emitStep({
+      kind: 'node-prep',
+      status: 'done',
+      message: `System Node ${sys} satisfies required ${required.raw}`
+    })
+    return
+  }
+
+  // Нужна другая версия. Если Volta установлен — попробуем install.
+  const volta = await getVoltaInfo()
+  if (!volta.installed) {
+    emitStep({
+      kind: 'node-prep',
+      status: 'done',
+      message: `Project requires Node ${required.raw} (system: ${sys || 'not found'}). Volta not installed — install Volta from Settings to auto-manage versions.`
+    })
+    return
+  }
+
+  // Volta уже знает эту версию?
+  const alreadyHave = volta.nodeVersions.some((v) =>
+    nodeVersionSatisfies(v, required.version)
+  )
+  if (alreadyHave) {
+    emitStep({
+      kind: 'node-prep',
+      status: 'done',
+      message: `Volta already has Node ${required.raw}`
+    })
+    return
+  }
+
+  // Тащим версию через Volta. Может занять минуту (download + install).
+  const t = beginStep('node-prep')
+  const result = await installNodeViaVolta(required.version)
+  if (result.ok) {
+    endStep(
+      'node-prep',
+      t,
+      `Installed Node ${required.raw} via Volta`
+    )
+  } else {
+    // Не валим setup — просто warning в шаге. npm install попробует
+    // на системном node (может упасть на native-deps).
+    errorStep('node-prep', result.message)
   }
 }
 

@@ -110,5 +110,10 @@ export const IPC = {
   meta: {
     get: 'meta:get',
     set: 'meta:set'
+  },
+  node: {
+    status: 'node:status',
+    installVolta: 'node:installVolta',
+    installVersion: 'node:installVersion'
   }
 }

@@ -146,6 +146,12 @@ const api = {
     get: () => ipcRenderer.invoke('meta:get'),
     set: (patch) => ipcRenderer.invoke('meta:set', patch)
   },
+  node: {
+    status: (slug) => ipcRenderer.invoke('node:status', slug),
+    installVolta: () => ipcRenderer.invoke('node:installVolta'),
+    installVersion: (versionSpec) =>
+      ipcRenderer.invoke('node:installVersion', versionSpec)
+  },
   presence: {
     list: () => ipcRenderer.invoke('presence:list'),
     isEnabled: () => ipcRenderer.invoke('presence:isEnabled'),

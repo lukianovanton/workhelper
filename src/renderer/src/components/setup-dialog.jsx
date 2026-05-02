@@ -67,6 +67,10 @@ export function SetupDialog({ project, open, onOpenChange }) {
   // Используется чтобы предложить умный дефолт для setupDb (нужна БД
   // или нет) и показать пользователю «что мы поняли про проект».
   const [detectedStack, setDetectedStack] = useState(null)
+  // Node-status для Node-проектов: required version из engines/.nvmrc,
+  // системная версия, Volta info, satisfied-флаг. Если репо не Node —
+  // required = null и UI ничего не рендерит.
+  const [nodeStatus, setNodeStatus] = useState(null)
   const phase = setupState?.phase ?? 'pre-flight'
   const isRunning = phase === 'running'
   const isTerminal =
@@ -107,6 +111,7 @@ export function SetupDialog({ project, open, onOpenChange }) {
   useEffect(() => {
     if (!open) {
       setDetectedStack(null)
+      setNodeStatus(null)
       userTouchedSetupDbRef.current = false
       return
     }
@@ -120,6 +125,12 @@ export function SetupDialog({ project, open, onOpenChange }) {
         if (project.db.exists) return
         setSetupDb(!!r.needsDatabase)
       }
+    })
+    // Параллельно запрашиваем Node-status. Для не-Node проектов
+    // backend вернёт required=null — UI просто скрывает банер.
+    api.node?.status?.(project.slug).then((s) => {
+      if (cancelled) return
+      setNodeStatus(s || null)
     })
     return () => {
       cancelled = true
@@ -246,6 +257,7 @@ export function SetupDialog({ project, open, onOpenChange }) {
               setupDb={setupDb}
               setSetupDb={onSetSetupDb}
               detectedStack={detectedStack}
+              nodeStatus={nodeStatus}
               skipRestore={skipRestore}
               setSkipRestore={setSkipRestore}
               openWorkspace={openWorkspace}
@@ -334,6 +346,7 @@ function PreFlight({
   setupDb,
   setSetupDb,
   detectedStack,
+  nodeStatus,
   skipRestore,
   setSkipRestore,
   openWorkspace,
@@ -384,6 +397,9 @@ function PreFlight({
           <DetectedStackLine stack={detectedStack} />
         </div>
       )}
+
+      <NodeStatusBanner status={nodeStatus} />
+
 
       <div className="space-y-2">
         <label className="flex items-center gap-2 text-sm select-none cursor-pointer">
@@ -560,6 +576,111 @@ function DetectedStackLine({ stack }) {
   )
 }
 
+/**
+ * Banner под Detected-stack'ом. Показывается только если у проекта
+ * закреплена Node-version (engines / .nvmrc / volta.node) и есть
+ * расхождение с системной версией. Три состояния:
+ *
+ *   1. Required матчит system или Volta уже знает версию
+ *      → emerald «Node version ready»
+ *   2. Volta installed, версия отсутствует
+ *      → amber, info: setup install'нет автоматически в node-prep step
+ *   3. Volta NOT installed, версия не матчит
+ *      → amber, action: «Install Volta» button (открывает Settings)
+ */
+function NodeStatusBanner({ status }) {
+  const [installing, setInstalling] = useState(false)
+  const [installResult, setInstallResult] = useState(null)
+  if (!status?.required) return null
+
+  const required = status.required
+  const sys = status.systemVersion
+  const volta = status.volta
+  const satisfied = status.satisfied
+
+  let tone, icon, message
+  if (satisfied) {
+    tone = 'border-emerald-500/30 bg-emerald-500/5 text-emerald-400'
+    icon = <CheckCircle2 size={14} className="mt-0.5 shrink-0" />
+    message = (
+      <span>
+        Node <code>{required.raw}</code> ready
+        {volta.installed ? ' (via Volta)' : ` (system Node ${sys})`}.
+      </span>
+    )
+  } else if (volta.installed) {
+    tone = 'border-amber-500/30 bg-amber-500/5 text-amber-400'
+    icon = <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+    message = (
+      <span>
+        Project requires Node <code>{required.raw}</code> (system has{' '}
+        {sys || 'no node'}). Will install via Volta during setup.
+      </span>
+    )
+  } else {
+    tone = 'border-amber-500/30 bg-amber-500/5 text-amber-400'
+    icon = <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+    message = (
+      <span>
+        Project requires Node <code>{required.raw}</code> (system has{' '}
+        {sys || 'no node'}). Install Volta to auto-manage Node versions
+        per-project — without it, npm install may fail on native deps.
+      </span>
+    )
+  }
+
+  const onInstallVolta = async () => {
+    setInstalling(true)
+    setInstallResult(null)
+    try {
+      const r = await api.node.installVolta()
+      setInstallResult(r)
+    } catch (e) {
+      setInstallResult({ ok: false, message: e?.message || String(e) })
+    } finally {
+      setInstalling(false)
+    }
+  }
+
+  return (
+    <div
+      className={cn(
+        'rounded-md border px-3 py-2 text-xs flex items-start gap-2',
+        tone
+      )}
+    >
+      {icon}
+      <div className="flex-1 space-y-1.5">
+        {message}
+        {!satisfied && !volta.installed && (
+          <div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7"
+              onClick={onInstallVolta}
+              disabled={installing}
+            >
+              {installing && <Loader2 size={12} className="animate-spin" />}
+              Install Volta
+            </Button>
+            {installResult && (
+              <div
+                className={cn(
+                  'mt-1.5 text-[11px]',
+                  installResult.ok ? 'text-emerald-500' : 'text-destructive'
+                )}
+              >
+                {installResult.message}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function PreFlightItem({ on, skip, title, right }) {
   const Icon = skip ? Circle : on ? CheckCircle2 : Circle
   const color = skip
@@ -580,6 +701,7 @@ const STEPS_ORDER = [
   { kind: 'clone', label: 'Clone repository' },
   { kind: 'db-create', label: 'Create database' },
   { kind: 'db-restore', label: 'Restore dump' },
+  { kind: 'node-prep', label: 'Prepare Node version' },
   { kind: 'deps', label: 'Install dependencies' },
   { kind: 'workspace', label: 'Open VS Code workspace' }
 ]
