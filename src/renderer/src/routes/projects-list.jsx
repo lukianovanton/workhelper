@@ -463,14 +463,20 @@ export default function ProjectsList() {
    * операция (только localStorage через projectsMeta-store), без
    * async / network — поэтому без runBulk-обёртки и progress-тоста.
    * `null` сбрасывает override → auto-detect.
+   *
+   * После применения чекбоксы отжимаются — bulk-bar исчезает,
+   * пользователь видит результат свежим взглядом без необходимости
+   * повторно нажимать Clear.
    */
   const onBulkSetCategory = (categoryId) => {
     if (selected.size === 0) return
+    const count = selected.size
     for (const slug of selected) setCategory(slug, categoryId)
+    clearSelected()
     toast.ok(
       categoryId
-        ? `Set kind for ${selected.size} project(s)`
-        : `Reset kind for ${selected.size} project(s)`
+        ? `Set kind for ${count} project(s)`
+        : `Reset kind for ${count} project(s)`
     )
   }
 
