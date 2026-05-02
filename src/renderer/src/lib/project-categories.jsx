@@ -38,7 +38,8 @@ import {
   Briefcase,
   Flame,
   Archive,
-  UserX
+  UserX,
+  Pause
 } from 'lucide-react'
 
 /** @type {Record<string, ProjectCategory>} */
@@ -83,6 +84,19 @@ export const PROJECT_CATEGORIES = {
     auto: true,
     order: 4
   },
+  // On Hold / «На паузе» — для проектов, которые иногда используются
+  // но не активно: pet-tools которые трогаешь раз в квартал, временно
+  // отложенные репозитории, etc. Между Template и Archived.
+  // Stone-цвет — нейтральный warm-gray, не attention-grabbing как
+  // Template (amber) и не такой «мёртвый» как Archived.
+  onhold: {
+    id: 'onhold',
+    labelKey: 'projects.kind.onhold',
+    Icon: Pause,
+    pillClassName: 'bg-stone-500/15 text-stone-400 border-stone-500/30',
+    auto: false,
+    order: 5
+  },
   archived: {
     id: 'archived',
     labelKey: 'projects.kind.archived',
@@ -90,7 +104,7 @@ export const PROJECT_CATEGORIES = {
     pillClassName:
       'bg-muted/40 text-muted-foreground border-muted-foreground/30',
     auto: false,
-    order: 5
+    order: 6
   },
   external: {
     id: 'external',
@@ -99,7 +113,7 @@ export const PROJECT_CATEGORIES = {
     pillClassName:
       'bg-slate-500/15 text-slate-400 border-slate-500/30',
     auto: false,
-    order: 6
+    order: 7
   }
 }
 

@@ -78,6 +78,7 @@
   "projects.kind.personal": "Personal",
   "projects.kind.work": "Work",
   "projects.kind.important": "Important",
+  "projects.kind.onhold": "On Hold",
   "projects.kind.archived": "Archived",
   "projects.kind.external": "External",
   "projects.kind.clickToChange": "Click to set a custom category",
