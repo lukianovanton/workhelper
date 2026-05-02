@@ -345,14 +345,16 @@ export default function ProjectsList() {
     })
 
     const sign = sort.direction === 'asc' ? 1 : -1
-    const isArchived = (p) => categories[p.slug] === 'archived'
     return [...filtered].sort((a, b) => {
-      // Архивированные всегда внизу, перебивая даже favorite-pin.
-      // Семантика: «я этот репо больше не трогаю» сильнее «закрепить».
-      const aArch = isArchived(a)
-      const bArch = isArchived(b)
-      if (aArch !== bArch) return aArch ? 1 : -1
-      // Избранные наверху среди не-архивных.
+      // Иерархия по category.order: Important > Personal > Work >
+      // Project > Template > Archived > External. Это первая и
+      // самая сильная ступень — перебивает favorite-pin и task-count.
+      // Чтобы поднять External-проект наверх, юзер меняет ему
+      // категорию через KindBadge picker.
+      const aCat = resolveProjectCategory(a.kind, categories[a.slug])
+      const bCat = resolveProjectCategory(b.kind, categories[b.slug])
+      if (aCat.order !== bCat.order) return aCat.order - bCat.order
+      // Внутри одной категории — favorites наверху.
       const aFav = !!favorites[a.slug]
       const bFav = !!favorites[b.slug]
       if (aFav !== bFav) return aFav ? -1 : 1

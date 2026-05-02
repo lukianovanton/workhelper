@@ -4,10 +4,15 @@
  * Две категории — `project` и `template` — auto-assigned из VCS-данных
  * (provider.kind возвращает их). Остальные — user-overridable: юзер
  * кликает по бейджу в строке и выбирает свой ярлык (Personal, Work,
- * Important, Archived).
+ * Important, Archived, External).
  *
  * Хранение пользовательских категорий: projectsMeta.categories[slug].
  * Если slug отсутствует — резолвится автоматически из project.kind.
+ *
+ * `order`-поле задаёт sort-priority в списке проектов: меньше — выше.
+ * Список рендерится отсортированным по category.order: Important сверху,
+ * External самый низ. Внутри одной категории остаётся текущий sort
+ * (favorites / tasks / column).
  *
  * Добавление новой категории = одна запись здесь + (опционально) i18n
  * ключи. Не требует правок UI.
@@ -22,57 +27,79 @@
  *                                            быть auto-assigned из
  *                                            project.kind. Auto-категории
  *                                            попадают в picker'е первыми.
- * @property {boolean} [hideInPicker]         не показывать в picker'е
- *                                            (если категория устаревшая
- *                                            но ещё может встретиться в
- *                                            старых сохранённых данных).
+ * @property {number} order                   sort-priority. 0 = top.
+ * @property {boolean} [hideInPicker]         не показывать в picker'е.
  */
 
-import { Package, FileCode2, User, Briefcase, Flame, Archive } from 'lucide-react'
+import {
+  Package,
+  FileCode2,
+  User,
+  Briefcase,
+  Flame,
+  Archive,
+  UserX
+} from 'lucide-react'
 
 /** @type {Record<string, ProjectCategory>} */
 export const PROJECT_CATEGORIES = {
-  project: {
-    id: 'project',
-    labelKey: 'projects.kind.project',
-    Icon: Package,
-    pillClassName: 'bg-sky-500/15 text-sky-400 border-sky-500/30',
-    auto: true
-  },
-  template: {
-    id: 'template',
-    labelKey: 'projects.kind.template',
-    Icon: FileCode2,
-    pillClassName: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
-    auto: true
+  important: {
+    id: 'important',
+    labelKey: 'projects.kind.important',
+    Icon: Flame,
+    pillClassName: 'bg-rose-500/15 text-rose-400 border-rose-500/30',
+    auto: false,
+    order: 0
   },
   personal: {
     id: 'personal',
     labelKey: 'projects.kind.personal',
     Icon: User,
     pillClassName: 'bg-purple-500/15 text-purple-400 border-purple-500/30',
-    auto: false
+    auto: false,
+    order: 1
   },
   work: {
     id: 'work',
     labelKey: 'projects.kind.work',
     Icon: Briefcase,
     pillClassName: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
-    auto: false
+    auto: false,
+    order: 2
   },
-  important: {
-    id: 'important',
-    labelKey: 'projects.kind.important',
-    Icon: Flame,
-    pillClassName: 'bg-rose-500/15 text-rose-400 border-rose-500/30',
-    auto: false
+  project: {
+    id: 'project',
+    labelKey: 'projects.kind.project',
+    Icon: Package,
+    pillClassName: 'bg-sky-500/15 text-sky-400 border-sky-500/30',
+    auto: true,
+    order: 3
+  },
+  template: {
+    id: 'template',
+    labelKey: 'projects.kind.template',
+    Icon: FileCode2,
+    pillClassName: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
+    auto: true,
+    order: 4
   },
   archived: {
     id: 'archived',
     labelKey: 'projects.kind.archived',
     Icon: Archive,
-    pillClassName: 'bg-muted/40 text-muted-foreground border-muted-foreground/30',
-    auto: false
+    pillClassName:
+      'bg-muted/40 text-muted-foreground border-muted-foreground/30',
+    auto: false,
+    order: 5
+  },
+  external: {
+    id: 'external',
+    labelKey: 'projects.kind.external',
+    Icon: UserX,
+    pillClassName:
+      'bg-slate-500/15 text-slate-400 border-slate-500/30',
+    auto: false,
+    order: 6
   }
 }
 
@@ -90,7 +117,9 @@ export function resolveProjectCategory(kind, override) {
 }
 
 export function listProjectCategories() {
-  return Object.values(PROJECT_CATEGORIES).filter((c) => !c.hideInPicker)
+  return Object.values(PROJECT_CATEGORIES)
+    .filter((c) => !c.hideInPicker)
+    .sort((a, b) => a.order - b.order)
 }
 
 /**

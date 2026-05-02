@@ -76,6 +76,7 @@
   "projects.kind.work": "Work",
   "projects.kind.important": "Important",
   "projects.kind.archived": "Archived",
+  "projects.kind.external": "External",
   "projects.kind.clickToChange": "Click to set a custom category",
   "projects.kind.overridden": "Custom category: {label}. Click to change.",
   "projects.kind.picker.auto": "Auto-detected",
