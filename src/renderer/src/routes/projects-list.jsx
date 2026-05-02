@@ -12,7 +12,6 @@ import {
   ExternalLink,
   Star,
   Square,
-  FileCode2,
   GitPullRequest,
   CheckSquare,
   Filter,
@@ -39,6 +38,11 @@ import { PipelineStateBadge } from '@/routes/project-detail'
 import { WorkspaceNav } from '@/routes/my-tasks'
 import { useT } from '@/i18n'
 import { getVcsProvider } from '@/lib/vcs-providers'
+import {
+  PROJECT_CATEGORIES,
+  resolveProjectCategory,
+  listProjectCategories
+} from '@/lib/project-categories'
 import {
   EmptyState as SharedEmptyState,
   ErrorState as SharedErrorState
@@ -146,6 +150,8 @@ export default function ProjectsList() {
   const { bySlug: runningBySlug } = useRunningProcesses()
   const favorites = useProjectsMetaStore((s) => s.favorites)
   const toggleFavorite = useProjectsMetaStore((s) => s.toggleFavorite)
+  const categories = useProjectsMetaStore((s) => s.categories)
+  const setCategory = useProjectsMetaStore((s) => s.setCategory)
   const recent = useProjectsMetaStore((s) => s.recent)
   const density = usePrefsStore((s) => s.density)
   const searchHighlight = usePrefsStore((s) => s.searchHighlight)
@@ -301,8 +307,13 @@ export default function ProjectsList() {
         if (columnFilters.tasks === 'with' && count === 0) return false
         if (columnFilters.tasks === 'without' && count > 0) return false
       }
-      if (columnFilters.kind.size > 0 && !columnFilters.kind.has(p.kind))
-        return false
+      if (columnFilters.kind.size > 0) {
+        // Фильтр работает по effective-category (override + auto), а не
+        // по raw VCS-kind: пользователь, поставивший «work» на template-
+        // репо, при выборе «work» в фильтре увидит этот репо.
+        const eff = resolveProjectCategory(p.kind, categories[p.slug])
+        if (!columnFilters.kind.has(eff.id)) return false
+      }
       if (columnFilters.dbSize !== 'any') {
         const b = p.db.sizeBytes
         const exists = p.db.exists
@@ -362,7 +373,8 @@ export default function ProjectsList() {
     sort,
     favorites,
     columnFilters,
-    taskCountBySlug
+    taskCountBySlug,
+    categories
   ])
 
   const counts = useMemo(() => {
@@ -605,6 +617,8 @@ export default function ProjectsList() {
               setColumnFilter={setColumnFilter}
               taskCountBySlug={taskCountBySlug}
               availableSources={availableSources}
+              categories={categories}
+              setCategory={setCategory}
               onOpen={(slug) => navigate(`/projects/${slug}`)}
             />
           )}
@@ -711,6 +725,8 @@ function ProjectsTable({
   setColumnFilter,
   taskCountBySlug,
   availableSources,
+  categories,
+  setCategory,
   onOpen
 }) {
   const t = useT()
@@ -890,6 +906,8 @@ function ProjectsTable({
             nameTextCls={nameTextCls}
             descCls={descCls}
             taskCount={taskCountBySlug?.get(p.slug) || 0}
+            categoryOverride={categories?.[p.slug]}
+            onSetCategory={(cat) => setCategory(p.slug, cat)}
           />
         ))}
       </tbody>
@@ -921,7 +939,9 @@ function ProjectRow({
   cellPad,
   nameTextCls,
   descCls,
-  taskCount
+  taskCount,
+  categoryOverride,
+  onSetCategory
 }) {
   const t = useT()
   const trRef = useRef(null)
@@ -1007,15 +1027,10 @@ function ProjectRow({
         />
       </td>
       <td className={cn(cellPad, 'text-xs')}>
-        <div className="inline-flex items-center gap-1.5 min-w-0">
-          <SourceBadge
-            type={p.source?.type}
-            sourceName={p.source?.name}
-          />
-          <span className="text-muted-foreground truncate">
-            {p.source?.name || p.source?.type || '—'}
-          </span>
-        </div>
+        <SourcePill
+          type={p.source?.type}
+          sourceName={p.source?.name}
+        />
       </td>
       <td className={cn(cellPad, 'font-mono text-xs')}>
         <Highlight text={p.slug} match={search} />
@@ -1044,7 +1059,11 @@ function ProjectRow({
         )}
       </td>
       <td className={cellPad}>
-        <KindBadge kind={p.kind} />
+        <KindBadge
+          kind={p.kind}
+          categoryOverride={categoryOverride}
+          onSetCategory={onSetCategory}
+        />
       </td>
       <td
         className={cn(
@@ -1445,10 +1464,10 @@ function SourceColumnFilter({ sources, value, onChange }) {
 
 function KindColumnFilter({ value, onChange }) {
   const t = useT()
-  const opts = [
-    { id: 'project', label: t('projects.kind.project') },
-    { id: 'template', label: t('projects.kind.template') }
-  ]
+  // Опции — все категории из реестра, включая user-overridable
+  // (personal / work / important / archived). Фильтр работает по
+  // effective category id, см. логику в sortedAndFiltered.
+  const opts = listProjectCategories()
   const toggle = (k) => {
     const next = new Set(value)
     if (next.has(k)) next.delete(k)
@@ -1460,20 +1479,24 @@ function KindColumnFilter({ value, onChange }) {
       <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
         {t('projects.filter.kind')}
       </div>
-      {opts.map((opt) => (
-        <label
-          key={opt.id}
-          className="flex items-center gap-2 text-xs cursor-pointer"
-        >
-          <input
-            type="checkbox"
-            checked={value.has(opt.id)}
-            onChange={() => toggle(opt.id)}
-            className="rounded border-input"
-          />
-          <span>{opt.label}</span>
-        </label>
-      ))}
+      {opts.map((opt) => {
+        const Icon = opt.Icon
+        return (
+          <label
+            key={opt.id}
+            className="flex items-center gap-2 text-xs cursor-pointer"
+          >
+            <input
+              type="checkbox"
+              checked={value.has(opt.id)}
+              onChange={() => toggle(opt.id)}
+              className="rounded border-input"
+            />
+            <Icon size={11} className="shrink-0 opacity-70" />
+            <span>{t(opt.labelKey)}</span>
+          </label>
+        )
+      })}
       {value.size > 0 && (
         <button
           onClick={() => onChange(new Set())}
@@ -1617,60 +1640,157 @@ function StatusDots({ project, runtime, lastPipeline, pipelineLoaded }) {
 }
 
 /**
- * Маленький бейдж типа источника рядом со slug в таблице. Делает
- * однозначно понятным, откуда приехал репозиторий, при настроенных
- * нескольких источниках разного типа.
+ * Бейдж категории проекта в колонке Kind. Авто-резолв: project /
+ * template из VCS-kind'а; пользователь может перебить любой из своих
+ * (Personal / Work / Important / Archived). Click → popover с picker'ом.
  *
- * Иконки/цвета берутся из VCS_PROVIDERS (renderer-side реестр).
- * Unknown type рендерится initials'ами имени источника — на случай
- * downgrade'а с провайдером, которого ещё нет в текущей версии.
+ * Категории и их цвета — в lib/project-categories.jsx. Override живёт
+ * в projectsMeta.categories[slug] (localStorage).
  */
-function SourceBadge({ type, sourceName }) {
-  if (!type) return null
+function KindBadge({ kind, categoryOverride, onSetCategory }) {
+  const t = useT()
+  const category = resolveProjectCategory(kind, categoryOverride)
+  const Icon = category.Icon
+  const isOverridden = !!categoryOverride && categoryOverride !== (kind === 'template' ? 'template' : 'project')
+
+  return (
+    <Popover
+      align="left"
+      trigger={
+        <button
+          onClick={(e) => e.stopPropagation()}
+          title={
+            isOverridden
+              ? t('projects.kind.overridden', { label: t(category.labelKey) })
+              : t('projects.kind.clickToChange')
+          }
+          className={cn(
+            'inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs border transition-opacity hover:opacity-80',
+            category.pillClassName
+          )}
+        >
+          <Icon size={11} />
+          <span>{t(category.labelKey)}</span>
+        </button>
+      }
+    >
+      <CategoryPicker
+        kind={kind}
+        currentCategoryId={category.id}
+        hasOverride={!!categoryOverride}
+        onPick={(catId) => onSetCategory(catId)}
+        onReset={() => onSetCategory(null)}
+      />
+    </Popover>
+  )
+}
+
+function CategoryPicker({ kind, currentCategoryId, hasOverride, onPick, onReset }) {
+  const t = useT()
+  const cats = listProjectCategories()
+  const auto = cats.filter((c) => c.auto)
+  const custom = cats.filter((c) => !c.auto)
+  return (
+    <div className="space-y-2 min-w-[180px]">
+      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+        {t('projects.kind.picker.auto')}
+      </div>
+      {auto.map((c) => {
+        const Icon = c.Icon
+        const active = c.id === currentCategoryId
+        return (
+          <button
+            key={c.id}
+            onClick={() => onPick(c.id)}
+            className={cn(
+              'w-full inline-flex items-center gap-2 px-2 py-1 rounded-md border text-xs transition-opacity hover:opacity-80',
+              c.pillClassName,
+              !active && 'opacity-60'
+            )}
+          >
+            <Icon size={11} />
+            <span>{t(c.labelKey)}</span>
+          </button>
+        )
+      })}
+      <div className="text-[10px] uppercase tracking-wide text-muted-foreground pt-1">
+        {t('projects.kind.picker.custom')}
+      </div>
+      {custom.map((c) => {
+        const Icon = c.Icon
+        const active = c.id === currentCategoryId
+        return (
+          <button
+            key={c.id}
+            onClick={() => onPick(c.id)}
+            className={cn(
+              'w-full inline-flex items-center gap-2 px-2 py-1 rounded-md border text-xs transition-opacity hover:opacity-80',
+              c.pillClassName,
+              !active && 'opacity-60'
+            )}
+          >
+            <Icon size={11} />
+            <span>{t(c.labelKey)}</span>
+          </button>
+        )
+      })}
+      {hasOverride && (
+        <button
+          onClick={onReset}
+          className="w-full text-[11px] text-muted-foreground hover:text-foreground inline-flex items-center justify-center gap-1 mt-1 pt-1 border-t border-border/40"
+        >
+          <XIcon size={10} />
+          <span>
+            {t('projects.kind.picker.reset', {
+              auto: t(
+                kind === 'template'
+                  ? 'projects.kind.template'
+                  : 'projects.kind.project'
+              )
+            })}
+          </span>
+        </button>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Цветная "pill"-форма источника для колонки Source. Использует
+ * pillClassName из VCS_PROVIDERS-реестра — каждый провайдер задаёт
+ * свою brand-цветовую схему. Unknown providers fallback'ятся на
+ * generic muted-pill с initials'ами имени.
+ */
+function SourcePill({ type, sourceName }) {
+  if (!type) {
+    return <span className="text-muted-foreground/40 text-xs">—</span>
+  }
   const provider = getVcsProvider(type)
+  const baseCls =
+    'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs border max-w-full'
   if (provider) {
     const Icon = provider.BadgeIcon
     return (
       <span
-        title={provider.label}
-        className={`inline-flex items-center shrink-0 ${provider.badgeClassName}`}
+        title={sourceName || provider.label}
+        className={cn(baseCls, provider.pillClassName)}
       >
-        <Icon size={12} />
+        <Icon size={11} className="shrink-0" />
+        <span className="truncate">{sourceName || provider.label}</span>
       </span>
     )
   }
-  // Fallback для неизвестного провайдера: 2 буквы из имени.
   const initials = (sourceName || type).slice(0, 2).toUpperCase()
   return (
     <span
       title={sourceName || type}
-      className="inline-flex items-center justify-center shrink-0 text-[9px] font-mono text-muted-foreground/60 px-1 border border-border rounded"
-    >
-      {initials}
-    </span>
-  )
-}
-
-function KindBadge({ kind }) {
-  const t = useT()
-  // Раньше badge рендерился на каждой строке (включая plain 'project'),
-  // что было визуальным шумом — все репо в большинстве sources это
-  // обычные projects. Сейчас бейдж только для template-репо: BB по
-  // настраиваемому prefix project.key (default 'TP'), GitHub по
-  // is_template-флагу. GitLab / AzDO не имеют понятия template и
-  // никогда не подсвечиваются. Plain projects не рендерятся —
-  // отсутствие бейджа = «обычный repo».
-  if (kind !== 'template') return null
-  return (
-    <span
-      title={t('projects.kind.template.hint')}
       className={cn(
-        'inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs border',
-        'bg-amber-500/15 text-amber-400 border-amber-500/30'
+        baseCls,
+        'bg-muted/40 text-muted-foreground border-muted-foreground/20'
       )}
     >
-      <FileCode2 size={11} />
-      {t('projects.kind.template')}
+      <span className="font-mono shrink-0">{initials}</span>
+      <span className="truncate">{sourceName || type}</span>
     </span>
   )
 }

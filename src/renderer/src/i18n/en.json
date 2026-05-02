@@ -72,7 +72,15 @@
 
   "projects.kind.project": "Project",
   "projects.kind.template": "Template",
-  "projects.kind.template.hint": "Template repository — flagged either by `is_template` (GitHub) or by configurable project-key prefix (Bitbucket).",
+  "projects.kind.personal": "Personal",
+  "projects.kind.work": "Work",
+  "projects.kind.important": "Important",
+  "projects.kind.archived": "Archived",
+  "projects.kind.clickToChange": "Click to set a custom category",
+  "projects.kind.overridden": "Custom category: {label}. Click to change.",
+  "projects.kind.picker.auto": "Auto-detected",
+  "projects.kind.picker.custom": "Custom",
+  "projects.kind.picker.reset": "Reset to {auto}",
 
   "projects.dbSize.any": "Any",
   "projects.dbSize.empty": "Empty / not exists",

@@ -72,7 +72,15 @@
 
   "projects.kind.project": "Проект",
   "projects.kind.template": "Шаблон",
-  "projects.kind.template.hint": "Template-репозиторий — отмечен либо `is_template` (GitHub), либо настраиваемым prefix'ом project.key (Bitbucket).",
+  "projects.kind.personal": "Личное",
+  "projects.kind.work": "Работа",
+  "projects.kind.important": "Важное",
+  "projects.kind.archived": "Архив",
+  "projects.kind.clickToChange": "Кликни чтобы выставить свою категорию",
+  "projects.kind.overridden": "Своя категория: {label}. Кликни чтобы изменить.",
+  "projects.kind.picker.auto": "Автодетект",
+  "projects.kind.picker.custom": "Свои",
+  "projects.kind.picker.reset": "Сбросить на {auto}",
 
   "projects.dbSize.any": "Любой",
   "projects.dbSize.empty": "Пусто / нет БД",
