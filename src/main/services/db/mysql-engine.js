@@ -20,8 +20,6 @@ import { open, stat } from 'node:fs/promises'
 import path from 'node:path'
 import zlib from 'node:zlib'
 import { Transform } from 'node:stream'
-import { getConfig } from '../config-store.js'
-import { getSecret } from '../secrets.js'
 
 /**
  * Имя БД должно быть строго [a-z0-9_]+ — это та же конвенция что в
@@ -55,31 +53,48 @@ async function isGzipFile(filePath) {
 }
 
 /**
- * Фабрика MysqlEngine. Каждый инстанс держит собственную карту
- * активных restore'ов (`restoreJobs: Map<jobKey, handle>`). В
- * мульти-engine setup'е (Phase A.5+) у каждого подключения будет
- * свой инстанс, и isRestoring/cancelRestore работают по jobKey
- * только внутри одного engine'а.
+ * Фабрика MysqlEngine.
  *
+ * Phase A.5a: фабрика принимает явные lazy-getters вместо чтения
+ * глобального config-store / secrets. Это позволяет создавать
+ * несколько инстансов под разные DB-connection'ы (Phase A.5b даст
+ * это через UI).
+ *
+ * Каждый инстанс держит собственную карту активных restore'ов
+ * (`restoreJobs: Map<jobKey, handle>`).
+ *
+ * @param {Object} opts
+ * @param {() => string} opts.getHost
+ * @param {() => number} opts.getPort
+ * @param {() => string} opts.getUser
+ * @param {() => string|null} opts.getPassword
+ * @param {() => string} opts.getExecutable  абсолютный путь к mysql CLI
+ *                                            (или 'mysql' для PATH)
  * @returns {DbEngine}
  */
-export function createMysqlEngine() {
+export function createMysqlEngine({
+  getHost,
+  getPort,
+  getUser,
+  getPassword,
+  getExecutable
+}) {
   /** @type {Map<string, {child:any, bytesRead:number, totalBytes:number, startedAt:number}>} */
   const restoreJobs = new Map()
 
   function buildConnectionConfig() {
-    const { database } = getConfig()
-    if (!database.host || !database.user) {
+    const host = getHost()
+    const user = getUser()
+    if (!host || !user) {
       throw new Error(
-        'MySQL credentials not configured. Open Settings → Database.'
+        'MySQL credentials not configured. Open Settings → Databases.'
       )
     }
-    const password = getSecret('dbPassword') || ''
     return {
-      host: database.host,
-      port: database.port || 3306,
-      user: database.user,
-      password,
+      host,
+      port: getPort() || 3306,
+      user,
+      password: getPassword() || '',
       connectTimeout: 5000
     }
   }
@@ -94,7 +109,7 @@ export function createMysqlEngine() {
   }
 
   function mysqlExecutablePath() {
-    const exec = getConfig().database.mysqlExecutable
+    const exec = getExecutable()
     if (exec && exec.trim()) return exec.trim()
     return 'mysql'
   }
@@ -237,12 +252,11 @@ export function createMysqlEngine() {
       )
     }
 
-    const config = getConfig()
-    const password = getSecret('dbPassword') || ''
+    const password = getPassword() || ''
     const args = [
-      '-h', config.database.host,
-      '-P', String(config.database.port || 3306),
-      '-u', config.database.user,
+      '-h', getHost(),
+      '-P', String(getPort() || 3306),
+      '-u', getUser(),
       `--password=${password}`,
       '--default-character-set=utf8mb4',
       name
