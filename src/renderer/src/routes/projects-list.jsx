@@ -353,18 +353,20 @@ export default function ProjectsList() {
 
     const sign = sort.direction === 'asc' ? 1 : -1
     return [...filtered].sort((a, b) => {
-      // Иерархия по category.order: Important > Personal > Work >
-      // Project > Template > Archived > External. Это первая и
-      // самая сильная ступень — перебивает favorite-pin и task-count.
-      // Чтобы поднять External-проект наверх, юзер меняет ему
-      // категорию через KindBadge picker.
-      const aCat = resolveProjectCategory(a.kind, categories[a.slug])
-      const bCat = resolveProjectCategory(b.kind, categories[b.slug])
-      if (aCat.order !== bCat.order) return aCat.order - bCat.order
-      // Внутри одной категории — favorites наверху.
+      // Favorite — самая сильная ступень: перебивает даже категорию.
+      // Семантика звёздочки: «я хочу этот репо ВЫШЕ ВСЕГО, что бы
+      // ему ни было присвоено». Если юзер запинил Archived-проект —
+      // он будет наверху, не где-то внизу с архивом.
       const aFav = !!favorites[a.slug]
       const bFav = !!favorites[b.slug]
       if (aFav !== bFav) return aFav ? -1 : 1
+      // Затем — иерархия категорий: Important > Personal > Work >
+      // Project > Template > On Hold > Archived > External.
+      // Внутри favorited / non-favorited блоков работает как раньше:
+      // важные сверху, не-моё снизу.
+      const aCat = resolveProjectCategory(a.kind, categories[a.slug])
+      const bCat = resolveProjectCategory(b.kind, categories[b.slug])
+      if (aCat.order !== bCat.order) return aCat.order - bCat.order
       // Затем — проекты, по которым у тебя есть открытые таски.
       // Они «приклеиваются» сверху неотсортированной массы, чтобы
       // активная работа не терялась среди 100+ репо.
