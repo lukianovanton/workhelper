@@ -858,6 +858,23 @@ const SourcesSection = forwardRef(function SourcesSection(
   const [busy, setBusy] = useState({})
   const [testResults, setTestResults] = useState({})
   const [errors, setErrors] = useState({})
+  // Per-id timestamp последнего успешного Apply. Используется чтобы
+  // ненадолго показать «Saved ✓» в самой Apply-кнопке (см. SourceCard).
+  const [savedStamps, setSavedStamps] = useState({})
+
+  const markSaved = useCallback((id) => {
+    setSavedStamps((prev) => ({ ...prev, [id]: Date.now() }))
+    // Авто-сброс через 2.5с — после этого кнопка возвращается в
+    // обычное «Apply».
+    setTimeout(() => {
+      setSavedStamps((prev) => {
+        if (!prev[id]) return prev
+        const next = { ...prev }
+        delete next[id]
+        return next
+      })
+    }, 2500)
+  }, [])
 
   const reload = useCallback(async () => {
     setLoading(true)
@@ -884,6 +901,15 @@ const SourcesSection = forwardRef(function SourcesSection(
       [id]: { ...prev[id], [field]: value }
     }))
     setTestResults((prev) => {
+      if (!prev[id]) return prev
+      const next = { ...prev }
+      delete next[id]
+      return next
+    })
+    // Если до этого «Saved ✓» висел на этой карточке — снимаем,
+    // иначе зелёная подсветка вводит в заблуждение пока пользователь
+    // редактирует только что сохранённую запись.
+    setSavedStamps((prev) => {
       if (!prev[id]) return prev
       const next = { ...prev }
       delete next[id]
@@ -938,19 +964,30 @@ const SourcesSection = forwardRef(function SourcesSection(
       delete next[id]
       return next
     })
+    let didFail = false
     try {
-      await api.sources.update(id, {
-        name: draft.name,
-        workspace: draft.workspace,
-        username: draft.username,
-        gitUsername: draft.gitUsername
-      })
-      const newToken = tokens[id]
-      if (newToken && newToken.trim()) {
-        await api.sources.setSecret(id, newToken)
-      }
+      // Гарантируем минимум 400мс loader'а — без этого локальный IPC
+      // отрабатывает за 30мс и кнопка моргает; пользователь не успевает
+      // понять что что-то произошло.
+      const work = (async () => {
+        await api.sources.update(id, {
+          name: draft.name,
+          workspace: draft.workspace,
+          username: draft.username,
+          gitUsername: draft.gitUsername
+        })
+        const newToken = tokens[id]
+        if (newToken && newToken.trim()) {
+          await api.sources.setSecret(id, newToken)
+        }
+      })()
+      await Promise.all([
+        work,
+        new Promise((resolve) => setTimeout(resolve, 400))
+      ])
       await reload()
     } catch (e) {
+      didFail = true
       setErrors((prev) => ({
         ...prev,
         [id]: e?.message || String(e)
@@ -962,6 +999,7 @@ const SourcesSection = forwardRef(function SourcesSection(
         return next
       })
     }
+    if (!didFail) markSaved(id)
   }
 
   const saveNew = async (tempId) => {
@@ -1079,6 +1117,7 @@ const SourcesSection = forwardRef(function SourcesSection(
             isTesting={!!busy[`test:${id}`]}
             error={errors[id]}
             testResult={testResults[id]}
+            savedAt={savedStamps[id] || null}
             onUpdate={(field, value) => updateDraft(id, field, value)}
             onSetToken={(v) => setToken(id, v)}
             onApply={() => applyExisting(id)}
@@ -1109,6 +1148,7 @@ function SourceCard({
   isTesting,
   error,
   testResult,
+  savedAt,
   onUpdate,
   onSetToken,
   onApply,
@@ -1214,9 +1254,28 @@ function SourceCard({
                   {isTesting && <Loader2 className="animate-spin" />}
                   {t('common.testConnection')}
                 </Button>
-                <Button size="sm" onClick={onApply} disabled={isBusy}>
-                  {isBusy && <Loader2 className="animate-spin" />}
-                  {t('settings.sources.apply')}
+                <Button
+                  size="sm"
+                  onClick={onApply}
+                  disabled={isBusy}
+                  className={cn(
+                    !!savedAt &&
+                      'bg-emerald-600 text-white hover:bg-emerald-600 focus-visible:ring-emerald-500'
+                  )}
+                >
+                  {isBusy ? (
+                    <>
+                      <Loader2 className="animate-spin" />
+                      {t('common.saving')}
+                    </>
+                  ) : savedAt ? (
+                    <>
+                      <Check />
+                      {t('common.saved')}
+                    </>
+                  ) : (
+                    t('settings.sources.apply')
+                  )}
                 </Button>
                 <Button
                   variant="ghost"
@@ -1320,6 +1379,19 @@ const DatabasesSection = forwardRef(function DatabasesSection(
   const [busy, setBusy] = useState({})
   const [testResults, setTestResults] = useState({})
   const [errors, setErrors] = useState({})
+  const [savedStamps, setSavedStamps] = useState({})
+
+  const markSaved = useCallback((id) => {
+    setSavedStamps((prev) => ({ ...prev, [id]: Date.now() }))
+    setTimeout(() => {
+      setSavedStamps((prev) => {
+        if (!prev[id]) return prev
+        const next = { ...prev }
+        delete next[id]
+        return next
+      })
+    }, 2500)
+  }, [])
 
   const reload = useCallback(async () => {
     setLoading(true)
@@ -1346,6 +1418,12 @@ const DatabasesSection = forwardRef(function DatabasesSection(
       [id]: { ...prev[id], [field]: value }
     }))
     setTestResults((prev) => {
+      if (!prev[id]) return prev
+      const next = { ...prev }
+      delete next[id]
+      return next
+    })
+    setSavedStamps((prev) => {
       if (!prev[id]) return prev
       const next = { ...prev }
       delete next[id]
@@ -1402,20 +1480,28 @@ const DatabasesSection = forwardRef(function DatabasesSection(
       delete next[id]
       return next
     })
+    let didFail = false
     try {
-      await api.databases.update(id, {
-        name: draft.name,
-        host: draft.host,
-        port: draft.port,
-        user: draft.user,
-        executable: draft.executable
-      })
-      const newPwd = passwords[id]
-      if (newPwd && newPwd.trim()) {
-        await api.databases.setSecret(id, newPwd)
-      }
+      const work = (async () => {
+        await api.databases.update(id, {
+          name: draft.name,
+          host: draft.host,
+          port: draft.port,
+          user: draft.user,
+          executable: draft.executable
+        })
+        const newPwd = passwords[id]
+        if (newPwd && newPwd.trim()) {
+          await api.databases.setSecret(id, newPwd)
+        }
+      })()
+      await Promise.all([
+        work,
+        new Promise((resolve) => setTimeout(resolve, 400))
+      ])
       await reload()
     } catch (e) {
+      didFail = true
       setErrors((prev) => ({
         ...prev,
         [id]: e?.message || String(e)
@@ -1427,6 +1513,7 @@ const DatabasesSection = forwardRef(function DatabasesSection(
         return next
       })
     }
+    if (!didFail) markSaved(id)
   }
 
   const saveNew = async (tempId) => {
@@ -1545,6 +1632,7 @@ const DatabasesSection = forwardRef(function DatabasesSection(
             isTesting={!!busy[`test:${id}`]}
             error={errors[id]}
             testResult={testResults[id]}
+            savedAt={savedStamps[id] || null}
             detected={detected}
             onUpdate={(field, value) => updateDraft(id, field, value)}
             onSetPassword={(v) => setPassword(id, v)}
@@ -1574,6 +1662,7 @@ function DatabaseCard({
   isTesting,
   error,
   testResult,
+  savedAt,
   detected,
   onUpdate,
   onSetPassword,
@@ -1677,9 +1766,28 @@ function DatabaseCard({
                   {isTesting && <Loader2 className="animate-spin" />}
                   {t('common.testConnection')}
                 </Button>
-                <Button size="sm" onClick={onApply} disabled={isBusy}>
-                  {isBusy && <Loader2 className="animate-spin" />}
-                  {t('settings.sources.apply')}
+                <Button
+                  size="sm"
+                  onClick={onApply}
+                  disabled={isBusy}
+                  className={cn(
+                    !!savedAt &&
+                      'bg-emerald-600 text-white hover:bg-emerald-600 focus-visible:ring-emerald-500'
+                  )}
+                >
+                  {isBusy ? (
+                    <>
+                      <Loader2 className="animate-spin" />
+                      {t('common.saving')}
+                    </>
+                  ) : savedAt ? (
+                    <>
+                      <Check />
+                      {t('common.saved')}
+                    </>
+                  ) : (
+                    t('settings.sources.apply')
+                  )}
                 </Button>
                 <Button
                   variant="ghost"
