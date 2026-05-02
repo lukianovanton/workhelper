@@ -653,13 +653,20 @@ function Drawer({ project, dbAvailable, onClose, initialTab, initialIssue }) {
           </div>
         )}
 
-        <Separator />
-
-        <RunOverrideSection slug={project.slug} />
-
-        <Separator />
-
-        <DatabaseOverrideSection slug={project.slug} />
+        {/* Run / Database override становятся видимыми только после
+            клонирования: до клона detect не пройдёт (нет файлов
+            проекта), cwd-override указывает в несуществующий путь, а
+            DB-override без локального проекта тоже бесполезен — его
+            всё равно нечем триггерить. После клона блоки появляются
+            и работают auto-detect. */}
+        {cloned && (
+          <>
+            <Separator />
+            <RunOverrideSection slug={project.slug} />
+            <Separator />
+            <DatabaseOverrideSection slug={project.slug} />
+          </>
+        )}
 
         <Separator />
 
