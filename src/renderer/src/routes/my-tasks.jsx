@@ -364,7 +364,7 @@ function TaskRow({ issue, opened, onOpen }) {
 function TaskDrawer({ issueKey, onClose }) {
   const detail = useJiraIssueDetail(issueKey)
   return (
-    <aside className="w-1/2 border-l border-border bg-background flex flex-col animate-in slide-in-from-right-4 duration-200">
+    <aside className="w-1/2 border-l border-border bg-background flex flex-col">
       <header className="px-6 py-4 border-b border-border flex items-start gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">

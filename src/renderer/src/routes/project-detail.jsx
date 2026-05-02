@@ -123,7 +123,7 @@ export default function ProjectDetail() {
 function DrawerShell({ children, onClose, loading }) {
   const t = useT()
   return (
-    <aside className="w-1/2 border-l border-border bg-background flex flex-col animate-in slide-in-from-right-4 fade-in duration-200">
+    <aside className="w-1/2 border-l border-border bg-background flex flex-col">
       <header className="px-6 py-4 border-b border-border flex items-center justify-between">
         <div className="text-sm text-muted-foreground">
           {loading ? t('drawer.loadingShort') : t('drawer.project')}
@@ -365,7 +365,7 @@ function Drawer({ project, dbAvailable, onClose, initialTab, initialIssue }) {
   }
 
   return (
-    <aside className="w-1/2 border-l border-border bg-background flex flex-col overflow-hidden animate-in slide-in-from-right-4 fade-in duration-200">
+    <aside className="w-1/2 border-l border-border bg-background flex flex-col overflow-hidden">
       <header className="px-6 py-4 border-b border-border space-y-3">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
@@ -566,14 +566,6 @@ function Drawer({ project, dbAvailable, onClose, initialTab, initialIssue }) {
       )}
 
       <div className="flex-1 overflow-auto">
-        {/* key + animate-in: при переключении таба React размонтирует
-            предыдущий блок и монтирует новый, animate-in fade-in
-            триггерится на mount. Запросы внутри React Query кэшируются
-            по ключу, так что remount не приводит к повторным fetch. */}
-        <div
-          key={activeTab}
-          className="animate-in fade-in duration-150"
-        >
         {activeTab === 'overview' && (
           <OverviewTab>
         <ChecklistRow
@@ -683,7 +675,6 @@ function Drawer({ project, dbAvailable, onClose, initialTab, initialIssue }) {
         {activeTab === 'tasks' && (
           <TasksTab project={project} initialIssue={initialIssue} />
         )}
-        </div>
       </div>
 
       <AlertDialog open={dropDialogOpen} onOpenChange={setDropDialogOpen}>
