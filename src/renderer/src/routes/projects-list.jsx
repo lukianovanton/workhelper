@@ -12,12 +12,9 @@ import {
   ExternalLink,
   Star,
   Square,
-  Package,
   FileCode2,
   GitPullRequest,
-  Github,
   CheckSquare,
-  Cloud,
   Filter,
   X as XIcon,
   Users,
@@ -953,7 +950,7 @@ function ProjectRow({
         )}
       </td>
       <td className={cellPad}>
-        <KindBadge kind={p.kind} projectKey={p.source?.providerData?.projectKey} />
+        <KindBadge kind={p.kind} />
       </td>
       <td
         className={cn(
@@ -1396,11 +1393,19 @@ function StatusDots({ project, runtime, lastPipeline, pipelineLoaded }) {
   const running = !!runtime
   const cloned = project.local.cloned
   const hasDb = project.db.exists
+  // skipDb — намерение проекта «у меня нет БД» (frontend / library /
+  // CLI / etc.). Раньше для таких проектов install-кружок висел
+  // amber'ом потому что hasDb=false, и казалось будто что-то не так.
+  // Теперь skipDb-проекты считаются полностью готовыми после clone'а.
+  const skipDb = !!project.db.skipDb
 
   let installColor, installTitle
   if (!cloned) {
     installColor = 'bg-muted-foreground/25'
     installTitle = t('projects.statusDots.notCloned')
+  } else if (skipDb) {
+    installColor = 'bg-emerald-500'
+    installTitle = t('projects.statusDots.clonedNoDbNeeded')
   } else if (!hasDb) {
     installColor = 'bg-amber-500'
     installTitle = t('projects.statusDots.clonedNoDb', {
@@ -1487,23 +1492,26 @@ function SourceBadge({ type, sourceName }) {
   )
 }
 
-function KindBadge({ kind, projectKey }) {
+function KindBadge({ kind }) {
   const t = useT()
-  const isTemplate = kind === 'template'
-  const tone = isTemplate
-    ? 'bg-amber-500/15 text-amber-400 border-amber-500/30'
-    : 'bg-sky-500/15 text-sky-400 border-sky-500/30'
-  const Icon = isTemplate ? FileCode2 : Package
+  // Раньше badge рендерился на каждой строке (включая plain 'project'),
+  // что было визуальным шумом — все репо в большинстве sources это
+  // обычные projects. Сейчас бейдж только для template-репо: BB по
+  // настраиваемому prefix project.key (default 'TP'), GitHub по
+  // is_template-флагу. GitLab / AzDO не имеют понятия template и
+  // никогда не подсвечиваются. Plain projects не рендерятся —
+  // отсутствие бейджа = «обычный repo».
+  if (kind !== 'template') return null
   return (
     <span
-      title={projectKey ? `project.key = ${projectKey}` : ''}
+      title={t('projects.kind.template.hint')}
       className={cn(
         'inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs border',
-        tone
+        'bg-amber-500/15 text-amber-400 border-amber-500/30'
       )}
     >
-      <Icon size={11} />
-      {isTemplate ? t('projects.kind.template') : t('projects.kind.project')}
+      <FileCode2 size={11} />
+      {t('projects.kind.template')}
     </span>
   )
 }

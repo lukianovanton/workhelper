@@ -65,6 +65,7 @@
 
   "projects.kind.project": "Проект",
   "projects.kind.template": "Шаблон",
+  "projects.kind.template.hint": "Template-репозиторий — отмечен либо `is_template` (GitHub), либо настраиваемым prefix'ом project.key (Bitbucket).",
 
   "projects.dbSize.any": "Любой",
   "projects.dbSize.empty": "Пусто / нет БД",
@@ -100,6 +101,7 @@
   "projects.statusDots.notCloned": "Не склонирован",
   "projects.statusDots.clonedNoDb": "Склонирован, БД {name} не найдена",
   "projects.statusDots.clonedWithDb": "Склонирован, БД {name} существует",
+  "projects.statusDots.clonedNoDbNeeded": "Склонирован, БД не требуется",
   "projects.statusDots.dbExists": "База данных {name} существует",
   "projects.statusDots.dbNotFound": "База данных {name} не найдена",
   "projects.statusDots.dirty": "Несохранённые изменения (видны в drawer'е)",
