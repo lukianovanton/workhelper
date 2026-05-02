@@ -25,6 +25,7 @@
 import { createBitbucketProvider } from './bitbucket-provider.js'
 import { createGitHubProvider } from './github-provider.js'
 import { createGitLabProvider } from './gitlab-provider.js'
+import { createAzureDevOpsProvider } from './azure-provider.js'
 
 /** @type {Record<string, VcsProviderDef>} */
 export const VCS_PROVIDER_DEFS = {
@@ -51,6 +52,11 @@ export const VCS_PROVIDER_DEFS = {
     factory: createGitLabProvider,
     idPrefix: 'gl',
     fallbackName: 'GitLab'
+  },
+  azure: {
+    factory: createAzureDevOpsProvider,
+    idPrefix: 'az',
+    fallbackName: 'Azure DevOps'
   }
 }
 

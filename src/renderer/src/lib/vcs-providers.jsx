@@ -16,10 +16,11 @@
  *      подхватят автоматически.
  */
 
-import { Cloud, Github, Gitlab } from 'lucide-react'
+import { Cloud, Github, Gitlab, Building2 } from 'lucide-react'
 import { BitbucketSetupGuide } from '@/components/setup-guides/bitbucket'
 import { GitHubSetupGuide } from '@/components/setup-guides/github'
 import { GitLabSetupGuide } from '@/components/setup-guides/gitlab'
+import { AzureDevOpsSetupGuide } from '@/components/setup-guides/azure'
 
 /**
  * @typedef {Object} VcsProviderForm
@@ -155,6 +156,42 @@ export const VCS_PROVIDERS = {
         labelKey: 'settings.gitlab.baseUrl',
         hintKey: 'settings.gitlab.baseUrl.hint',
         placeholder: 'https://gitlab.com'
+      }
+    ]
+  },
+  azure: {
+    type: 'azure',
+    label: 'Azure DevOps',
+    // lucide не имеет azure-логотипа; Building2 — corporate/enterprise
+    // ассоциация (Azure DevOps в основном корпоративный сектор).
+    BadgeIcon: Building2,
+    badgeClassName: 'text-blue-500/80',
+    addButtonLabelKey: 'settings.sources.add.azure',
+    newSourceTitleKey: 'settings.sources.newSource.azure',
+    GuideComponent: AzureDevOpsSetupGuide,
+    guideTitleKey: 'settings.azure.guide.title',
+    guideDescriptionKey: 'settings.guide.azure.dialogDescription',
+    form: {
+      workspaceLabelKey: 'settings.azure.organization',
+      workspaceHintKey: 'settings.azure.organization.hint',
+      workspacePlaceholder: 'mycompany',
+      namePlaceholder: 'Azure DevOps',
+      // У AzDO нет separate email-поля; username и git-username
+      // совпадают (обычно email или логин).
+      showEmailField: false,
+      gitUsernameLabelKey: 'settings.azure.gitUsername',
+      gitUsernameHintKey: 'settings.azure.gitUsername.hint',
+      gitUsernamePlaceholder: 'you@example.com',
+      gitUsernameMirrorsUsername: true,
+      tokenLabelKey: 'settings.azure.token',
+      tokenHintKey: 'settings.azure.token.hint'
+    },
+    providerOptionsFields: [
+      {
+        key: 'baseUrl',
+        labelKey: 'settings.azure.baseUrl',
+        hintKey: 'settings.azure.baseUrl.hint',
+        placeholder: 'https://dev.azure.com'
       }
     ]
   }

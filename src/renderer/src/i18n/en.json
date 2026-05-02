@@ -356,12 +356,14 @@
   "settings.sources.newSource.bitbucket": "New Bitbucket source",
   "settings.sources.newSource.github": "New GitHub source",
   "settings.sources.newSource.gitlab": "New GitLab source",
+  "settings.sources.newSource.azure": "New Azure DevOps source",
   "settings.sources.name": "Display name",
   "settings.sources.name.hint": "Free-form label shown in the projects list and elsewhere.",
   "settings.sources.add": "Add source",
   "settings.sources.add.bitbucket": "Add Bitbucket",
   "settings.sources.add.github": "Add GitHub",
   "settings.sources.add.gitlab": "Add GitLab",
+  "settings.sources.add.azure": "Add Azure DevOps",
   "settings.sources.add.save": "Save source",
   "settings.sources.apply": "Apply",
   "settings.sources.remove": "Remove source",
@@ -383,6 +385,15 @@
   "settings.gitlab.token.hint": "Created at gitlab.com → User settings → Access tokens. Required scopes: read_api, read_repository.",
   "settings.gitlab.baseUrl": "Base URL",
   "settings.gitlab.baseUrl.hint": "Self-hosted only. Full URL of your GitLab instance (e.g. https://gitlab.mycorp.com). Leave empty for gitlab.com.",
+
+  "settings.azure.organization": "Organization",
+  "settings.azure.organization.hint": "Azure DevOps org slug (the part after dev.azure.com/). One source = one org; all projects and their repos are listed flat.",
+  "settings.azure.gitUsername": "Username",
+  "settings.azure.gitUsername.hint": "Your Azure DevOps email or login. Used in clone URLs as a hint for the system Git Credential Manager.",
+  "settings.azure.token": "Personal Access Token",
+  "settings.azure.token.hint": "Created at dev.azure.com → User settings → Personal access tokens. Required scopes: Code: Read, Build: Read.",
+  "settings.azure.baseUrl": "Base URL",
+  "settings.azure.baseUrl.hint": "Self-hosted only. Full URL of your Azure DevOps Server (e.g. https://devops.mycorp.com/tfs/DefaultCollection). Leave empty for dev.azure.com.",
 
   "settings.bitbucket.title": "Bitbucket",
   "settings.bitbucket.description": "Email, workspace, username and API token for the Cloud REST API.",
@@ -465,6 +476,7 @@
   "settings.guide.bitbucket.dialogDescription": "4 steps to authenticate against Bitbucket Cloud. ~2 minutes.",
   "settings.guide.github.dialogDescription": "3 steps to authenticate against GitHub via a Personal Access Token.",
   "settings.guide.gitlab.dialogDescription": "3 steps to authenticate against GitLab Cloud or self-hosted via a Personal Access Token.",
+  "settings.guide.azure.dialogDescription": "3 steps to authenticate against Azure DevOps (Cloud or Server) via a Personal Access Token.",
   "settings.guide.jira.dialogDescription": "3 steps; reuses your Atlassian email from the Bitbucket section.",
   "settings.guide.paths.dialogDescription": "Where projects clone, where dumps live, how VS Code is launched.",
   "settings.guide.database.dialogDescription": "Local MySQL connection used for size, restore, drop/create.",
@@ -475,5 +487,6 @@
 
   "settings.github.guide.title": "GitHub setup",
   "settings.gitlab.guide.title": "GitLab setup",
+  "settings.azure.guide.title": "Azure DevOps setup",
   "settings.postgres.guide.title": "PostgreSQL setup"
 }
