@@ -93,11 +93,18 @@ export function getLastCommit(slug) {
 }
 
 /**
- * Маппинг generic ProviderRepo → Project (текущая форма с
- * полем `bitbucket: {}`). Local/db/runtime заполняются нулевыми
- * значениями — enrichProjects подтягивает реальные.
- *
- * Будет удалён в Phase A.3 при reshape модели.
+ * ID единственного на сегодня BB-источника. В Phase A.4 (мульти-source
+ * UI) каждый source получит свой UUID, и этот хардкод сменится на
+ * id из конфига. Но сама форма ссылки `source: { providerId, repoSlug }`
+ * уже стабильна — переход не повлияет на код вне settings.
+ */
+const DEFAULT_BB_SOURCE_ID = 'bitbucket-default'
+
+/**
+ * Маппинг generic ProviderRepo → Project (новая форма Phase A.3:
+ * source-ссылка + плоские url/cloneUrl/updatedOn вместо `bitbucket: {}`).
+ * Local/db/runtime заполняются нулевыми значениями — enrichProjects
+ * подтягивает реальные.
  *
  * @param {ProviderRepo} repo
  * @returns {Project}
@@ -109,12 +116,14 @@ function toProjectShape(repo) {
     name: repo.name,
     description: repo.description || '',
     kind: repo.kind,
-    bitbucket: {
-      url: repo.url,
-      cloneUrl: repo.cloneUrl,
-      updatedOn: repo.updatedOn,
-      projectKey: repo.projectKey || ''
+    source: {
+      providerId: DEFAULT_BB_SOURCE_ID,
+      repoSlug: repo.slug,
+      providerData: repo.projectKey ? { projectKey: repo.projectKey } : {}
     },
+    url: repo.url,
+    cloneUrl: repo.cloneUrl,
+    updatedOn: repo.updatedOn,
     local: {
       path: null,
       cloned: false,

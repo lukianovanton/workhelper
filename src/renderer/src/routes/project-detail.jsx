@@ -389,13 +389,11 @@ function Drawer({ project, dbAvailable, onClose, initialTab, initialIssue }) {
                 {project.slug}
               </h2>
               <button
-                onClick={() =>
-                  window.open(project.bitbucket.url, '_blank')
-                }
+                onClick={() => window.open(project.url, '_blank')}
                 className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
-                title={project.bitbucket.url}
+                title={project.url}
               >
-                {project.bitbucket.projectKey || 'workspace'}/
+                {project.source?.providerData?.projectKey || 'workspace'}/
                 {project.slug}
                 <ExternalLink size={11} />
               </button>

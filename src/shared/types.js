@@ -24,16 +24,22 @@
  */
 
 /**
- * @typedef {Object} BitbucketInfo
- * @property {string} url             https://bitbucket.org/techgurusit/p0070
- * @property {string} cloneUrl        HTTPS clone URL
- * @property {string|null} updatedOn  ISO timestamp из /repositories list —
- *                                     достаточно для сортировки/превью.
- *                                     Полный last commit грузится лениво
- *                                     (только при открытии Detail drawer).
- * @property {string} projectKey      repo.project.key из Bitbucket API,
- *                                     используется для классификации kind.
- * @property {BitbucketCommit} [lastCommit]
+ * @typedef {Object} ProjectSource
+ * @property {string} providerId             ссылка на сконфигурированный
+ *                                            VCS-источник (Phase A.4 даст
+ *                                            пользователю несколько). До
+ *                                            миграции — фиксированный
+ *                                            'bitbucket-default'.
+ * @property {string} repoSlug                slug у провайдера. У BB и GH
+ *                                            slug уникален в рамках
+ *                                            workspace/owner — соответствие
+ *                                            (providerId + repoSlug)
+ *                                            идентифицирует репо однозначно.
+ * @property {{ projectKey?: string }} [providerData]
+ *                                            Provider-specific extras которые
+ *                                            UI хочет показать как-есть
+ *                                            (BB project.key для тултипа kind).
+ *                                            Не используется логикой ядра.
  */
 
 /**
@@ -71,12 +77,24 @@
 
 /**
  * @typedef {Object} Project
- * @property {string} slug                   как пришёл из Bitbucket
- *                                            (для отображения и API-обращений)
+ * @property {string} slug                   стабильный идентификатор внутри
+ *                                            приложения. Пока совпадает с
+ *                                            source.repoSlug для одного-
+ *                                            провайдерной конфигурации;
+ *                                            при мульти-source потенциально
+ *                                            расходится (workspace/repo
+ *                                            могут давать одинаковый slug у
+ *                                            разных провайдеров).
  * @property {string} name
  * @property {string} [description]
  * @property {ProjectKind} kind
- * @property {BitbucketInfo} bitbucket
+ * @property {ProjectSource} source          ссылка на провайдер + repoSlug,
+ *                                            заменяет старое `bitbucket: {}`.
+ * @property {string} url                    web-URL у провайдера
+ * @property {string} cloneUrl               HTTPS clone URL без креденшелов
+ * @property {string|null} updatedOn         ISO timestamp последнего апдейта
+ *                                            у провайдера; используется для
+ *                                            сортировки и превью.
  * @property {LocalInfo} local
  * @property {DbInfo} db
  * @property {RuntimeInfo} runtime

@@ -92,11 +92,11 @@ function compareProjects(a, b, column) {
       return av - bv
     }
     case 'lastCommit': {
-      const at = a.bitbucket.updatedOn
-        ? new Date(a.bitbucket.updatedOn).getTime()
+      const at = a.updatedOn
+        ? new Date(a.updatedOn).getTime()
         : 0
-      const bt = b.bitbucket.updatedOn
-        ? new Date(b.bitbucket.updatedOn).getTime()
+      const bt = b.updatedOn
+        ? new Date(b.updatedOn).getTime()
         : 0
       return at - bt
     }
@@ -273,8 +273,8 @@ export default function ProjectsList() {
           return false
       }
       if (columnFilters.updated !== 'any') {
-        const t = p.bitbucket.updatedOn
-          ? new Date(p.bitbucket.updatedOn).getTime()
+        const t = p.updatedOn
+          ? new Date(p.updatedOn).getTime()
           : 0
         const days = (Date.now() - t) / (24 * 60 * 60 * 1000)
         if (columnFilters.updated === 'week' && !(days <= 7)) return false
@@ -946,7 +946,7 @@ function ProjectRow({
         )}
       </td>
       <td className={cellPad}>
-        <KindBadge kind={p.kind} projectKey={p.bitbucket.projectKey} />
+        <KindBadge kind={p.kind} projectKey={p.source?.providerData?.projectKey} />
       </td>
       <td
         className={cn(
@@ -957,7 +957,7 @@ function ProjectRow({
         {formatBytes(p.db.sizeBytes)}
       </td>
       <td className={cn(cellPad, 'text-xs text-muted-foreground')}>
-        {formatRelative(p.bitbucket.updatedOn)}
+        {formatRelative(p.updatedOn)}
       </td>
     </tr>
   )
