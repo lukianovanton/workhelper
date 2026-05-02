@@ -1243,7 +1243,7 @@ function Popover({ trigger, children, align = 'left' }) {
       {open && (
         <div
           className={cn(
-            'absolute top-full mt-1 z-30 min-w-[200px] bg-popover border border-border rounded-md shadow-lg p-3',
+            'absolute top-full mt-1 z-30 min-w-[200px] bg-popover border border-border rounded-md shadow-lg p-3 animate-in fade-in zoom-in-95 duration-150 origin-top',
             align === 'right' ? 'right-0' : 'left-0'
           )}
         >

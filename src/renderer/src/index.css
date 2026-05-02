@@ -79,4 +79,28 @@
     @apply bg-background text-foreground;
     font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   }
+
+  /* Все интерактивные элементы по умолчанию получают курсор-pointer.
+     Tailwind v4 preflight больше его не выставляет, а в приложении
+     много кастомных кнопок и role="button"-обёрток без отдельного
+     cursor-pointer-класса. Disabled оставляем дефолтным курсором. */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  summary {
+    cursor: pointer;
+  }
+
+  /* Лёгкая глобальная плавность для базовых интерактивных эффектов
+     (фон, цвет, граница) — чтобы row-hover, кнопки и линки не
+     щёлкали состоянием, а перетекали. Сами анимации движения оставлены
+     явным анимациям. tr тоже сюда — ряды в проектах и тасках кликабельные
+     с hover-стилями, без transition'ы они моргают резко. */
+  a,
+  button,
+  [role="button"],
+  tr {
+    transition-property: color, background-color, border-color, opacity;
+    transition-duration: 150ms;
+    transition-timing-function: ease-out;
+  }
 }

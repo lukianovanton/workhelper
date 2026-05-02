@@ -35,7 +35,7 @@ function ToastItem({ toast, onDismiss }) {
   return (
     <div
       className={cn(
-        'flex items-start gap-2 rounded-md border px-3 py-2 text-xs shadow-lg backdrop-blur',
+        'flex items-start gap-2 rounded-md border px-3 py-2 text-xs shadow-lg backdrop-blur animate-in slide-in-from-right-4 fade-in duration-200',
         palette
       )}
     >
