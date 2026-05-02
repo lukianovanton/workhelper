@@ -25,6 +25,7 @@
 import { spawn } from 'node:child_process'
 import path from 'node:path'
 import fs from 'node:fs'
+import os from 'node:os'
 
 /**
  * @typedef {Object} RequiredNodeVersion
@@ -177,72 +178,231 @@ export async function getVoltaInfo() {
 }
 
 /**
- * Платформенно-зависимая установка Volta:
- *   Windows  → winget install --id Volta.Volta -e --silent
- *   macOS    → brew install volta
- *   Linux    → curl https://get.volta.sh | bash
+ * Установка Volta без зависимости от пакетных менеджеров системы.
+ * На каждой ОС качаем official-installer от volta-cli напрямую с
+ * GitHub Releases и запускаем silent-режимом. Никаких winget /
+ * brew / curl-bash требований к юзеру.
  *
- * Возвращает stream-friendly handle: { exitCode, stdout, stderr }.
- * Для UI прогресса — caller должен использовать onChunk callback
- * (пока не реализован, добавим если понадобится).
+ *   Windows → .msi с GitHub releases, msiexec /i ... /passive
+ *   macOS   → .tar.gz с GitHub releases, разворачиваем в ~/.volta/bin
+ *   Linux   → .tar.gz с GitHub releases, разворачиваем в ~/.volta/bin
+ *
+ * После успешной установки добавляем Volta-bin к process.env.PATH так
+ * что subsequent spawn'ы видят `volta` без перезапуска приложения.
+ * При следующем рестарте PATH обновлён уже системой (Volta-installer
+ * сам прописывает USER PATH через registry/.profile).
  *
  * @returns {Promise<{ ok: boolean, message: string }>}
  */
 export async function installVolta() {
-  const platform = process.platform
-  let cmd, args, useShell
-  if (platform === 'win32') {
-    // winget доступен на Win10+ 1809 / Win11 default. Если нет — error.
-    cmd = 'winget'
-    args = ['install', '--id', 'Volta.Volta', '-e', '--silent']
-    useShell = true // winget — .cmd-shim
-  } else if (platform === 'darwin') {
-    cmd = 'brew'
-    args = ['install', 'volta']
-    useShell = false
-  } else {
-    // Linux / другие unix: используем install-script. bash -c для
-    // pipe'а из curl'а в bash.
-    cmd = 'bash'
-    args = ['-c', 'curl https://get.volta.sh | bash']
-    useShell = false
-  }
-
-  let stdout = ''
-  let stderr = ''
   try {
-    const result = await runCmdWithShell(cmd, args, useShell)
-    stdout = result.stdout
-    stderr = result.stderr
-    if (result.code === 0) {
-      return {
-        ok: true,
-        message: `Volta installed. ${
-          platform === 'win32'
-            ? 'Restart WorkHelper so the new PATH takes effect.'
-            : 'Open a new terminal session for PATH changes.'
-        }`
-      }
-    }
+    const platform = process.platform
+    if (platform === 'win32') return installVoltaWindows()
+    if (platform === 'darwin') return installVoltaUnix('darwin')
+    return installVoltaUnix('linux')
+  } catch (e) {
+    return { ok: false, message: e?.message || String(e) }
+  }
+}
+
+async function installVoltaWindows() {
+  // 1. Скачиваем .msi последнего релиза с GitHub.
+  const asset = await fetchLatestVoltaAsset(/windows-x86_64\.msi$/i)
+  if (!asset.ok) return asset
+  const tmpPath = path.join(
+    os.tmpdir(),
+    `volta-installer-${Date.now()}.msi`
+  )
+  const dl = await downloadFile(asset.url, tmpPath)
+  if (!dl.ok) return dl
+
+  // 2. Запускаем msiexec в passive-режиме (no UI input, но прогресс-бар
+  // покажется системой — юзер видит, что что-то происходит). /norestart
+  // чтобы не уйти в reboot тихо. Volta-MSI per-user, UAC обычно не
+  // запрашивает.
+  let result
+  try {
+    result = await runCmdWithShell(
+      'msiexec',
+      ['/i', tmpPath, '/passive', '/norestart'],
+      false
+    )
+  } catch (e) {
+    safeUnlink(tmpPath)
+    return { ok: false, message: `msiexec failed to start: ${e?.message || e}` }
+  }
+  safeUnlink(tmpPath)
+
+  // msiexec exit codes: 0 = success; 1641 = success but reboot initiated;
+  // 3010 = success but reboot required. Любой из них считаем OK.
+  if (result.code !== 0 && result.code !== 1641 && result.code !== 3010) {
     return {
       ok: false,
       message:
-        (stderr.trim() || stdout.trim()).slice(-300) ||
-        `Install command exited ${result.code}`
+        `msiexec exited ${result.code}` +
+        (result.stderr.trim() ? `: ${result.stderr.trim().slice(-200)}` : '')
     }
+  }
+
+  // 3. PATH-update в текущем процессе чтобы subsequent volta-команды
+  // работали без рестарта приложения.
+  ensureVoltaInPath()
+  return {
+    ok: true,
+    message:
+      'Volta installed. New PATH applied — you can pick a Node version now.'
+  }
+}
+
+async function installVoltaUnix(kind) {
+  // Pattern asset name: volta-X.Y.Z-{macos,linux}.tar.gz
+  const re =
+    kind === 'darwin' ? /macos\.tar\.gz$/i : /linux\.tar\.gz$/i
+  const asset = await fetchLatestVoltaAsset(re)
+  if (!asset.ok) return asset
+  const home = os.homedir()
+  const voltaDir = path.join(home, '.volta')
+  const binDir = path.join(voltaDir, 'bin')
+  fs.mkdirSync(binDir, { recursive: true })
+
+  const tmpPath = path.join(
+    os.tmpdir(),
+    `volta-installer-${Date.now()}.tar.gz`
+  )
+  const dl = await downloadFile(asset.url, tmpPath)
+  if (!dl.ok) return dl
+
+  // tar -xzf <archive> -C <binDir> --strip-components=0
+  let result
+  try {
+    result = await runCmdWithShell('tar', ['-xzf', tmpPath, '-C', binDir], false)
   } catch (e) {
-    if (e?.code === 'ENOENT') {
-      return {
-        ok: false,
-        message:
-          platform === 'win32'
-            ? 'winget not found. Install from Microsoft Store (App Installer) or get Volta manually from https://volta.sh.'
-            : platform === 'darwin'
-            ? 'brew not found. Install Homebrew first: https://brew.sh — or get Volta from https://volta.sh.'
-            : 'bash/curl not found. Get Volta manually from https://volta.sh.'
-      }
+    safeUnlink(tmpPath)
+    return { ok: false, message: `tar failed: ${e?.message || e}` }
+  }
+  safeUnlink(tmpPath)
+  if (result.code !== 0) {
+    return {
+      ok: false,
+      message: `tar exited ${result.code}: ${result.stderr.trim().slice(-200)}`
     }
-    return { ok: false, message: e?.message || String(e) }
+  }
+  // chmod +x на распакованных бинарях
+  try {
+    for (const name of fs.readdirSync(binDir)) {
+      const full = path.join(binDir, name)
+      const stat = fs.statSync(full)
+      if (stat.isFile()) fs.chmodSync(full, 0o755)
+    }
+  } catch {
+    // ignore
+  }
+  ensureVoltaInPath()
+  return {
+    ok: true,
+    message:
+      `Volta installed in ${voltaDir}. New PATH applied — you can pick a Node version now. Open a new terminal session for permanent PATH update.`
+  }
+}
+
+/**
+ * GitHub Releases API → находит подходящий asset под наш regex.
+ */
+async function fetchLatestVoltaAsset(nameRegex) {
+  let res
+  try {
+    res = await fetch(
+      'https://api.github.com/repos/volta-cli/volta/releases/latest',
+      {
+        headers: {
+          Accept: 'application/vnd.github+json',
+          'User-Agent': 'WorkHelper'
+        }
+      }
+    )
+  } catch (e) {
+    return {
+      ok: false,
+      message: `Could not reach GitHub API: ${e?.message || e}`
+    }
+  }
+  if (!res.ok) {
+    return {
+      ok: false,
+      message: `GitHub API returned ${res.status}`
+    }
+  }
+  const release = await res.json()
+  const asset = (release.assets || []).find((a) => nameRegex.test(a.name || ''))
+  if (!asset) {
+    return {
+      ok: false,
+      message: `No matching Volta asset in latest release (${release.tag_name}).`
+    }
+  }
+  return {
+    ok: true,
+    url: asset.browser_download_url,
+    name: asset.name
+  }
+}
+
+async function downloadFile(url, destPath) {
+  let res
+  try {
+    res = await fetch(url, {
+      headers: { 'User-Agent': 'WorkHelper' }
+    })
+  } catch (e) {
+    return { ok: false, message: `Download failed: ${e?.message || e}` }
+  }
+  if (!res.ok) {
+    return { ok: false, message: `Download HTTP ${res.status}` }
+  }
+  try {
+    const buf = Buffer.from(await res.arrayBuffer())
+    fs.writeFileSync(destPath, buf)
+  } catch (e) {
+    return {
+      ok: false,
+      message: `Failed to write installer to disk: ${e?.message || e}`
+    }
+  }
+  return { ok: true }
+}
+
+function safeUnlink(p) {
+  try {
+    fs.unlinkSync(p)
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Пушим Volta-bin в process.env.PATH если его там ещё нет. Так
+ * subsequent `volta`-команды (через spawn) находят бинарь без
+ * рестарта приложения. На системном уровне PATH обновляется самим
+ * MSI/архивом — это эффективно при следующем запуске.
+ */
+function ensureVoltaInPath() {
+  const home =
+    os.homedir() ||
+    process.env.USERPROFILE ||
+    process.env.HOME ||
+    ''
+  const candidates = []
+  if (process.platform === 'win32') {
+    const local = process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local')
+    candidates.push(path.join(local, 'Volta', 'bin'))
+  }
+  candidates.push(path.join(home, '.volta', 'bin'))
+  const existing = candidates.find((c) => fs.existsSync(c))
+  if (!existing) return
+  const sep = process.platform === 'win32' ? ';' : ':'
+  const segs = (process.env.PATH || '').split(sep)
+  if (!segs.some((s) => s.toLowerCase() === existing.toLowerCase())) {
+    process.env.PATH = `${existing}${sep}${process.env.PATH || ''}`
   }
 }
 
