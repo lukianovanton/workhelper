@@ -160,3 +160,78 @@ async function fileExists(p) {
     return false
   }
 }
+
+/**
+ * Эвристика типа стека: возвращает {runCommand, cwd} по содержимому
+ * корня клонированного репо. Покрывает .NET / Node / Cargo / Go / Make.
+ * cwd — относительный путь от repoRoot (пустая строка = repoRoot сам).
+ *
+ *   - .NET → 'dotnet run' + resolveRunnableSubpath (BrandName/)
+ *   - Node — package.json/scripts.dev|start|serve → 'npm run <…>'.
+ *     pnpm-lock / yarn.lock переопределяют npm на pnpm/yarn.
+ *   - Cargo.toml → 'cargo run'
+ *   - go.mod → 'go run .'
+ *   - Makefile → 'make run' (если есть target run в наивном grep'е)
+ *
+ * @param {string} repoRoot
+ * @returns {Promise<{ runCommand: string|null, cwd: string }>}
+ */
+export async function detectRunCommand(repoRoot) {
+  if (!repoRoot) return { runCommand: null, cwd: '' }
+
+  // 1. .NET — наивысший приоритет (исторически большинство проектов)
+  const dotnetSubpath = await resolveRunnableSubpath(repoRoot, '', {})
+  if (dotnetSubpath) {
+    return { runCommand: 'dotnet run', cwd: dotnetSubpath }
+  }
+
+  // 2. Node
+  const pkgPath = path.join(repoRoot, 'package.json')
+  if (await fileExists(pkgPath)) {
+    let pkgManager = 'npm'
+    if (await fileExists(path.join(repoRoot, 'pnpm-lock.yaml'))) {
+      pkgManager = 'pnpm'
+    } else if (await fileExists(path.join(repoRoot, 'yarn.lock'))) {
+      pkgManager = 'yarn'
+    }
+    try {
+      const raw = await fsp.readFile(pkgPath, 'utf8')
+      const pkg = JSON.parse(raw)
+      const scripts = pkg.scripts || {}
+      // Приоритет dev > start > serve. Если есть в package.json — точно
+      // run-команда; иначе fallback на универсальное npm/pnpm/yarn start.
+      const script = ['dev', 'start', 'serve'].find((s) => scripts[s])
+      if (script) {
+        return {
+          runCommand:
+            pkgManager === 'npm'
+              ? `npm run ${script}`
+              : `${pkgManager} ${script}`,
+          cwd: ''
+        }
+      }
+      return { runCommand: `${pkgManager} start`, cwd: '' }
+    } catch {
+      return { runCommand: `${pkgManager} start`, cwd: '' }
+    }
+  }
+
+  // 3. Cargo
+  if (await fileExists(path.join(repoRoot, 'Cargo.toml'))) {
+    return { runCommand: 'cargo run', cwd: '' }
+  }
+
+  // 4. Go
+  if (await fileExists(path.join(repoRoot, 'go.mod'))) {
+    return { runCommand: 'go run .', cwd: '' }
+  }
+
+  // 5. Makefile с target run — последний resort
+  for (const name of ['Makefile', 'makefile', 'GNUmakefile']) {
+    if (await fileExists(path.join(repoRoot, name))) {
+      return { runCommand: 'make run', cwd: '' }
+    }
+  }
+
+  return { runCommand: null, cwd: '' }
+}

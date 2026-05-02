@@ -8,7 +8,8 @@ import {
 } from '../services/secrets.js'
 import {
   getEngine,
-  invalidateEngines
+  invalidateEngines,
+  listDatabaseConfigs
 } from '../services/db/registry.js'
 
 /**
@@ -142,5 +143,61 @@ export function registerDatabasesIpc() {
     const key = `db:${id}:password`
     if (hasSecret(key)) clearSecret(key)
     return { ok: true }
+  })
+
+  // Список всех БД на конкретном engine (для combobox в drawer'е).
+  // Возвращает имена в нижнем регистре, как listDatabases().
+  ipcMain.handle('databases:listDbNames', async (_event, id) => {
+    if (!id) return []
+    const engine = getEngine(id)
+    if (!engine) return []
+    try {
+      const set = await engine.listDatabases()
+      return Array.from(set).sort()
+    } catch {
+      return []
+    }
+  })
+
+  // Авто-детект подходящего DB-подключения для проекта. Перебираем
+  // все сконфигурированные engines, на каждом ищем БД совпадающую со
+  // slug.toLowerCase() (exact). Если exact-нет — пробуем fuzzy (имя
+  // содержит slug или slug содержит имя).
+  //   exact > fuzzy > null. Возвращаем первый exact, иначе первый fuzzy.
+  ipcMain.handle('databases:detectForProject', async (_event, slug) => {
+    if (!slug || typeof slug !== 'string') return null
+    const target = slug.toLowerCase()
+    const dbs = listDatabaseConfigs()
+    let firstFuzzy = null
+    for (const d of dbs) {
+      const engine = getEngine(d.id)
+      if (!engine) continue
+      let names
+      try {
+        names = await engine.listDatabases()
+      } catch {
+        continue
+      }
+      if (names.has(target)) {
+        return {
+          databaseId: d.id,
+          dbName: target,
+          confidence: 'exact'
+        }
+      }
+      if (!firstFuzzy) {
+        const fuzzy = [...names].find(
+          (n) => n.includes(target) || target.includes(n)
+        )
+        if (fuzzy) {
+          firstFuzzy = {
+            databaseId: d.id,
+            dbName: fuzzy,
+            confidence: 'fuzzy'
+          }
+        }
+      }
+    }
+    return firstFuzzy
   })
 }

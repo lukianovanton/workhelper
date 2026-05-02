@@ -2422,11 +2422,13 @@ function LastCommitSection({ slug }) {
  */
 function RunOverrideSection({ slug }) {
   const t = useT()
+  const qc = useQueryClient()
   const [runCommand, setRunCommand] = useState('')
   const [cwd, setCwd] = useState('')
   const [defaultRunCommand, setDefaultRunCommand] = useState('dotnet run')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [detecting, setDetecting] = useState(false)
   const [status, setStatus] = useState(null)
 
   const reload = useCallback(async () => {
@@ -2446,6 +2448,20 @@ function RunOverrideSection({ slug }) {
     reload()
   }, [reload])
 
+  const detect = async () => {
+    setDetecting(true)
+    setStatus(null)
+    try {
+      const r = await api.process.detectRunCommand(slug)
+      // Заполняем только если что-то нашли. Не затираем то что юзер
+      // уже вписал, если detect ничего не дал.
+      if (r?.runCommand) setRunCommand(r.runCommand)
+      if (r && typeof r.cwd === 'string') setCwd(r.cwd)
+    } finally {
+      setDetecting(false)
+    }
+  }
+
   const save = async () => {
     setSaving(true)
     setStatus(null)
@@ -2463,6 +2479,10 @@ function RunOverrideSection({ slug }) {
         }
       }
       await api.config.set({ runOverrides: overrides })
+      // Инвалидируем список проектов: enrich использует runOverrides[slug].cwd
+      // как override для resolveRunnableSubpath, поэтому drawer сразу
+      // увидит новый indicator без ручного Refresh.
+      qc.invalidateQueries({ queryKey: ['bitbucket', 'projects'] })
       setStatus({ ok: true })
       setTimeout(() => setStatus(null), 2500)
     } catch (e) {
@@ -2519,6 +2539,16 @@ function RunOverrideSection({ slug }) {
               {saving && <Loader2 size={12} className="animate-spin" />}
               {t('common.save')}
             </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={detect}
+              disabled={detecting}
+              title={t('drawer.runOverride.detect.hint')}
+            >
+              {detecting && <Loader2 size={12} className="animate-spin" />}
+              {t('drawer.runOverride.detect')}
+            </Button>
             {status?.ok && (
               <span className="text-[11px] text-emerald-500">
                 {t('common.saved')}
@@ -2550,12 +2580,18 @@ function RunOverrideSection({ slug }) {
  */
 function DatabaseOverrideSection({ slug }) {
   const t = useT()
+  const qc = useQueryClient()
   const [databaseId, setDatabaseId] = useState('')
   const [dbName, setDbName] = useState('')
   const [databases, setDatabases] = useState([])
+  const [namesOnEngine, setNamesOnEngine] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [detecting, setDetecting] = useState(false)
   const [status, setStatus] = useState(null)
+  // Auto-detect делается один раз на mount при пустом override.
+  // Без флага useEffect перезапустился бы при смене любых state'ов.
+  const [autoDetectTried, setAutoDetectTried] = useState(false)
 
   const reload = useCallback(async () => {
     setLoading(true)
@@ -2577,6 +2613,54 @@ function DatabaseOverrideSection({ slug }) {
     reload()
   }, [reload])
 
+  // Подгружаем список БД на выбранном engine для combobox-предложений.
+  // Engine = databaseId override либо первый сконфигурированный.
+  useEffect(() => {
+    const targetId = databaseId || databases[0]?.id
+    if (!targetId) {
+      setNamesOnEngine([])
+      return
+    }
+    let cancelled = false
+    api.databases.listDbNames(targetId).then((names) => {
+      if (!cancelled) setNamesOnEngine(Array.isArray(names) ? names : [])
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [databaseId, databases])
+
+  // Auto-detect на mount: если override пуст, пробуем найти подходящую
+  // БД на любом engine. exact-match — заполняем поля молча; fuzzy —
+  // тоже заполняем (юзер увидит и решит сам).
+  useEffect(() => {
+    if (loading || autoDetectTried) return
+    if (databaseId || dbName) {
+      setAutoDetectTried(true)
+      return
+    }
+    setAutoDetectTried(true)
+    api.databases.detectForProject(slug).then((r) => {
+      if (!r) return
+      setDatabaseId(r.databaseId || '')
+      setDbName(r.dbName || '')
+    })
+  }, [loading, autoDetectTried, databaseId, dbName, slug])
+
+  const detect = async () => {
+    setDetecting(true)
+    setStatus(null)
+    try {
+      const r = await api.databases.detectForProject(slug)
+      if (r) {
+        if (r.databaseId) setDatabaseId(r.databaseId)
+        if (r.dbName) setDbName(r.dbName)
+      }
+    } finally {
+      setDetecting(false)
+    }
+  }
+
   const save = async () => {
     setSaving(true)
     setStatus(null)
@@ -2594,6 +2678,9 @@ function DatabaseOverrideSection({ slug }) {
         }
       }
       await api.config.set({ databaseOverrides: overrides })
+      // Инвалидируем список проектов: enrich передаст новый engine/имя
+      // и UI сразу подсветит «БД найдена» без ручного Refresh.
+      qc.invalidateQueries({ queryKey: ['bitbucket', 'projects'] })
       setStatus({ ok: true })
       setTimeout(() => setStatus(null), 2500)
     } catch (e) {
@@ -2608,6 +2695,7 @@ function DatabaseOverrideSection({ slug }) {
     databases.length > 0
       ? `${databases[0].name} (default)`
       : t('drawer.dbOverride.noDatabases')
+  const datalistId = `db-override-names-${slug}`
 
   return (
     <div className="space-y-2">
@@ -2647,11 +2735,17 @@ function DatabaseOverrideSection({ slug }) {
             </label>
             <input
               type="text"
+              list={datalistId}
               value={dbName}
               onChange={(e) => setDbName(e.target.value)}
               placeholder={defaultDbName}
               className="w-full bg-background border border-input rounded-md px-3 py-1.5 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
+            <datalist id={datalistId}>
+              {namesOnEngine.map((n) => (
+                <option key={n} value={n} />
+              ))}
+            </datalist>
             <p className="text-[10px] text-muted-foreground/70 mt-1">
               {t('drawer.dbOverride.name.hint')}
             </p>
@@ -2665,6 +2759,16 @@ function DatabaseOverrideSection({ slug }) {
             >
               {saving && <Loader2 size={12} className="animate-spin" />}
               {t('common.save')}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={detect}
+              disabled={detecting}
+              title={t('drawer.dbOverride.detect.hint')}
+            >
+              {detecting && <Loader2 size={12} className="animate-spin" />}
+              {t('drawer.dbOverride.detect')}
             </Button>
             {status?.ok && (
               <span className="text-[11px] text-emerald-500">

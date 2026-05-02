@@ -28,7 +28,10 @@ const api = {
     test: (id) => ipcRenderer.invoke('databases:test', id),
     setSecret: (id, password) =>
       ipcRenderer.invoke('databases:setSecret', id, password),
-    clearSecret: (id) => ipcRenderer.invoke('databases:clearSecret', id)
+    clearSecret: (id) => ipcRenderer.invoke('databases:clearSecret', id),
+    listDbNames: (id) => ipcRenderer.invoke('databases:listDbNames', id),
+    detectForProject: (slug) =>
+      ipcRenderer.invoke('databases:detectForProject', slug)
   },
   bitbucket: {
     list: () => ipcRenderer.invoke('bitbucket:list'),
@@ -93,6 +96,8 @@ const api = {
     isRunning: (slug) => ipcRenderer.invoke('process:isRunning', slug),
     list: () => ipcRenderer.invoke('process:list'),
     logs: (slug) => ipcRenderer.invoke('process:logs', slug),
+    detectRunCommand: (slug) =>
+      ipcRenderer.invoke('process:detectRunCommand', slug),
     /**
      * Подписка на process:log/port/exit.
      * Возвращает unsubscribe.

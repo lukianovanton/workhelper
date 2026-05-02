@@ -264,13 +264,17 @@
   "drawer.runOverride.cwd": "Working directory",
   "drawer.runOverride.cwd.placeholder": "src/api  (relative to project root)",
   "drawer.runOverride.cwd.hint": "Where the run command executes. Empty means project root, or auto-detected for .NET projects.",
+  "drawer.runOverride.detect": "Detect",
+  "drawer.runOverride.detect.hint": "Inspect the cloned project and propose a run command + working directory based on its files (.csproj / package.json / Cargo.toml / go.mod / Makefile).",
 
   "drawer.dbOverride.title": "Database override",
   "drawer.dbOverride.connection": "DB connection",
   "drawer.dbOverride.connection.hint": "Which DB connection from Settings → Databases this project uses. Default = first connection.",
   "drawer.dbOverride.name": "Database name",
-  "drawer.dbOverride.name.hint": "DB name on the engine. Empty = slug in lowercase. Override if your project's DB is named differently.",
+  "drawer.dbOverride.name.hint": "DB name on the engine. Empty = slug in lowercase. Override if your project's DB is named differently. Type to filter or pick from existing databases on the engine.",
   "drawer.dbOverride.noDatabases": "No databases configured",
+  "drawer.dbOverride.detect": "Detect",
+  "drawer.dbOverride.detect.hint": "Scan all configured DB connections for one that already has a database matching this project's slug.",
 
   "drawer.notes.title": "Notes",
   "drawer.notes.placeholder": "Anything project-related — bugs, contacts, context…",
