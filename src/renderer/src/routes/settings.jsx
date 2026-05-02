@@ -1,4 +1,11 @@
-import { useEffect, useState, useCallback } from 'react'
+import {
+  useEffect,
+  useState,
+  useCallback,
+  useRef,
+  forwardRef,
+  useImperativeHandle
+} from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   ArrowLeft,
@@ -43,9 +50,11 @@ import {
   DialogDescription
 } from '@/components/ui/dialog'
 import { BitbucketSetupGuide } from '@/components/setup-guides/bitbucket'
+import { GitHubSetupGuide } from '@/components/setup-guides/github'
 import { JiraSetupGuide } from '@/components/setup-guides/jira'
 import { PathsSetupGuide } from '@/components/setup-guides/paths'
 import { DatabaseSetupGuide } from '@/components/setup-guides/database'
+import { PostgresSetupGuide } from '@/components/setup-guides/postgres'
 import { DotnetSetupGuide } from '@/components/setup-guides/dotnet'
 import { PresenceSetupGuide } from '@/components/setup-guides/presence'
 import { AppearanceSetupGuide } from '@/components/setup-guides/appearance'
@@ -63,6 +72,11 @@ const SETUP_GUIDES = {
     descriptionKey: 'settings.guide.bitbucket.dialogDescription',
     Component: BitbucketSetupGuide
   },
+  github: {
+    titleKey: 'settings.github.guide.title',
+    descriptionKey: 'settings.guide.github.dialogDescription',
+    Component: GitHubSetupGuide
+  },
   jira: {
     titleKey: 'settings.jira.title',
     descriptionKey: 'settings.guide.jira.dialogDescription',
@@ -77,6 +91,11 @@ const SETUP_GUIDES = {
     titleKey: 'settings.database.title',
     descriptionKey: 'settings.guide.database.dialogDescription',
     Component: DatabaseSetupGuide
+  },
+  postgres: {
+    titleKey: 'settings.postgres.guide.title',
+    descriptionKey: 'settings.guide.postgres.dialogDescription',
+    Component: PostgresSetupGuide
   },
   defaults: {
     titleKey: 'settings.defaults.title',
@@ -149,6 +168,12 @@ export default function Settings() {
   // Открыт ли setup-guide modal. Один state на все секции (одновременно
   // открыт максимум один guide), значение — id секции / null.
   const [guideOpen, setGuideOpen] = useState(null)
+  // Refs на section-компоненты, экспонирующие imperative API:
+  // page-header «+ Add Bitbucket / GitHub / MySQL / Postgres» зовёт
+  // ref.current.startAdd(type) — создаётся новый draft внутри секции,
+  // её state owner.
+  const sourcesSectionRef = useRef(null)
+  const databasesSectionRef = useRef(null)
   useEffect(() => {
     try {
       localStorage.setItem(SECTION_STORAGE_KEY, activeSection)
@@ -282,10 +307,63 @@ export default function Settings() {
               )}
             </span>
           )}
-          <Button onClick={onSave} disabled={saving}>
-            {saving && <Loader2 className="animate-spin" />}
-            {t('common.save')}
-          </Button>
+          {/* Section-aware actions: Sources / Databases имеют per-card
+              Apply, поэтому глобальный Save в этих секциях прячется и
+              на его месте появляются «+ Add ...» кнопки конкретного
+              типа. Остальные секции (paths, defaults, jira, presence,
+              appearance) пишут в config — там остаётся обычный Save. */}
+          {activeSection === 'sources' ? (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  sourcesSectionRef.current?.startAdd('bitbucket')
+                }
+              >
+                <Plus />
+                {t('settings.sources.add.bitbucket')}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  sourcesSectionRef.current?.startAdd('github')
+                }
+              >
+                <Plus />
+                {t('settings.sources.add.github')}
+              </Button>
+            </>
+          ) : activeSection === 'database' ? (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  databasesSectionRef.current?.startAdd('mysql')
+                }
+              >
+                <Plus />
+                {t('settings.databases.add.mysql')}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  databasesSectionRef.current?.startAdd('postgres')
+                }
+              >
+                <Plus />
+                {t('settings.databases.add.postgres')}
+              </Button>
+            </>
+          ) : (
+            <Button onClick={onSave} disabled={saving}>
+              {saving && <Loader2 className="animate-spin" />}
+              {t('common.save')}
+            </Button>
+          )}
         </div>
       </header>
 
@@ -327,10 +405,18 @@ export default function Settings() {
         </aside>
 
         <main className="flex-1 overflow-auto">
-          <div className="p-6 max-w-2xl">
+          <div
+            className={cn(
+              'p-6',
+              activeSection === 'sources' || activeSection === 'database'
+                ? 'max-w-7xl'
+                : 'max-w-2xl'
+            )}
+          >
             {activeSection === 'sources' && (
               <SourcesSection
-                onOpenGuide={() => setGuideOpen('bitbucket')}
+                ref={sourcesSectionRef}
+                onOpenGuide={(id) => setGuideOpen(id)}
               />
             )}
 
@@ -431,7 +517,8 @@ export default function Settings() {
 
             {activeSection === 'database' && (
               <DatabasesSection
-                onOpenGuide={() => setGuideOpen('database')}
+                ref={databasesSectionRef}
+                onOpenGuide={(id) => setGuideOpen(id)}
                 detected={mysqlDetected}
               />
             )}
@@ -744,18 +831,23 @@ function SectionPageHeader({ title, description, onOpenGuide }) {
 }
 
 /**
- * Управление VCS-источниками: страница-секция со списком отдельных
- * Card-карточек, по одной на каждый source (Bitbucket / GitHub).
+ * Управление VCS-источниками: страница-секция, разложенная гридом
+ * 1/2 колонки, каждая карточка — отдельный source (Bitbucket / GitHub).
  *
  *   - Каждая карточка автономна: header с title + per-card actions
- *     ([Test] / [Apply] / [Remove] для сохранённых; [Save] / [Cancel]
- *     для черновиков), body — форма полей в зависимости от типа.
- *   - Внизу страницы — кнопки добавления нового источника по типу.
+ *     ([Setup guide] / [Test] / [Apply] / [Remove] для сохранённых;
+ *     [Save] / [Cancel] для черновиков), body — форма полей.
+ *   - Кнопки «+ Add Bitbucket / + Add GitHub» рендерятся не здесь, а в
+ *     шапке страницы рядом с глобальным Save: parent зовёт imperative
+ *     `ref.current.startAdd(type)`.
  *
  * Stateful-логика (load/save/remove/test/setSecret/clearSecret) живёт
  * в SourcesSection; SourceCard ниже — чистая презентация + колбэки.
  */
-function SourcesSection({ onOpenGuide }) {
+const SourcesSection = forwardRef(function SourcesSection(
+  { onOpenGuide },
+  ref
+) {
   const t = useT()
   const [sources, setSources] = useState([])
   const [loading, setLoading] = useState(true)
@@ -801,7 +893,7 @@ function SourcesSection({ onOpenGuide }) {
     setTokens((prev) => ({ ...prev, [id]: value }))
   }
 
-  const startAdd = (type) => {
+  const startAdd = useCallback((type) => {
     const tempId = `__new_${Date.now()}`
     setDrafts((prev) => ({
       ...prev,
@@ -816,7 +908,11 @@ function SourcesSection({ onOpenGuide }) {
         unsaved: true
       }
     }))
-  }
+  }, [])
+
+  // Imperative API for the parent: page-header «+ Add Bitbucket / GitHub»
+  // buttons reach into this section via ref.
+  useImperativeHandle(ref, () => ({ startAdd }), [startAdd])
 
   const cancelDraft = (tempId) => {
     setDrafts((prev) => {
@@ -953,11 +1049,10 @@ function SourcesSection({ onOpenGuide }) {
   const draftIds = Object.keys(drafts)
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <SectionPageHeader
         title={t('settings.sources.title')}
         description={t('settings.sources.description')}
-        onOpenGuide={onOpenGuide}
       />
 
       {loading && (
@@ -972,47 +1067,31 @@ function SourcesSection({ onOpenGuide }) {
         </p>
       )}
 
-      {draftIds.map((id) => (
-        <SourceCard
-          key={id}
-          draft={drafts[id]}
-          token={tokens[id] || ''}
-          isBusy={!!busy[id]}
-          isTesting={!!busy[`test:${id}`]}
-          error={errors[id]}
-          testResult={testResults[id]}
-          onUpdate={(field, value) => updateDraft(id, field, value)}
-          onSetToken={(v) => setToken(id, v)}
-          onApply={() => applyExisting(id)}
-          onSave={() => saveNew(id)}
-          onTest={() => test(id)}
-          onRemove={() => remove(id)}
-          onCancel={() => cancelDraft(id)}
-          onClearToken={() => clearToken(id)}
-        />
-      ))}
-
-      <div className="flex flex-wrap gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => startAdd('bitbucket')}
-        >
-          <Plus />
-          {t('settings.sources.add.bitbucket')}
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => startAdd('github')}
-        >
-          <Plus />
-          {t('settings.sources.add.github')}
-        </Button>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+        {draftIds.map((id) => (
+          <SourceCard
+            key={id}
+            draft={drafts[id]}
+            token={tokens[id] || ''}
+            isBusy={!!busy[id]}
+            isTesting={!!busy[`test:${id}`]}
+            error={errors[id]}
+            testResult={testResults[id]}
+            onUpdate={(field, value) => updateDraft(id, field, value)}
+            onSetToken={(v) => setToken(id, v)}
+            onApply={() => applyExisting(id)}
+            onSave={() => saveNew(id)}
+            onTest={() => test(id)}
+            onRemove={() => remove(id)}
+            onCancel={() => cancelDraft(id)}
+            onClearToken={() => clearToken(id)}
+            onOpenGuide={onOpenGuide}
+          />
+        ))}
       </div>
     </div>
   )
-}
+})
 
 /**
  * Одна карточка источника. Header содержит title + per-card actions
@@ -1035,7 +1114,8 @@ function SourceCard({
   onTest,
   onRemove,
   onCancel,
-  onClearToken
+  onClearToken,
+  onOpenGuide
 }) {
   const t = useT()
   const isNew = !!draft.unsaved
@@ -1084,6 +1164,18 @@ function SourceCard({
             )}
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            {onOpenGuide && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() =>
+                  onOpenGuide(isGithub ? 'github' : 'bitbucket')
+                }
+                title={t('settings.openSetupGuide')}
+              >
+                <BookOpen size={13} />
+              </Button>
+            )}
             {isNew ? (
               <>
                 <Button
@@ -1210,13 +1302,14 @@ function SourceCard({
 }
 
 /**
- * Управление DB-подключениями: страница-секция со списком отдельных
- * Card-карточек, по одной на каждое подключение (MySQL / PostgreSQL).
- *
- * Stateful-логика живёт в DatabasesSection; DatabaseCard ниже —
- * чистая презентация + колбэки. Симметрично SourcesSection.
+ * Управление DB-подключениями: симметрично SourcesSection. Грид
+ * 1/2 колонки, отдельная Card на каждое подключение, кнопки Add
+ * рендерятся в шапке страницы рядом с Save через ref.
  */
-function DatabasesSection({ onOpenGuide, detected }) {
+const DatabasesSection = forwardRef(function DatabasesSection(
+  { onOpenGuide, detected },
+  ref
+) {
   const t = useT()
   const [databases, setDatabases] = useState([])
   const [loading, setLoading] = useState(true)
@@ -1262,7 +1355,7 @@ function DatabasesSection({ onOpenGuide, detected }) {
     setPasswords((prev) => ({ ...prev, [id]: value }))
   }
 
-  const startAdd = (type) => {
+  const startAdd = useCallback((type) => {
     const tempId = `__new_${Date.now()}`
     const isPostgres = type === 'postgres'
     setDrafts((prev) => ({
@@ -1279,7 +1372,11 @@ function DatabasesSection({ onOpenGuide, detected }) {
         unsaved: true
       }
     }))
-  }
+  }, [])
+
+  // Imperative API for the parent: page-header «+ Add MySQL / Postgres»
+  // buttons reach into this section via ref.
+  useImperativeHandle(ref, () => ({ startAdd }), [startAdd])
 
   const cancelDraft = (tempId) => {
     setDrafts((prev) => {
@@ -1418,11 +1515,10 @@ function DatabasesSection({ onOpenGuide, detected }) {
   const ids = Object.keys(drafts)
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <SectionPageHeader
         title={t('settings.databases.title')}
         description={t('settings.databases.description')}
-        onOpenGuide={onOpenGuide}
       />
 
       {loading && (
@@ -1437,48 +1533,32 @@ function DatabasesSection({ onOpenGuide, detected }) {
         </p>
       )}
 
-      {ids.map((id) => (
-        <DatabaseCard
-          key={id}
-          draft={drafts[id]}
-          password={passwords[id] || ''}
-          isBusy={!!busy[id]}
-          isTesting={!!busy[`test:${id}`]}
-          error={errors[id]}
-          testResult={testResults[id]}
-          detected={detected}
-          onUpdate={(field, value) => updateDraft(id, field, value)}
-          onSetPassword={(v) => setPassword(id, v)}
-          onApply={() => applyExisting(id)}
-          onSave={() => saveNew(id)}
-          onTest={() => test(id)}
-          onRemove={() => remove(id)}
-          onCancel={() => cancelDraft(id)}
-          onClearPassword={() => clearPwd(id)}
-        />
-      ))}
-
-      <div className="flex flex-wrap gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => startAdd('mysql')}
-        >
-          <Plus />
-          {t('settings.databases.add.mysql')}
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => startAdd('postgres')}
-        >
-          <Plus />
-          {t('settings.databases.add.postgres')}
-        </Button>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+        {ids.map((id) => (
+          <DatabaseCard
+            key={id}
+            draft={drafts[id]}
+            password={passwords[id] || ''}
+            isBusy={!!busy[id]}
+            isTesting={!!busy[`test:${id}`]}
+            error={errors[id]}
+            testResult={testResults[id]}
+            detected={detected}
+            onUpdate={(field, value) => updateDraft(id, field, value)}
+            onSetPassword={(v) => setPassword(id, v)}
+            onApply={() => applyExisting(id)}
+            onSave={() => saveNew(id)}
+            onTest={() => test(id)}
+            onRemove={() => remove(id)}
+            onCancel={() => cancelDraft(id)}
+            onClearPassword={() => clearPwd(id)}
+            onOpenGuide={onOpenGuide}
+          />
+        ))}
       </div>
     </div>
   )
-}
+})
 
 /**
  * Одна карточка DB-подключения. Header — title + per-card actions
@@ -1500,7 +1580,8 @@ function DatabaseCard({
   onTest,
   onRemove,
   onCancel,
-  onClearPassword
+  onClearPassword,
+  onOpenGuide
 }) {
   const t = useT()
   const isNew = !!draft.unsaved
@@ -1547,6 +1628,18 @@ function DatabaseCard({
             )}
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            {onOpenGuide && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() =>
+                  onOpenGuide(isPostgres ? 'postgres' : 'database')
+                }
+                title={t('settings.openSetupGuide')}
+              >
+                <BookOpen size={13} />
+              </Button>
+            )}
             {isNew ? (
               <>
                 <Button

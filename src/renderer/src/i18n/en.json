@@ -432,10 +432,15 @@
   "settings.footer.secretsPrefix": "Secrets encrypted via safeStorage in",
 
   "settings.guide.bitbucket.dialogDescription": "4 steps to authenticate against Bitbucket Cloud. ~2 minutes.",
+  "settings.guide.github.dialogDescription": "3 steps to authenticate against GitHub via a Personal Access Token.",
   "settings.guide.jira.dialogDescription": "3 steps; reuses your Atlassian email from the Bitbucket section.",
   "settings.guide.paths.dialogDescription": "Where projects clone, where dumps live, how VS Code is launched.",
   "settings.guide.database.dialogDescription": "Local MySQL connection used for size, restore, drop/create.",
+  "settings.guide.postgres.dialogDescription": "PostgreSQL connection used for size, restore, drop/create.",
   "settings.guide.dotnet.dialogDescription": "Optional run arguments for dotnet run. Most users leave empty.",
   "settings.guide.presence.dialogDescription": "How to see colleagues running WorkHelper on your network.",
-  "settings.guide.appearance.dialogDescription": "Display preferences for this machine."
+  "settings.guide.appearance.dialogDescription": "Display preferences for this machine.",
+
+  "settings.github.guide.title": "GitHub setup",
+  "settings.postgres.guide.title": "PostgreSQL setup"
 }
