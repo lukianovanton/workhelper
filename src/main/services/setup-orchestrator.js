@@ -33,6 +33,11 @@ import {
   nodeVersionSatisfies,
   getSystemNodeVersion
 } from './node-version.js'
+import {
+  detectProjectRequirements,
+  getToolchainState,
+  getMissingTools
+} from './toolchain/manager.js'
 
 const activeSetups = new Map()
 
@@ -250,6 +255,36 @@ export async function runFull(slug, options, emitStep) {
       }
     }
 
+    // ─── c.3) toolchain-prep — детектим missing build tools ────────
+    // Только сообщает (не ставит): UI-banner в Setup-dialog'е выдаёт
+    // юзеру кнопки «Install Build Tools» / «Install Python» с чёткими
+    // ожиданиями (UAC, размер). Если юзер пропустил — npm install
+    // упадёт с своей родной ошибкой; мы потом её распарсим (Phase 3).
+    checkCancel()
+    if (config.paths.projectsRoot) {
+      try {
+        await runToolchainPrepStep(
+          fsService.projectPath(config.paths.projectsRoot, slug),
+          beginStep,
+          endStep,
+          errorStep,
+          emitStep
+        )
+      } catch (e) {
+        // best-effort — не валим setup на toolchain-detect
+        console.warn(
+          '[setup] toolchain-prep failed:',
+          e?.message || e
+        )
+      }
+    } else {
+      emitStep({
+        kind: 'toolchain-prep',
+        status: 'done',
+        message: 'Skipped'
+      })
+    }
+
     // ─── c.4) node-prep — Volta + правильная Node-версия ─────────────
     // Если у проекта закреплена Node-версия (package.json#engines /
     // .nvmrc / volta.node) и она отличается от системной, пытаемся
@@ -340,6 +375,49 @@ export async function runFull(slug, options, emitStep) {
   } finally {
     activeSetups.delete(slug)
   }
+}
+
+async function runToolchainPrepStep(
+  repoPath,
+  beginStep,
+  endStep,
+  errorStep,
+  emitStep
+) {
+  const requirements = detectProjectRequirements(repoPath)
+  if (
+    !requirements.isNodeProject ||
+    requirements.node.nativeDeps.length === 0
+  ) {
+    emitStep({
+      kind: 'toolchain-prep',
+      status: 'done',
+      message: 'No native build tools required'
+    })
+    return
+  }
+  const state = await getToolchainState({ forceRefresh: true })
+  const missing = getMissingTools(requirements, state)
+  if (missing.ok) {
+    emitStep({
+      kind: 'toolchain-prep',
+      status: 'done',
+      message: 'Build toolchain ready'
+    })
+    return
+  }
+  // Что-то отсутствует — НЕ автозапускаем install (Build Tools требует
+  // UAC, юзер должен решить сам). Просто эмитим warning-step с
+  // подробностями. Юзер увидит баннер в Setup dialog и кнопки;
+  // npm install попробует на том что есть, потом мы парсим ошибку.
+  const list = []
+  if (missing.buildTools) list.push('VS Build Tools')
+  if (missing.python) list.push('Python')
+  emitStep({
+    kind: 'toolchain-prep',
+    status: 'done',
+    message: `Missing: ${list.join(' + ')}. Install via banner above before retrying if npm install fails on native deps.`
+  })
 }
 
 async function runNodePrepStep(
@@ -445,18 +523,58 @@ async function runDepsStep(repoPath, beginStep, endStep, errorStep, emitStep) {
     throw new Error(msg)
   }
   if (result.code !== 0) {
-    const detail = (result.stderrTail.trim() || result.stdoutTail.trim() || '')
+    const fullErr =
+      (result.stderrTail || '') + '\n' + (result.stdoutTail || '')
+    const detail = fullErr
       .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter(Boolean)
       .slice(-3)
       .join(' | ')
       .slice(0, 240)
+    const hint = analyzeNpmInstallError(fullErr)
     const msg = `${pm.pmName} install exited with code ${result.code}${
       detail ? `: ${detail}` : ''
-    }`
+    }${hint ? ` — ${hint}` : ''}`
     errorStep('deps', msg)
     throw new Error(msg)
   }
   endStep('deps', t, `${pm.pmName} install ok`)
+}
+
+/**
+ * Парсит типичные ошибки npm install / node-gyp и подсказывает что
+ * чинить. Возвращает короткое actionable-сообщение либо null. Эти
+ * хинты дополняют toolchain-banner в Setup dialog'е — если юзер
+ * проигнорировал его и всё равно нажал Setup, в финальном error
+ * step'е увидит конкретное предложение.
+ */
+function analyzeNpmInstallError(text) {
+  if (!text || typeof text !== 'string') return null
+  if (
+    /gyp err!.*find python|python (was|is) (not|cannot)|no python found/i.test(
+      text
+    )
+  ) {
+    return 'Python is missing — open Setup again, click "Install Python" in the toolchain banner, then retry.'
+  }
+  if (
+    /could not find any visual studio|msbuild.*not found|cannot find module 'node-gyp'|cl\.exe.*not.*recognized|c\+\+ compiler/i.test(
+      text
+    )
+  ) {
+    return 'Visual Studio Build Tools missing — open Setup again, click "Install Build Tools (UAC)" in the toolchain banner, then retry.'
+  }
+  if (/node-sass.*not compatible|abi.*mismatch|nan\s+\d+\.\d+/i.test(text)) {
+    return 'Native module incompatible with current Node version — pin an older Node via the Node banner (e.g., Node 16) and retry.'
+  }
+  if (/eacces|permission denied/i.test(text)) {
+    return 'Permission denied — check the project folder is writable and not held open by another process.'
+  }
+  if (/etarget|version not found/i.test(text)) {
+    return 'A package version is no longer published. The project may need an upstream lockfile / engines update.'
+  }
+  return null
 }
 
 /**
