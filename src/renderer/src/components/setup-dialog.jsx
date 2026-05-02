@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   CheckCircle2,
   Circle,
@@ -62,6 +62,11 @@ export function SetupDialog({ project, open, onOpenChange }) {
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
   const [submitError, setSubmitError] = useState(null)
 
+  // Auto-detected stack: пустой объект на старте; заполняется через
+  // api.setup.detectStack когда диалог открыт И проект клонирован.
+  // Используется чтобы предложить умный дефолт для setupDb (нужна БД
+  // или нет) и показать пользователю «что мы поняли про проект».
+  const [detectedStack, setDetectedStack] = useState(null)
   const phase = setupState?.phase ?? 'pre-flight'
   const isRunning = phase === 'running'
   const isTerminal =
@@ -73,15 +78,11 @@ export function SetupDialog({ project, open, onOpenChange }) {
     if (!setupState) {
       setDumpPath(project.db.dumpPath || null)
       setSkipRestore(false)
-      // Дефолт setupDb: ON если у проекта уже есть DB-override (юзер
-      // явно привязал подключение / имя), ИЛИ если БД с таким slug
-      // уже существует (project.db.exists). Иначе считаем что DB не
-      // нужен и пред-выключаем — фронтенд-проекты без БД не должны
-      // спотыкаться об «No engine configured».
-      const hasDbBinding =
-        project.db.exists ||
-        (project.db.name && project.db.name !== '')
-      setSetupDb(!!hasDbBinding)
+      // Дефолт setupDb: ON если у проекта УЖЕ есть БД (project.db.exists).
+      // Иначе сначала false, а после auto-detect ниже выставится в
+      // detectedStack.needsDatabase. Это снижает количество ложно-
+      // положительных «давайте создадим БД» для no-DB проектов.
+      setSetupDb(!!project.db.exists)
       setOpenWorkspace(false)
       setRunAfter(false)
       setAcknowledgeReplace(false)
@@ -92,9 +93,42 @@ export function SetupDialog({ project, open, onOpenChange }) {
     project.slug,
     project.db.dumpPath,
     project.db.exists,
-    project.db.name,
     setupState
   ])
+
+  // Auto-detect стека после открытия диалога. Работает только если
+  // проект клонирован (иначе детектор возвращает stackKind=null).
+  // Срабатывает один раз на открытие — не перезапускаем при ребиле
+  // setupState. Применяет needsDatabase к setupDb, но только если
+  // юзер ещё не успел руками тоггльнуть (we use a ref to track it).
+  const userTouchedSetupDbRef = useRef(false)
+  useEffect(() => {
+    if (!open) {
+      setDetectedStack(null)
+      userTouchedSetupDbRef.current = false
+      return
+    }
+    if (!project.local.cloned) return
+    let cancelled = false
+    api.setup.detectStack(project.slug).then((r) => {
+      if (cancelled || !r) return
+      setDetectedStack(r)
+      // Apply needsDatabase only if user hasn't touched the toggle yet.
+      if (!userTouchedSetupDbRef.current) {
+        // Если БД уже существует — не выключаем (явный сигнал что нужно).
+        if (project.db.exists) return
+        setSetupDb(!!r.needsDatabase)
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [open, project.slug, project.local.cloned, project.db.exists])
+
+  const onSetSetupDb = (v) => {
+    userTouchedSetupDbRef.current = true
+    setSetupDb(v)
+  }
 
   // dump filename for display
   const dumpFilename = useMemo(() => {
@@ -209,7 +243,8 @@ export function SetupDialog({ project, open, onOpenChange }) {
               dumpPath={dumpPath}
               dumpFilename={dumpFilename}
               setupDb={setupDb}
-              setSetupDb={setSetupDb}
+              setSetupDb={onSetSetupDb}
+              detectedStack={detectedStack}
               skipRestore={skipRestore}
               setSkipRestore={setSkipRestore}
               openWorkspace={openWorkspace}
@@ -297,6 +332,7 @@ function PreFlight({
   dumpFilename,
   setupDb,
   setSetupDb,
+  detectedStack,
   skipRestore,
   setSkipRestore,
   openWorkspace,
@@ -341,6 +377,12 @@ function PreFlight({
             : `Clone from ${cloneOrigin || slug}`
         }
       />
+
+      {detectedStack?.stackKind && (
+        <div className="rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+          <DetectedStackLine stack={detectedStack} />
+        </div>
+      )}
 
       <div className="space-y-2">
         <label className="flex items-center gap-2 text-sm select-none cursor-pointer">
@@ -478,6 +520,42 @@ function PreFlight({
         </div>
       )}
     </div>
+  )
+}
+
+/**
+ * Однострочная подсказка «что мы детектнули в проекте». Только
+ * информативная, никаких кнопок: dialog уже подкорректировал
+ * defaults (setupDb / runCommand) на основе этого результата.
+ */
+function DetectedStackLine({ stack }) {
+  const labels = {
+    dotnet: '.NET',
+    node: 'Node.js',
+    cargo: 'Rust (Cargo)',
+    go: 'Go',
+    make: 'Make-based'
+  }
+  const stackLabel = labels[stack.stackKind] || stack.stackKind
+  const cmd = stack.runCommand
+    ? ` · run with `
+    : ''
+  return (
+    <span>
+      <strong className="text-foreground">Detected:</strong> {stackLabel}
+      {stack.cwd && (
+        <>
+          {' '}in <code className="text-foreground">{stack.cwd}/</code>
+        </>
+      )}
+      {stack.runCommand && (
+        <>
+          {cmd}
+          <code className="text-foreground">{stack.runCommand}</code>
+        </>
+      )}
+      {stack.needsDatabase ? ' · DB references found' : ' · no DB references'}
+    </span>
   )
 }
 

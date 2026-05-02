@@ -1,5 +1,7 @@
 import { BrowserWindow, ipcMain } from 'electron'
 import * as orchestrator from '../services/setup-orchestrator.js'
+import * as fsService from '../services/fs-service.js'
+import { getConfig } from '../services/config-store.js'
 
 /**
  * setup:run-full        — стартует оркестрацию clone → db-create →
@@ -59,4 +61,28 @@ export function registerSetupIpc() {
   ipcMain.handle('setup:is-active', (_event, slug) =>
     orchestrator.isSetupActive(slug)
   )
+
+  // Авто-детект стека: smart-defaults для SetupDialog. Работает только
+  // если проект уже клонирован (есть файлы для инспекции). Для не-клона
+  // возвращает stackKind=null — UI показывает дефолты как раньше.
+  ipcMain.handle('setup:detectStack', async (_event, slug) => {
+    if (!slug || typeof slug !== 'string') {
+      return {
+        stackKind: null,
+        runCommand: null,
+        cwd: '',
+        needsDatabase: false
+      }
+    }
+    const root = getConfig().paths?.projectsRoot
+    if (!root || !fsService.projectExists(root, slug)) {
+      return {
+        stackKind: null,
+        runCommand: null,
+        cwd: '',
+        needsDatabase: false
+      }
+    }
+    return fsService.detectStack(fsService.projectPath(root, slug))
+  })
 }

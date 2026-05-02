@@ -126,6 +126,7 @@ const api = {
     runFull: (params) => ipcRenderer.invoke('setup:run-full', params),
     cancel: (slug) => ipcRenderer.invoke('setup:cancel', slug),
     isActive: (slug) => ipcRenderer.invoke('setup:is-active', slug),
+    detectStack: (slug) => ipcRenderer.invoke('setup:detectStack', slug),
     on: (callback) => {
       const handler = (_e, payload) => callback(payload)
       ipcRenderer.on('setup:event', handler)

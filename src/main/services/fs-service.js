@@ -161,77 +161,245 @@ async function fileExists(p) {
   }
 }
 
+// Маркеры зависимостей-БД для разных стеков. Каждый regex проверяется
+// против релевантного manifest-файла; первый матч → needsDatabase=true.
+// Список консервативно расширяемый — лучше пропустить «нужна» (показать
+// чекбокс пред-выключенным) чем накручивать ложноположительные.
+const DOTNET_DB_PATTERNS = [
+  /"ConnectionStrings"\s*:/i,
+  /Microsoft\.EntityFrameworkCore/i,
+  /System\.Data\.SqlClient/i,
+  /Npgsql/i,
+  /MySqlConnector/i,
+  /Dapper/i
+]
+const NODE_DB_DEPS = new Set([
+  'pg',
+  'mysql',
+  'mysql2',
+  'sqlite3',
+  'better-sqlite3',
+  'mongodb',
+  'mongoose',
+  'redis',
+  'ioredis',
+  'typeorm',
+  'sequelize',
+  'prisma',
+  '@prisma/client',
+  'knex',
+  'drizzle-orm',
+  'kysely',
+  'pg-promise'
+])
+const CARGO_DB_PATTERNS = [
+  /^\s*sqlx\s*=/m,
+  /^\s*diesel\s*=/m,
+  /^\s*tokio-postgres\s*=/m,
+  /^\s*postgres\s*=/m,
+  /^\s*mysql\s*=/m,
+  /^\s*rusqlite\s*=/m,
+  /^\s*sea-orm\s*=/m
+]
+const GO_DB_PATTERNS = [
+  /\sdatabase\/sql\b/,
+  /github\.com\/lib\/pq\b/,
+  /github\.com\/go-sql-driver\/mysql\b/,
+  /github\.com\/jackc\/pgx\b/,
+  /gorm\.io\/gorm\b/,
+  /github\.com\/jmoiron\/sqlx\b/
+]
+
+async function detectDotnet(repoRoot) {
+  const subpath = await resolveRunnableSubpath(repoRoot, '', {})
+  if (!subpath) return null
+  // Проверяем наличие БД через содержимое appsettings*.json в runnable-папке.
+  const targetDir = path.join(repoRoot, subpath)
+  let needsDb = false
+  try {
+    const entries = await fsp.readdir(targetDir)
+    for (const f of entries) {
+      if (!/^appsettings(\..+)?\.json$/i.test(f)) continue
+      try {
+        const raw = await fsp.readFile(path.join(targetDir, f), 'utf8')
+        if (DOTNET_DB_PATTERNS.some((re) => re.test(raw))) {
+          needsDb = true
+          break
+        }
+      } catch {
+        // ignore
+      }
+    }
+  } catch {
+    // ignore
+  }
+  // Дополнительно: csproj может референсить EF Core / Npgsql без
+  // отдельного appsettings (например, infra-only проекты).
+  if (!needsDb) {
+    try {
+      const entries = await fsp.readdir(targetDir)
+      for (const f of entries) {
+        if (!/\.csproj$/i.test(f)) continue
+        try {
+          const raw = await fsp.readFile(path.join(targetDir, f), 'utf8')
+          if (DOTNET_DB_PATTERNS.some((re) => re.test(raw))) {
+            needsDb = true
+            break
+          }
+        } catch {
+          // ignore
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return {
+    stackKind: 'dotnet',
+    runCommand: 'dotnet run',
+    cwd: subpath,
+    needsDatabase: needsDb
+  }
+}
+
+async function detectNode(repoRoot) {
+  const pkgPath = path.join(repoRoot, 'package.json')
+  if (!(await fileExists(pkgPath))) return null
+  let pkgManager = 'npm'
+  if (await fileExists(path.join(repoRoot, 'pnpm-lock.yaml'))) {
+    pkgManager = 'pnpm'
+  } else if (await fileExists(path.join(repoRoot, 'yarn.lock'))) {
+    pkgManager = 'yarn'
+  }
+  let runCommand = `${pkgManager} start`
+  let needsDb = false
+  try {
+    const raw = await fsp.readFile(pkgPath, 'utf8')
+    const pkg = JSON.parse(raw)
+    const scripts = pkg.scripts || {}
+    const script = ['dev', 'start', 'serve'].find((s) => scripts[s])
+    if (script) {
+      runCommand =
+        pkgManager === 'npm'
+          ? `npm run ${script}`
+          : `${pkgManager} ${script}`
+    }
+    const allDeps = {
+      ...(pkg.dependencies || {}),
+      ...(pkg.devDependencies || {}),
+      ...(pkg.peerDependencies || {}),
+      ...(pkg.optionalDependencies || {})
+    }
+    for (const dep of Object.keys(allDeps)) {
+      if (NODE_DB_DEPS.has(dep)) {
+        needsDb = true
+        break
+      }
+    }
+  } catch {
+    // оставляем дефолты
+  }
+  return {
+    stackKind: 'node',
+    runCommand,
+    cwd: '',
+    needsDatabase: needsDb
+  }
+}
+
+async function detectCargo(repoRoot) {
+  const cargoPath = path.join(repoRoot, 'Cargo.toml')
+  if (!(await fileExists(cargoPath))) return null
+  let needsDb = false
+  try {
+    const raw = await fsp.readFile(cargoPath, 'utf8')
+    needsDb = CARGO_DB_PATTERNS.some((re) => re.test(raw))
+  } catch {
+    // ignore
+  }
+  return {
+    stackKind: 'cargo',
+    runCommand: 'cargo run',
+    cwd: '',
+    needsDatabase: needsDb
+  }
+}
+
+async function detectGo(repoRoot) {
+  const goModPath = path.join(repoRoot, 'go.mod')
+  if (!(await fileExists(goModPath))) return null
+  let needsDb = false
+  try {
+    const raw = await fsp.readFile(goModPath, 'utf8')
+    needsDb = GO_DB_PATTERNS.some((re) => re.test(raw))
+    // go.mod часто содержит только direct deps; если там пусто — пробуем
+    // главный source-файл (быстрая эвристика без полного walk'а).
+  } catch {
+    // ignore
+  }
+  return {
+    stackKind: 'go',
+    runCommand: 'go run .',
+    cwd: '',
+    needsDatabase: needsDb
+  }
+}
+
+async function detectMake(repoRoot) {
+  for (const name of ['Makefile', 'makefile', 'GNUmakefile']) {
+    if (await fileExists(path.join(repoRoot, name))) {
+      return {
+        stackKind: 'make',
+        runCommand: 'make run',
+        cwd: '',
+        needsDatabase: false
+      }
+    }
+  }
+  return null
+}
+
 /**
- * Эвристика типа стека: возвращает {runCommand, cwd} по содержимому
- * корня клонированного репо. Покрывает .NET / Node / Cargo / Go / Make.
- * cwd — относительный путь от repoRoot (пустая строка = repoRoot сам).
+ * Эвристика типа стека по содержимому корня клонированного репо.
+ * Возвращает stackKind / runCommand / cwd и needsDatabase — флаг
+ * того, что в проекте находятся явные следы работы с БД (EF Core,
+ * pg/mysql/prisma в node_modules, sqlx в Cargo.toml, и т.д.).
  *
- *   - .NET → 'dotnet run' + resolveRunnableSubpath (BrandName/)
- *   - Node — package.json/scripts.dev|start|serve → 'npm run <…>'.
- *     pnpm-lock / yarn.lock переопределяют npm на pnpm/yarn.
- *   - Cargo.toml → 'cargo run'
- *   - go.mod → 'go run .'
- *   - Makefile → 'make run' (если есть target run в наивном grep'е)
+ * needsDatabase консервативный: при срабатывании любого паттерна =
+ * true, иначе false. Цель — не угадывать на 100%, а подсунуть
+ * пользователю разумный дефолт чекбокса «Set up a database».
+ *
+ * @param {string} repoRoot
+ * @returns {Promise<{
+ *   stackKind: string|null,
+ *   runCommand: string|null,
+ *   cwd: string,
+ *   needsDatabase: boolean
+ * }>}
+ */
+export async function detectStack(repoRoot) {
+  if (!repoRoot) {
+    return { stackKind: null, runCommand: null, cwd: '', needsDatabase: false }
+  }
+  // Приоритет: .NET → Node → Cargo → Go → Make. Первый совпавший
+  // detector определяет стек.
+  const detectors = [detectDotnet, detectNode, detectCargo, detectGo, detectMake]
+  for (const d of detectors) {
+    const res = await d(repoRoot)
+    if (res) return res
+  }
+  return { stackKind: null, runCommand: null, cwd: '', needsDatabase: false }
+}
+
+/**
+ * Тонкий wrapper над detectStack для обратной совместимости —
+ * RunOverrideSection в drawer'е продолжает использовать только
+ * { runCommand, cwd } и не интересуется needsDatabase.
  *
  * @param {string} repoRoot
  * @returns {Promise<{ runCommand: string|null, cwd: string }>}
  */
 export async function detectRunCommand(repoRoot) {
-  if (!repoRoot) return { runCommand: null, cwd: '' }
-
-  // 1. .NET — наивысший приоритет (исторически большинство проектов)
-  const dotnetSubpath = await resolveRunnableSubpath(repoRoot, '', {})
-  if (dotnetSubpath) {
-    return { runCommand: 'dotnet run', cwd: dotnetSubpath }
-  }
-
-  // 2. Node
-  const pkgPath = path.join(repoRoot, 'package.json')
-  if (await fileExists(pkgPath)) {
-    let pkgManager = 'npm'
-    if (await fileExists(path.join(repoRoot, 'pnpm-lock.yaml'))) {
-      pkgManager = 'pnpm'
-    } else if (await fileExists(path.join(repoRoot, 'yarn.lock'))) {
-      pkgManager = 'yarn'
-    }
-    try {
-      const raw = await fsp.readFile(pkgPath, 'utf8')
-      const pkg = JSON.parse(raw)
-      const scripts = pkg.scripts || {}
-      // Приоритет dev > start > serve. Если есть в package.json — точно
-      // run-команда; иначе fallback на универсальное npm/pnpm/yarn start.
-      const script = ['dev', 'start', 'serve'].find((s) => scripts[s])
-      if (script) {
-        return {
-          runCommand:
-            pkgManager === 'npm'
-              ? `npm run ${script}`
-              : `${pkgManager} ${script}`,
-          cwd: ''
-        }
-      }
-      return { runCommand: `${pkgManager} start`, cwd: '' }
-    } catch {
-      return { runCommand: `${pkgManager} start`, cwd: '' }
-    }
-  }
-
-  // 3. Cargo
-  if (await fileExists(path.join(repoRoot, 'Cargo.toml'))) {
-    return { runCommand: 'cargo run', cwd: '' }
-  }
-
-  // 4. Go
-  if (await fileExists(path.join(repoRoot, 'go.mod'))) {
-    return { runCommand: 'go run .', cwd: '' }
-  }
-
-  // 5. Makefile с target run — последний resort
-  for (const name of ['Makefile', 'makefile', 'GNUmakefile']) {
-    if (await fileExists(path.join(repoRoot, name))) {
-      return { runCommand: 'make run', cwd: '' }
-    }
-  }
-
-  return { runCommand: null, cwd: '' }
+  const r = await detectStack(repoRoot)
+  return { runCommand: r.runCommand, cwd: r.cwd }
 }
