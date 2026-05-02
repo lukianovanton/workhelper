@@ -20,7 +20,8 @@ import {
   Palette,
   BookOpen,
   Plus,
-  Trash2
+  Trash2,
+  Inbox
 } from 'lucide-react'
 import { usePrefsStore } from '@/store/prefs.store.js'
 import { cn } from '@/lib/utils'
@@ -99,7 +100,8 @@ const SETUP_GUIDES = {
 const SECTION_STORAGE_KEY = 'settings-active-section'
 
 const SECTIONS = /** @type {const} */ ([
-  { id: 'atlassian', labelKey: 'settings.section.atlassian', icon: Cloud },
+  { id: 'sources', labelKey: 'settings.section.sources', icon: Cloud },
+  { id: 'jira', labelKey: 'settings.section.jira', icon: Inbox },
   { id: 'paths', labelKey: 'settings.section.paths', icon: Folder },
   { id: 'database', labelKey: 'settings.section.database', icon: Database },
   { id: 'defaults', labelKey: 'settings.section.defaults', icon: Code2 },
@@ -109,9 +111,10 @@ const SECTIONS = /** @type {const} */ ([
 
 // Legacy id маппинги: пользователи с сохранённой активной секцией от
 // до-A.6 версии увидят соответствующую новую секцию вместо «404».
+// 'atlassian' / 'bitbucket' разводятся в Sources; 'dotnet' → 'defaults'.
 const LEGACY_SECTION_MAP = {
-  bitbucket: 'atlassian',
-  jira: 'atlassian',
+  atlassian: 'sources',
+  bitbucket: 'sources',
   dotnet: 'defaults'
 }
 
@@ -123,7 +126,7 @@ function loadActiveSection() {
   } catch {
     // ignore
   }
-  return 'atlassian'
+  return 'sources'
 }
 
 export default function Settings() {
@@ -324,67 +327,60 @@ export default function Settings() {
         </aside>
 
         <main className="flex-1 overflow-auto">
-          <div
-            className={cn(
-              'p-6',
-              activeSection === 'atlassian'
-                ? 'max-w-6xl'
-                : 'max-w-2xl'
+          <div className="p-6 max-w-2xl">
+            {activeSection === 'sources' && (
+              <SourcesSection
+                onOpenGuide={() => setGuideOpen('bitbucket')}
+              />
             )}
-          >
-            {activeSection === 'atlassian' && (
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
-                <SourcesCard
-                  onOpenGuide={() => setGuideOpen('bitbucket')}
-                />
 
-                <Card>
-                  <SectionCardHeader
-                    title={t('settings.jira.title')}
-                    description={t('settings.jira.description')}
-                    onOpenGuide={() => setGuideOpen('jira')}
-                  />
-                  <CardContent className="space-y-4">
-                    <Field
-                      label={t('settings.jira.host')}
-                      hint={t('settings.jira.host.hint')}
-                    >
-                      <Input
-                        value={config.jira?.host || ''}
-                        onChange={(e) =>
-                          updatePath('jira', 'host')(e.target.value)
-                        }
-                        placeholder="https://yourcompany.atlassian.net"
-                      />
-                    </Field>
-                    <SecretField
-                      label={t('settings.jira.token')}
-                      hint={t('settings.jira.token.hint')}
-                      status={secretsStatus.jiraApiToken}
-                      value={jiraApiToken}
-                      onChange={setJiraApiToken}
-                      onClear={() => {
-                        onClearSecret('jiraApiToken')
-                        setJiraTestResult(null)
-                      }}
+            {activeSection === 'jira' && (
+              <Card>
+                <SectionCardHeader
+                  title={t('settings.jira.title')}
+                  description={t('settings.jira.description')}
+                  onOpenGuide={() => setGuideOpen('jira')}
+                />
+                <CardContent className="space-y-4">
+                  <Field
+                    label={t('settings.jira.host')}
+                    hint={t('settings.jira.host.hint')}
+                  >
+                    <Input
+                      value={config.jira?.host || ''}
+                      onChange={(e) =>
+                        updatePath('jira', 'host')(e.target.value)
+                      }
+                      placeholder="https://yourcompany.atlassian.net"
                     />
-                    <div className="pt-1 space-y-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={onTestJira}
-                        disabled={testingJira}
-                      >
-                        {testingJira && (
-                          <Loader2 className="animate-spin" />
-                        )}
-                        {t('common.testConnection')}
-                      </Button>
-                      <JiraTestResult result={jiraTestResult} />
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
+                  </Field>
+                  <SecretField
+                    label={t('settings.jira.token')}
+                    hint={t('settings.jira.token.hint')}
+                    status={secretsStatus.jiraApiToken}
+                    value={jiraApiToken}
+                    onChange={setJiraApiToken}
+                    onClear={() => {
+                      onClearSecret('jiraApiToken')
+                      setJiraTestResult(null)
+                    }}
+                  />
+                  <div className="pt-1 space-y-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={onTestJira}
+                      disabled={testingJira}
+                    >
+                      {testingJira && (
+                        <Loader2 className="animate-spin" />
+                      )}
+                      {t('common.testConnection')}
+                    </Button>
+                    <JiraTestResult result={jiraTestResult} />
+                  </div>
+                </CardContent>
+              </Card>
             )}
 
             {activeSection === 'paths' && (
@@ -434,7 +430,7 @@ export default function Settings() {
             )}
 
             {activeSection === 'database' && (
-              <DatabasesCard
+              <DatabasesSection
                 onOpenGuide={() => setGuideOpen('database')}
                 detected={mysqlDetected}
               />
@@ -717,22 +713,49 @@ function SegmentedRadio({ options, value, onChange }) {
 }
 
 /**
- * Управление VCS-источниками. Заменяет старую Bitbucket-карточку: одна
- * карточка-секция с заголовком "Sources", внутри — список добавленных
- * источников (каждый — свой блок с inline-формой), и кнопка
- * "+ Add Source" в конце.
- *
- * UX:
- *   - Source-блок имеет [Apply] для существующих (PATCH через
- *     api.sources.update + setSecret если введён токен) и [Save] для
- *     несохранённых (POST через api.sources.add).
- *   - [Test] и [Remove] видны только у сохранённых.
- *   - У несохранённых [Cancel] стирает черновик из локального state.
- *   - Тип нового источника пока всегда 'bitbucket'. GitHub попадёт в
- *     Phase B: пикер типа сейчас не нужен, добавим когда будет два
- *     варианта.
+ * Шапка страницы-секции (живёт ВНЕ Card, не как SectionCardHeader
+ * который рендерит CardHeader). Используется когда страница состоит
+ * из нескольких Card'ов и общему заголовку нет смысла оборачиваться
+ * в свою Card.
  */
-function SourcesCard({ onOpenGuide }) {
+function SectionPageHeader({ title, description, onOpenGuide }) {
+  const t = useT()
+  return (
+    <div className="flex items-start justify-between gap-3 pb-2">
+      <div className="space-y-1">
+        <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
+        {description && (
+          <p className="text-sm text-muted-foreground">{description}</p>
+        )}
+      </div>
+      {onOpenGuide && (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onOpenGuide}
+          title={t('settings.openSetupGuide')}
+        >
+          <BookOpen size={13} />
+          {t('settings.setupGuide')}
+        </Button>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Управление VCS-источниками: страница-секция со списком отдельных
+ * Card-карточек, по одной на каждый source (Bitbucket / GitHub).
+ *
+ *   - Каждая карточка автономна: header с title + per-card actions
+ *     ([Test] / [Apply] / [Remove] для сохранённых; [Save] / [Cancel]
+ *     для черновиков), body — форма полей в зависимости от типа.
+ *   - Внизу страницы — кнопки добавления нового источника по типу.
+ *
+ * Stateful-логика (load/save/remove/test/setSecret/clearSecret) живёт
+ * в SourcesSection; SourceCard ниже — чистая презентация + колбэки.
+ */
+function SourcesSection({ onOpenGuide }) {
   const t = useT()
   const [sources, setSources] = useState([])
   const [loading, setLoading] = useState(true)
@@ -930,237 +953,270 @@ function SourcesCard({ onOpenGuide }) {
   const draftIds = Object.keys(drafts)
 
   return (
-    <Card>
-      <SectionCardHeader
+    <div className="space-y-6">
+      <SectionPageHeader
         title={t('settings.sources.title')}
         description={t('settings.sources.description')}
         onOpenGuide={onOpenGuide}
       />
+
+      {loading && (
+        <div className="text-xs text-muted-foreground inline-flex items-center gap-2">
+          <Loader2 size={12} className="animate-spin" />
+          {t('common.loading')}
+        </div>
+      )}
+      {!loading && draftIds.length === 0 && (
+        <p className="text-xs text-muted-foreground">
+          {t('settings.sources.empty')}
+        </p>
+      )}
+
+      {draftIds.map((id) => (
+        <SourceCard
+          key={id}
+          draft={drafts[id]}
+          token={tokens[id] || ''}
+          isBusy={!!busy[id]}
+          isTesting={!!busy[`test:${id}`]}
+          error={errors[id]}
+          testResult={testResults[id]}
+          onUpdate={(field, value) => updateDraft(id, field, value)}
+          onSetToken={(v) => setToken(id, v)}
+          onApply={() => applyExisting(id)}
+          onSave={() => saveNew(id)}
+          onTest={() => test(id)}
+          onRemove={() => remove(id)}
+          onCancel={() => cancelDraft(id)}
+          onClearToken={() => clearToken(id)}
+        />
+      ))}
+
+      <div className="flex flex-wrap gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => startAdd('bitbucket')}
+        >
+          <Plus />
+          {t('settings.sources.add.bitbucket')}
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => startAdd('github')}
+        >
+          <Plus />
+          {t('settings.sources.add.github')}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Одна карточка источника. Header содержит title + per-card actions
+ * (зона действий справа), body — форму с полями.
+ *
+ * Saved источник: [Test] [Apply] [Remove]
+ * Draft (unsaved): [Save] [Cancel]
+ */
+function SourceCard({
+  draft,
+  token,
+  isBusy,
+  isTesting,
+  error,
+  testResult,
+  onUpdate,
+  onSetToken,
+  onApply,
+  onSave,
+  onTest,
+  onRemove,
+  onCancel,
+  onClearToken
+}) {
+  const t = useT()
+  const isNew = !!draft.unsaved
+  const isGithub = draft.type === 'github'
+  const typeLabel = isGithub ? 'GitHub' : 'Bitbucket'
+
+  const workspaceLabelKey = isGithub
+    ? 'settings.github.owner'
+    : 'settings.bitbucket.workspace'
+  const workspaceHintKey = isGithub
+    ? 'settings.github.owner.hint'
+    : 'settings.bitbucket.workspace.hint'
+  const workspacePlaceholder = isGithub ? 'octocat' : 'techgurusit'
+  const gitUsernameLabelKey = isGithub
+    ? 'settings.github.gitUsername'
+    : 'settings.bitbucket.gitUsername'
+  const gitUsernameHintKey = isGithub
+    ? 'settings.github.gitUsername.hint'
+    : 'settings.bitbucket.gitUsername.hint'
+  const tokenLabelKey = isGithub
+    ? 'settings.github.token'
+    : 'settings.bitbucket.token'
+  const tokenHintKey = isGithub
+    ? 'settings.github.token.hint'
+    : 'settings.bitbucket.token.hint'
+
+  const titleText = isNew
+    ? t(
+        isGithub
+          ? 'settings.sources.newSource.github'
+          : 'settings.sources.newSource.bitbucket'
+      )
+    : draft.name || draft.workspace || typeLabel
+  const subtitleText = isNew
+    ? null
+    : `${typeLabel}${draft.workspace ? ' · ' + draft.workspace : ''}`
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-start justify-between gap-3">
+          <div className="space-y-1 min-w-0">
+            <CardTitle className="truncate">{titleText}</CardTitle>
+            {subtitleText && (
+              <CardDescription>{subtitleText}</CardDescription>
+            )}
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {isNew ? (
+              <>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    // Для GitHub username = git-username (один логин).
+                    if (isGithub) {
+                      onUpdate('gitUsername', draft.username || '')
+                    }
+                    onSave()
+                  }}
+                  disabled={isBusy || !draft.workspace}
+                >
+                  {isBusy && <Loader2 className="animate-spin" />}
+                  {t('settings.sources.add.save')}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onCancel}
+                  disabled={isBusy}
+                >
+                  {t('common.cancel')}
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onTest}
+                  disabled={isTesting}
+                >
+                  {isTesting && <Loader2 className="animate-spin" />}
+                  {t('common.testConnection')}
+                </Button>
+                <Button size="sm" onClick={onApply} disabled={isBusy}>
+                  {isBusy && <Loader2 className="animate-spin" />}
+                  {t('settings.sources.apply')}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onRemove}
+                  disabled={isBusy}
+                  title={t('settings.sources.remove')}
+                >
+                  <Trash2 size={12} />
+                </Button>
+              </>
+            )}
+          </div>
+        </div>
+      </CardHeader>
       <CardContent className="space-y-4">
-        {loading && (
-          <div className="text-xs text-muted-foreground inline-flex items-center gap-2">
-            <Loader2 size={12} className="animate-spin" />
-            {t('common.loading')}
+        <Field
+          label={t('settings.sources.name')}
+          hint={t('settings.sources.name.hint')}
+        >
+          <Input
+            value={draft.name}
+            onChange={(e) => onUpdate('name', e.target.value)}
+            placeholder={isGithub ? 'GitHub' : 'techgurusit'}
+          />
+        </Field>
+
+        {!isGithub && (
+          <Field
+            label={t('settings.bitbucket.email')}
+            hint={t('settings.bitbucket.email.hint')}
+          >
+            <Input
+              type="email"
+              value={draft.username}
+              onChange={(e) => onUpdate('username', e.target.value)}
+              placeholder="you@example.com"
+            />
+          </Field>
+        )}
+        <Field label={t(workspaceLabelKey)} hint={t(workspaceHintKey)}>
+          <Input
+            value={draft.workspace}
+            onChange={(e) => onUpdate('workspace', e.target.value)}
+            placeholder={workspacePlaceholder}
+          />
+        </Field>
+        <Field
+          label={t(gitUsernameLabelKey)}
+          hint={t(gitUsernameHintKey)}
+        >
+          <Input
+            value={isGithub ? draft.username : draft.gitUsername}
+            onChange={(e) =>
+              onUpdate(
+                isGithub ? 'username' : 'gitUsername',
+                e.target.value
+              )
+            }
+            placeholder={isGithub ? 'octocat' : 'antonreact1'}
+          />
+        </Field>
+        <SecretField
+          label={t(tokenLabelKey)}
+          hint={t(tokenHintKey)}
+          status={!isNew && draft.hasToken}
+          value={token}
+          onChange={onSetToken}
+          onClear={
+            !isNew && draft.hasToken ? onClearToken : undefined
+          }
+        />
+
+        {error && (
+          <div className="text-xs text-destructive flex items-start gap-2">
+            <XCircle size={12} className="mt-0.5 shrink-0" />
+            <span>{error}</span>
           </div>
         )}
-        {!loading && draftIds.length === 0 && (
-          <p className="text-xs text-muted-foreground">
-            {t('settings.sources.empty')}
-          </p>
-        )}
-        {draftIds.map((id) => {
-          const draft = drafts[id]
-          const isNew = !!draft.unsaved
-          const isBusy = !!busy[id]
-          const isTesting = !!busy[`test:${id}`]
-          const isGithub = draft.type === 'github'
-          // Лейблы в зависимости от типа: BB использует «Email» +
-          // «Workspace», GitHub — только «Owner» (PAT-аутентификация
-          // без email). gitUsername полезен в обоих случаях для
-          // подсказки credential-helper'у системного git.
-          const workspaceLabelKey = isGithub
-            ? 'settings.github.owner'
-            : 'settings.bitbucket.workspace'
-          const workspaceHintKey = isGithub
-            ? 'settings.github.owner.hint'
-            : 'settings.bitbucket.workspace.hint'
-          const workspacePlaceholder = isGithub ? 'octocat' : 'techgurusit'
-          const gitUsernameLabelKey = isGithub
-            ? 'settings.github.gitUsername'
-            : 'settings.bitbucket.gitUsername'
-          const gitUsernameHintKey = isGithub
-            ? 'settings.github.gitUsername.hint'
-            : 'settings.bitbucket.gitUsername.hint'
-          const tokenLabelKey = isGithub
-            ? 'settings.github.token'
-            : 'settings.bitbucket.token'
-          const tokenHintKey = isGithub
-            ? 'settings.github.token.hint'
-            : 'settings.bitbucket.token.hint'
-          return (
-            <div
-              key={id}
-              className="rounded-md border border-border/70 p-4 space-y-3"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                  {isNew
-                    ? t(
-                        isGithub
-                          ? 'settings.sources.newSource.github'
-                          : 'settings.sources.newSource.bitbucket'
-                      )
-                    : draft.type}
-                </div>
-                {!isNew && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => remove(id)}
-                    disabled={isBusy}
-                    title={t('settings.sources.remove')}
-                  >
-                    <Trash2 size={12} />
-                  </Button>
-                )}
-              </div>
 
-              <Field
-                label={t('settings.sources.name')}
-                hint={t('settings.sources.name.hint')}
-              >
-                <Input
-                  value={draft.name}
-                  onChange={(e) => updateDraft(id, 'name', e.target.value)}
-                  placeholder={isGithub ? 'GitHub' : 'techgurusit'}
-                />
-              </Field>
-
-              {!isGithub && (
-                <Field
-                  label={t('settings.bitbucket.email')}
-                  hint={t('settings.bitbucket.email.hint')}
-                >
-                  <Input
-                    type="email"
-                    value={draft.username}
-                    onChange={(e) =>
-                      updateDraft(id, 'username', e.target.value)
-                    }
-                    placeholder="you@example.com"
-                  />
-                </Field>
-              )}
-              <Field
-                label={t(workspaceLabelKey)}
-                hint={t(workspaceHintKey)}
-              >
-                <Input
-                  value={draft.workspace}
-                  onChange={(e) =>
-                    updateDraft(id, 'workspace', e.target.value)
-                  }
-                  placeholder={workspacePlaceholder}
-                />
-              </Field>
-              <Field
-                label={t(gitUsernameLabelKey)}
-                hint={t(gitUsernameHintKey)}
-              >
-                <Input
-                  value={isGithub ? draft.username : draft.gitUsername}
-                  onChange={(e) =>
-                    updateDraft(
-                      id,
-                      isGithub ? 'username' : 'gitUsername',
-                      e.target.value
-                    )
-                  }
-                  placeholder={isGithub ? 'octocat' : 'antonreact1'}
-                />
-              </Field>
-              <SecretField
-                label={t(tokenLabelKey)}
-                hint={t(tokenHintKey)}
-                status={!isNew && draft.hasToken}
-                value={tokens[id] || ''}
-                onChange={(v) => setToken(id, v)}
-                onClear={!isNew && draft.hasToken ? () => clearToken(id) : undefined}
-              />
-
-              {errors[id] && (
-                <div className="text-xs text-destructive flex items-start gap-2">
-                  <XCircle size={12} className="mt-0.5 shrink-0" />
-                  <span>{errors[id]}</span>
-                </div>
-              )}
-
-              <div className="flex items-center gap-2 flex-wrap pt-1">
-                {isNew ? (
-                  <>
-                    <Button
-                      size="sm"
-                      onClick={() => {
-                        // Для GitHub username = git-username (один логин).
-                        if (isGithub) {
-                          updateDraft(id, 'gitUsername', draft.username || '')
-                        }
-                        saveNew(id)
-                      }}
-                      disabled={isBusy || !draft.workspace}
-                    >
-                      {isBusy && <Loader2 className="animate-spin" />}
-                      {t('settings.sources.add.save')}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => cancelDraft(id)}
-                      disabled={isBusy}
-                    >
-                      {t('common.cancel')}
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => applyExisting(id)}
-                      disabled={isBusy}
-                    >
-                      {isBusy && <Loader2 className="animate-spin" />}
-                      {t('settings.sources.apply')}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => test(id)}
-                      disabled={isTesting}
-                    >
-                      {isTesting && <Loader2 className="animate-spin" />}
-                      {t('common.testConnection')}
-                    </Button>
-                  </>
-                )}
-              </div>
-              {!isNew && (
-                <BitbucketTestResult result={testResults[id]} />
-              )}
-            </div>
-          )
-        })}
-
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => startAdd('bitbucket')}
-          >
-            <Plus />
-            {t('settings.sources.add.bitbucket')}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => startAdd('github')}
-          >
-            <Plus />
-            {t('settings.sources.add.github')}
-          </Button>
-        </div>
+        {!isNew && <BitbucketTestResult result={testResult} />}
       </CardContent>
     </Card>
   )
 }
 
 /**
- * Управление DB-подключениями. Симметрично SourcesCard. Внутри
- * `DatabaseEditor` — sub-компонент, чтобы вызывать `useState` для
- * detected-binary без нарушения rules-of-hooks (нельзя вызывать
- * hook внутри map'а).
+ * Управление DB-подключениями: страница-секция со списком отдельных
+ * Card-карточек, по одной на каждое подключение (MySQL / PostgreSQL).
+ *
+ * Stateful-логика живёт в DatabasesSection; DatabaseCard ниже —
+ * чистая презентация + колбэки. Симметрично SourcesSection.
  */
-function DatabasesCard({ onOpenGuide, detected }) {
+function DatabasesSection({ onOpenGuide, detected }) {
   const t = useT()
   const [databases, setDatabases] = useState([])
   const [loading, setLoading] = useState(true)
@@ -1362,216 +1418,253 @@ function DatabasesCard({ onOpenGuide, detected }) {
   const ids = Object.keys(drafts)
 
   return (
-    <Card>
-      <SectionCardHeader
+    <div className="space-y-6">
+      <SectionPageHeader
         title={t('settings.databases.title')}
         description={t('settings.databases.description')}
         onOpenGuide={onOpenGuide}
       />
+
+      {loading && (
+        <div className="text-xs text-muted-foreground inline-flex items-center gap-2">
+          <Loader2 size={12} className="animate-spin" />
+          {t('common.loading')}
+        </div>
+      )}
+      {!loading && ids.length === 0 && (
+        <p className="text-xs text-muted-foreground">
+          {t('settings.databases.empty')}
+        </p>
+      )}
+
+      {ids.map((id) => (
+        <DatabaseCard
+          key={id}
+          draft={drafts[id]}
+          password={passwords[id] || ''}
+          isBusy={!!busy[id]}
+          isTesting={!!busy[`test:${id}`]}
+          error={errors[id]}
+          testResult={testResults[id]}
+          detected={detected}
+          onUpdate={(field, value) => updateDraft(id, field, value)}
+          onSetPassword={(v) => setPassword(id, v)}
+          onApply={() => applyExisting(id)}
+          onSave={() => saveNew(id)}
+          onTest={() => test(id)}
+          onRemove={() => remove(id)}
+          onCancel={() => cancelDraft(id)}
+          onClearPassword={() => clearPwd(id)}
+        />
+      ))}
+
+      <div className="flex flex-wrap gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => startAdd('mysql')}
+        >
+          <Plus />
+          {t('settings.databases.add.mysql')}
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => startAdd('postgres')}
+        >
+          <Plus />
+          {t('settings.databases.add.postgres')}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Одна карточка DB-подключения. Header — title + per-card actions
+ * справа, body — host/port/user/password/executable. Симметрично
+ * SourceCard.
+ */
+function DatabaseCard({
+  draft,
+  password,
+  isBusy,
+  isTesting,
+  error,
+  testResult,
+  detected,
+  onUpdate,
+  onSetPassword,
+  onApply,
+  onSave,
+  onTest,
+  onRemove,
+  onCancel,
+  onClearPassword
+}) {
+  const t = useT()
+  const isNew = !!draft.unsaved
+  const isPostgres = draft.type === 'postgres'
+  const typeLabel = isPostgres ? 'PostgreSQL' : 'MySQL'
+
+  const portPlaceholder = isPostgres ? '5432' : '3306'
+  const userPlaceholder = isPostgres ? 'postgres' : 'root'
+  const execLabelKey = isPostgres
+    ? 'settings.database.psqlExecutable'
+    : 'settings.database.mysqlExecutable'
+  const execPlaceholder = isPostgres
+    ? 'C:\\path\\to\\psql.exe'
+    : 'C:\\path\\to\\mysql.exe'
+  const execNotFoundKey = isPostgres
+    ? 'settings.database.psqlExecutable.notFound'
+    : 'settings.database.mysqlExecutable.notFound'
+  const execOptionalKey = isPostgres
+    ? 'settings.database.psqlExecutable.optional'
+    : 'settings.database.mysqlExecutable.optional'
+  // detected приходит из родителя только для mysql; для postgres пока
+  // null, чтобы не подсовывать «Use detected» с mysql-путём.
+  const detectedForType = isPostgres ? null : detected
+
+  const titleText = isNew
+    ? t(
+        isPostgres
+          ? 'settings.databases.newDatabase.postgres'
+          : 'settings.databases.newDatabase.mysql'
+      )
+    : draft.name || `${draft.user || typeLabel}@${draft.host || ''}`
+  const subtitleText = isNew
+    ? null
+    : `${typeLabel}${draft.host ? ' · ' + draft.host : ''}`
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-start justify-between gap-3">
+          <div className="space-y-1 min-w-0">
+            <CardTitle className="truncate">{titleText}</CardTitle>
+            {subtitleText && (
+              <CardDescription>{subtitleText}</CardDescription>
+            )}
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {isNew ? (
+              <>
+                <Button
+                  size="sm"
+                  onClick={onSave}
+                  disabled={isBusy || !draft.host || !draft.user}
+                >
+                  {isBusy && <Loader2 className="animate-spin" />}
+                  {t('settings.databases.add.save')}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onCancel}
+                  disabled={isBusy}
+                >
+                  {t('common.cancel')}
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onTest}
+                  disabled={isTesting}
+                >
+                  {isTesting && <Loader2 className="animate-spin" />}
+                  {t('common.testConnection')}
+                </Button>
+                <Button size="sm" onClick={onApply} disabled={isBusy}>
+                  {isBusy && <Loader2 className="animate-spin" />}
+                  {t('settings.sources.apply')}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onRemove}
+                  disabled={isBusy}
+                  title={t('settings.databases.remove')}
+                >
+                  <Trash2 size={12} />
+                </Button>
+              </>
+            )}
+          </div>
+        </div>
+      </CardHeader>
       <CardContent className="space-y-4">
-        {loading && (
-          <div className="text-xs text-muted-foreground inline-flex items-center gap-2">
-            <Loader2 size={12} className="animate-spin" />
-            {t('common.loading')}
+        <Field
+          label={t('settings.databases.name')}
+          hint={t('settings.databases.name.hint')}
+        >
+          <Input
+            value={draft.name}
+            onChange={(e) => onUpdate('name', e.target.value)}
+            placeholder={`${userPlaceholder}@localhost`}
+          />
+        </Field>
+        <div className="grid grid-cols-3 gap-4">
+          <Field
+            label={t('settings.database.host')}
+            className="col-span-2"
+          >
+            <Input
+              value={draft.host}
+              onChange={(e) => onUpdate('host', e.target.value)}
+              placeholder="localhost"
+            />
+          </Field>
+          <Field label={t('settings.database.port')}>
+            <Input
+              type="number"
+              value={draft.port}
+              onChange={(e) =>
+                onUpdate('port', Number(e.target.value) || 0)
+              }
+              placeholder={portPlaceholder}
+            />
+          </Field>
+        </div>
+        <Field label={t('settings.database.user')}>
+          <Input
+            value={draft.user}
+            onChange={(e) => onUpdate('user', e.target.value)}
+            placeholder={userPlaceholder}
+          />
+        </Field>
+        <SecretField
+          label={t('settings.database.password')}
+          status={!isNew && draft.hasPassword}
+          value={password}
+          onChange={onSetPassword}
+          onClear={
+            !isNew && draft.hasPassword ? onClearPassword : undefined
+          }
+        />
+        <BinaryPathField
+          label={t(execLabelKey)}
+          value={draft.executable}
+          detected={detectedForType}
+          placeholder={execPlaceholder}
+          notFoundHint={
+            draft.executable
+              ? t(execNotFoundKey)
+              : t(execOptionalKey)
+          }
+          onChange={(v) => onUpdate('executable', v)}
+        />
+
+        {error && (
+          <div className="text-xs text-destructive flex items-start gap-2">
+            <XCircle size={12} className="mt-0.5 shrink-0" />
+            <span>{error}</span>
           </div>
         )}
-        {!loading && ids.length === 0 && (
-          <p className="text-xs text-muted-foreground">
-            {t('settings.databases.empty')}
-          </p>
-        )}
-        {ids.map((id) => {
-          const draft = drafts[id]
-          const isNew = !!draft.unsaved
-          const isBusy = !!busy[id]
-          const isTesting = !!busy[`test:${id}`]
-          const isPostgres = draft.type === 'postgres'
-          const portPlaceholder = isPostgres ? '5432' : '3306'
-          const userPlaceholder = isPostgres ? 'postgres' : 'root'
-          const execLabelKey = isPostgres
-            ? 'settings.database.psqlExecutable'
-            : 'settings.database.mysqlExecutable'
-          const execPlaceholder = isPostgres
-            ? 'C:\\path\\to\\psql.exe'
-            : 'C:\\path\\to\\mysql.exe'
-          const execNotFoundKey = isPostgres
-            ? 'settings.database.psqlExecutable.notFound'
-            : 'settings.database.mysqlExecutable.notFound'
-          const execOptionalKey = isPostgres
-            ? 'settings.database.psqlExecutable.optional'
-            : 'settings.database.mysqlExecutable.optional'
-          // Postgres detect через PATH у нас единый для psql; для
-          // MySQL — mysql. detected приходит из родителя только для
-          // mysql, для постгреса оставим null чтобы не сбивать с толку.
-          const detectedForType = isPostgres ? null : detected
-          return (
-            <div
-              key={id}
-              className="rounded-md border border-border/70 p-4 space-y-3"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                  {isNew
-                    ? t(
-                        isPostgres
-                          ? 'settings.databases.newDatabase.postgres'
-                          : 'settings.databases.newDatabase.mysql'
-                      )
-                    : draft.type}
-                </div>
-                {!isNew && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => remove(id)}
-                    disabled={isBusy}
-                    title={t('settings.databases.remove')}
-                  >
-                    <Trash2 size={12} />
-                  </Button>
-                )}
-              </div>
-              <Field
-                label={t('settings.databases.name')}
-                hint={t('settings.databases.name.hint')}
-              >
-                <Input
-                  value={draft.name}
-                  onChange={(e) => updateDraft(id, 'name', e.target.value)}
-                  placeholder={`${userPlaceholder}@localhost`}
-                />
-              </Field>
-              <div className="grid grid-cols-3 gap-4">
-                <Field label={t('settings.database.host')} className="col-span-2">
-                  <Input
-                    value={draft.host}
-                    onChange={(e) =>
-                      updateDraft(id, 'host', e.target.value)
-                    }
-                    placeholder="localhost"
-                  />
-                </Field>
-                <Field label={t('settings.database.port')}>
-                  <Input
-                    type="number"
-                    value={draft.port}
-                    onChange={(e) =>
-                      updateDraft(
-                        id,
-                        'port',
-                        Number(e.target.value) || 0
-                      )
-                    }
-                    placeholder={portPlaceholder}
-                  />
-                </Field>
-              </div>
-              <Field label={t('settings.database.user')}>
-                <Input
-                  value={draft.user}
-                  onChange={(e) =>
-                    updateDraft(id, 'user', e.target.value)
-                  }
-                  placeholder={userPlaceholder}
-                />
-              </Field>
-              <SecretField
-                label={t('settings.database.password')}
-                status={!isNew && draft.hasPassword}
-                value={passwords[id] || ''}
-                onChange={(v) => setPassword(id, v)}
-                onClear={
-                  !isNew && draft.hasPassword
-                    ? () => clearPwd(id)
-                    : undefined
-                }
-              />
-              <BinaryPathField
-                label={t(execLabelKey)}
-                value={draft.executable}
-                detected={detectedForType}
-                placeholder={execPlaceholder}
-                notFoundHint={
-                  draft.executable
-                    ? t(execNotFoundKey)
-                    : t(execOptionalKey)
-                }
-                onChange={(v) => updateDraft(id, 'executable', v)}
-              />
 
-              {errors[id] && (
-                <div className="text-xs text-destructive flex items-start gap-2">
-                  <XCircle size={12} className="mt-0.5 shrink-0" />
-                  <span>{errors[id]}</span>
-                </div>
-              )}
-
-              <div className="flex items-center gap-2 flex-wrap pt-1">
-                {isNew ? (
-                  <>
-                    <Button
-                      size="sm"
-                      onClick={() => saveNew(id)}
-                      disabled={isBusy || !draft.host || !draft.user}
-                    >
-                      {isBusy && <Loader2 className="animate-spin" />}
-                      {t('settings.databases.add.save')}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => cancelDraft(id)}
-                      disabled={isBusy}
-                    >
-                      {t('common.cancel')}
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => applyExisting(id)}
-                      disabled={isBusy}
-                    >
-                      {isBusy && <Loader2 className="animate-spin" />}
-                      {t('settings.sources.apply')}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => test(id)}
-                      disabled={isTesting}
-                    >
-                      {isTesting && <Loader2 className="animate-spin" />}
-                      {t('common.testConnection')}
-                    </Button>
-                  </>
-                )}
-              </div>
-              {!isNew && <DbTestResult result={testResults[id]} />}
-            </div>
-          )
-        })}
-
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => startAdd('mysql')}
-          >
-            <Plus />
-            {t('settings.databases.add.mysql')}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => startAdd('postgres')}
-          >
-            <Plus />
-            {t('settings.databases.add.postgres')}
-          </Button>
-        </div>
+        {!isNew && <DbTestResult result={testResult} />}
       </CardContent>
     </Card>
   )

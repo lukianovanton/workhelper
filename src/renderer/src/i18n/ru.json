@@ -300,6 +300,8 @@
 
   "settings.title": "Настройки",
   "settings.section.atlassian": "Atlassian",
+  "settings.section.sources": "Источники",
+  "settings.section.jira": "Jira",
   "settings.section.paths": "Пути",
   "settings.section.database": "База данных",
   "settings.section.dotnet": ".NET",
