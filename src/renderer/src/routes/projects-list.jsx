@@ -17,7 +17,8 @@ import {
   Filter,
   X as XIcon,
   Users,
-  ListTodo
+  ListTodo,
+  Tag
 } from 'lucide-react'
 import { useProjects } from '@/hooks/use-projects'
 import { useRunningProcesses } from '@/hooks/use-running-processes'
@@ -449,6 +450,22 @@ export default function ProjectsList() {
     runBulk('Stop', slugs, 'Stop', (slug) => api.process.stop(slug))
   }
 
+  /**
+   * Массовое выставление категории для всех selected. Локальная
+   * операция (только localStorage через projectsMeta-store), без
+   * async / network — поэтому без runBulk-обёртки и progress-тоста.
+   * `null` сбрасывает override → auto-detect.
+   */
+  const onBulkSetCategory = (categoryId) => {
+    if (selected.size === 0) return
+    for (const slug of selected) setCategory(slug, categoryId)
+    toast.ok(
+      categoryId
+        ? `Set kind for ${selected.size} project(s)`
+        : `Reset kind for ${selected.size} project(s)`
+    )
+  }
+
 
   return (
     <div className="flex h-screen w-screen">
@@ -636,6 +653,7 @@ export default function ProjectsList() {
           count={selected.size}
           onPull={onBulkPull}
           onStop={onBulkStop}
+          onSetCategory={onBulkSetCategory}
           onClear={clearSelected}
           busy={bulkBusy}
         />
@@ -659,7 +677,14 @@ export default function ProjectsList() {
  * на всём баре — чтобы число и слово ни при каких i18n-комбинациях не
  * переезжали на новую строку.
  */
-function FloatingBulkActions({ count, onPull, onStop, onClear, busy }) {
+function FloatingBulkActions({
+  count,
+  onPull,
+  onStop,
+  onSetCategory,
+  onClear,
+  busy
+}) {
   const t = useT()
   const visible = count > 0
   return (
@@ -701,6 +726,32 @@ function FloatingBulkActions({ count, onPull, onStop, onClear, busy }) {
         >
           <Square /> {t('projects.bulk.stop')}
         </Button>
+        <Popover
+          align="left"
+          trigger={
+            <span
+              role="button"
+              tabIndex={0}
+              className="inline-flex items-center gap-1 h-7 px-2 rounded-md text-xs hover:bg-accent cursor-pointer select-none"
+            >
+              <Tag size={14} /> {t('projects.bulk.setKind')}
+            </span>
+          }
+        >
+          {({ close }) => (
+            <BulkCategoryPicker
+              count={count}
+              onPick={(catId) => {
+                onSetCategory(catId)
+                close()
+              }}
+              onReset={() => {
+                onSetCategory(null)
+                close()
+              }}
+            />
+          )}
+        </Popover>
         <span className="mx-0.5 h-5 w-px bg-border shrink-0" aria-hidden />
         <Button
           variant="ghost"
@@ -1790,6 +1841,47 @@ function CategoryPicker({ kind, currentCategoryId, hasOverride, onPick, onReset 
           </span>
         </button>
       )}
+    </div>
+  )
+}
+
+/**
+ * Picker'нутая форма CategoryPicker'а для bulk-действия: без auto/custom-
+ * разделения (юзер бьёт по любой категории всем выбранным проектам
+ * сразу), без highlight'а текущего (у разных selected slugs могут быть
+ * разные категории — общего active нет). Reset всегда видим.
+ */
+function BulkCategoryPicker({ count, onPick, onReset }) {
+  const t = useT()
+  const cats = listProjectCategories()
+  return (
+    <div className="space-y-1.5 min-w-[200px]">
+      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+        {t('projects.bulk.setKindHint', { count })}
+      </div>
+      {cats.map((c) => {
+        const Icon = c.Icon
+        return (
+          <button
+            key={c.id}
+            onClick={() => onPick(c.id)}
+            className={cn(
+              'w-full inline-flex items-center gap-2 px-2 py-1 rounded-md border text-xs transition-opacity hover:opacity-80',
+              c.pillClassName
+            )}
+          >
+            <Icon size={11} />
+            <span>{t(c.labelKey)}</span>
+          </button>
+        )
+      })}
+      <button
+        onClick={onReset}
+        className="w-full text-[11px] text-muted-foreground hover:text-foreground inline-flex items-center justify-center gap-1 mt-1 pt-1 border-t border-border/40"
+      >
+        <XIcon size={10} />
+        <span>{t('projects.bulk.resetKind')}</span>
+      </button>
     </div>
   )
 }
