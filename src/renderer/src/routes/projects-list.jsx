@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState
+} from 'react'
 import { Link, Outlet, useNavigate, useParams } from 'react-router-dom'
 import {
   Loader2,
@@ -1387,7 +1393,17 @@ function PresenceItem({ session }) {
 
 function Popover({ trigger, children, align = 'left' }) {
   const [open, setOpen] = useState(false)
+  // Auto-position: измеряем после open и переворачиваем popover
+  // если он не помещается в viewport. Базово open'ается down +
+  // align (left/right из props). Если места снизу не хватает и
+  // сверху больше — `up`. Если контент справа вылезает за окно
+  // (или слева, при align=right) — переворот по горизонтали.
+  const [position, setPosition] = useState({
+    vertical: 'down',
+    horizontal: align
+  })
   const wrapRef = useRef(null)
+  const contentRef = useRef(null)
   // Render-prop pattern для children: можно передать функцию
   // ({ close }) => ReactNode и закрыть popover изнутри (например после
   // выбора пункта в picker'е). Если children — обычный JSX, рендерим
@@ -1412,6 +1428,55 @@ function Popover({ trigger, children, align = 'left' }) {
     }
   }, [open])
 
+  // Resolve final position synchronously после open + первого render'а
+  // чтобы избежать flicker'а. useLayoutEffect выполняется до paint, так
+  // что юзер не успевает увидеть стартовое (down/align) положение перед
+  // переворотом.
+  useLayoutEffect(() => {
+    if (!open) return
+    const wrap = wrapRef.current
+    const c = contentRef.current
+    if (!wrap || !c) return
+    const tr = wrap.getBoundingClientRect()
+    const cw = c.offsetWidth
+    const ch = c.offsetHeight
+    const vw = window.innerWidth
+    const vh = window.innerHeight
+    const margin = 8
+
+    // Vertical: предпочитаем down. Flip up если снизу не помещается
+    // И сверху места больше. Margin 8px от края экрана.
+    let vertical = 'down'
+    const spaceBelow = vh - tr.bottom
+    const spaceAbove = tr.top
+    if (spaceBelow < ch + margin && spaceAbove > spaceBelow) {
+      vertical = 'up'
+    }
+
+    // Horizontal: предпочитаем заданный align. Если не помещается —
+    // flip. Расчёт зависит от align'а:
+    //   left:  контент тянется ВПРАВО от tr.left, проверяем правый край
+    //   right: контент тянется ВЛЕВО от tr.right, проверяем левый край
+    let horizontal = align
+    if (align === 'left') {
+      if (tr.left + cw > vw - margin && tr.right - cw >= margin) {
+        horizontal = 'right'
+      }
+    } else {
+      if (tr.right - cw < margin && tr.left + cw <= vw - margin) {
+        horizontal = 'left'
+      }
+    }
+    setPosition({ vertical, horizontal })
+  }, [open, align])
+
+  // CSS-классы для финальной позиции. top-full / bottom-full + mt/mb
+  // выводят содержимое строго под/над wrap'ом без перекрытия.
+  const positionCls = cn(
+    position.vertical === 'down' ? 'top-full mt-1' : 'bottom-full mb-1',
+    position.horizontal === 'left' ? 'left-0' : 'right-0'
+  )
+
   return (
     <span ref={wrapRef} className="relative inline-block">
       <span
@@ -1424,6 +1489,7 @@ function Popover({ trigger, children, align = 'left' }) {
       </span>
       {open && (
         <div
+          ref={contentRef}
           // stopPropagation на content'е важен: popover часто открыт
           // внутри clickable-родителя (<tr> в таблице), без этого клик
           // по любому элементу popover'а (button picker'а, label
@@ -1432,8 +1498,8 @@ function Popover({ trigger, children, align = 'left' }) {
           // outside уже обрабатывается через mousedown + wrapRef-check.
           onClick={(e) => e.stopPropagation()}
           className={cn(
-            'absolute top-full mt-1 z-30 min-w-[200px] bg-popover border border-border rounded-md shadow-lg p-3',
-            align === 'right' ? 'right-0' : 'left-0'
+            'absolute z-30 min-w-[200px] bg-popover border border-border rounded-md shadow-lg p-3',
+            positionCls
           )}
         >
           {content}
