@@ -345,8 +345,14 @@ export default function ProjectsList() {
     })
 
     const sign = sort.direction === 'asc' ? 1 : -1
+    const isArchived = (p) => categories[p.slug] === 'archived'
     return [...filtered].sort((a, b) => {
-      // Избранные всегда наверху, независимо от сортировки.
+      // Архивированные всегда внизу, перебивая даже favorite-pin.
+      // Семантика: «я этот репо больше не трогаю» сильнее «закрепить».
+      const aArch = isArchived(a)
+      const bArch = isArchived(b)
+      if (aArch !== bArch) return aArch ? 1 : -1
+      // Избранные наверху среди не-архивных.
       const aFav = !!favorites[a.slug]
       const bFav = !!favorites[b.slug]
       if (aFav !== bFav) return aFav ? -1 : 1
@@ -1329,6 +1335,12 @@ function PresenceItem({ session }) {
 function Popover({ trigger, children, align = 'left' }) {
   const [open, setOpen] = useState(false)
   const wrapRef = useRef(null)
+  // Render-prop pattern для children: можно передать функцию
+  // ({ close }) => ReactNode и закрыть popover изнутри (например после
+  // выбора пункта в picker'е). Если children — обычный JSX, рендерим
+  // как есть.
+  const close = () => setOpen(false)
+  const content = typeof children === 'function' ? children({ close }) : children
 
   useEffect(() => {
     if (!open) return
@@ -1359,12 +1371,19 @@ function Popover({ trigger, children, align = 'left' }) {
       </span>
       {open && (
         <div
+          // stopPropagation на content'е важен: popover часто открыт
+          // внутри clickable-родителя (<tr> в таблице), без этого клик
+          // по любому элементу popover'а (button picker'а, label
+          // фильтра) пробрасывался до родителя — например, открывал
+          // drawer проекта. Локально для popover'а это безопасно: клик-
+          // outside уже обрабатывается через mousedown + wrapRef-check.
+          onClick={(e) => e.stopPropagation()}
           className={cn(
             'absolute top-full mt-1 z-30 min-w-[200px] bg-popover border border-border rounded-md shadow-lg p-3',
             align === 'right' ? 'right-0' : 'left-0'
           )}
         >
-          {children}
+          {content}
         </div>
       )}
     </span>
@@ -1659,6 +1678,9 @@ function KindBadge({ kind, categoryOverride, onSetCategory }) {
   // используем `<span role="button">` без собственного onClick — клик
   // ловит wrapper Popover'а, он же вызывает stopPropagation чтобы не
   // прокликать на <tr> (открытие drawer'а).
+  //
+  // children — render-prop с close(): после выбора категории popover
+  // сразу закрывается, не нужно второго клика наружу.
   return (
     <Popover
       align="left"
@@ -1681,13 +1703,21 @@ function KindBadge({ kind, categoryOverride, onSetCategory }) {
         </span>
       }
     >
-      <CategoryPicker
-        kind={kind}
-        currentCategoryId={category.id}
-        hasOverride={!!categoryOverride}
-        onPick={(catId) => onSetCategory(catId)}
-        onReset={() => onSetCategory(null)}
-      />
+      {({ close }) => (
+        <CategoryPicker
+          kind={kind}
+          currentCategoryId={category.id}
+          hasOverride={!!categoryOverride}
+          onPick={(catId) => {
+            onSetCategory(catId)
+            close()
+          }}
+          onReset={() => {
+            onSetCategory(null)
+            close()
+          }}
+        />
+      )}
     </Popover>
   )
 }
