@@ -151,11 +151,6 @@
  *                                              runCommand и/или cwd
  *                                              (рабочей директории
  *                                              относительно project root).
- * @property {{ workspace: string, username: string, gitUsername: string }} [bitbucket]
- *           ⚠️ DEPRECATED. Сохранён как источник миграции для случая когда
- *           пользователь обновляется с до-A.4b версии. После первого
- *           getConfig() значения переезжают в sources[0] и поле
- *           перестаёт читаться. Phase A.7 удалит окончательно.
  * @property {{
  *   projectsRoot: string,
  *   dumpsRoot: string,
@@ -163,24 +158,13 @@
  * }} paths
  *           projectsRoot default = 'C:\\Projects'
  *           vscodeExecutable default = 'code' (PATH)
- *           workspaceFilePattern удалён — glob *.code-workspace per-проект (9.5)
- * @property {{
- *   host: string,
- *   port: number,
- *   user: string,
- *   mysqlExecutable: string
- * }} database
- *           password — через safeStorage
- *           mysqlExecutable — абсолютный путь к mysql CLI (или пусто).
- *           В MVP-1 не используется. В MVP-2 при пустом значении —
- *           UI показывает подсказку, операция не падает.
- * @property {{
- *   runArgs: string[],
- *   workingDirSubpathOverride?: Object<string, string>
- * }} dotnet
- *           workingDirSubpath резолвится автоматически (9.5).
- *           workingDirSubpathOverride — карта slug → подпуть для случаев,
- *           когда автодетект не сработал (задаётся вручную в Settings).
+ *
+ * Phase A.7: legacy ключи `bitbucket`, `database`, `dotnet` удалены из
+ * схемы и из persisted state. Если пользователь обновляется с до-A.4b
+ * версии, migrateConfig() переносит данные и удаляет ключи на первом
+ * запуске. Дальше — единая мульти-source/мульти-engine/per-project-run
+ * модель.
+ *
  * @property {{
  *   enabled: boolean
  * }} presence

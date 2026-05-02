@@ -47,9 +47,15 @@ class JiraError extends Error {
 function buildClient() {
   const config = getConfig()
   const token = (getSecret('jiraApiToken') || '').trim()
+  // Email можно переопределить отдельно от VCS-источника; если
+  // jira.email пуст — фолбэк на email первого Bitbucket-source'а
+  // (тот же Atlassian-аккаунт у большинства пользователей).
+  const firstBbSource = (config.sources || []).find(
+    (s) => s?.type === 'bitbucket' && s.username
+  )
   const email = (
     config.jira?.email ||
-    config.bitbucket?.username ||
+    firstBbSource?.username ||
     ''
   ).trim()
   // Нормализуем host до origin: пользователи часто пастят полный
