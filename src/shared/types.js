@@ -173,7 +173,7 @@
  *           UDP-broadcast presence в LAN/Tailscale-сети. Когда true —
  *           main-процесс шлёт по UDP пакеты «я живой» с hostname,
  *           username, IP, версией; собирает такие же от других. См.
- *           services/presence-service.js. Default: false.
+ *           services/presence-service.js. Default: true.
  */
 
 /**

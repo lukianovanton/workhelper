@@ -473,7 +473,7 @@
   "settings.presence.title": "Presence",
   "settings.presence.description": "See which colleagues have WorkHelper open on the same network.",
   "settings.presence.enable": "Enable presence",
-  "settings.presence.privacy": "Off by default. Shares hostname, username, local IP and version with others on your network or Tailnet.",
+  "settings.presence.privacy": "Shares hostname, username, local IP and version with others on your network or Tailnet. Disable here if you prefer privacy.",
 
   "settings.appearance.title": "Appearance",
   "settings.appearance.description": "Display preferences for this machine. Stored locally.",

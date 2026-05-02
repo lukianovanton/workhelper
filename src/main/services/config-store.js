@@ -30,7 +30,7 @@ const DEFAULTS = {
     vscodeExecutable: 'code'
   },
   presence: {
-    enabled: false
+    enabled: true
   },
   jira: {
     host: '',

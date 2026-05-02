@@ -462,7 +462,7 @@
   "settings.presence.title": "Присутствие",
   "settings.presence.description": "Кто из коллег открыл WorkHelper в той же сети.",
   "settings.presence.enable": "Включить",
-  "settings.presence.privacy": "Выключено по умолчанию. Передаёт hostname, имя пользователя, локальный IP и версию приложения в вашу сеть или Tailnet.",
+  "settings.presence.privacy": "Передаёт hostname, имя пользователя, локальный IP и версию приложения в вашу сеть или Tailnet. Выключи здесь если хочешь приватности.",
 
   "settings.appearance.title": "Внешний вид",
   "settings.appearance.description": "Настройки отображения для этой машины. Хранятся локально.",
