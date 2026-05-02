@@ -96,11 +96,13 @@ export function SetupDialog({ project, open, onOpenChange }) {
     setupState
   ])
 
-  // Auto-detect стека после открытия диалога. Работает только если
-  // проект клонирован (иначе детектор возвращает stackKind=null).
-  // Срабатывает один раз на открытие — не перезапускаем при ребиле
-  // setupState. Применяет needsDatabase к setupDb, но только если
-  // юзер ещё не успел руками тоггльнуть (we use a ref to track it).
+  // Auto-detect стека после открытия диалога. Backend сам решает
+  // источник данных: для клонированного проекта читает файлы локально,
+  // для не-клона тянет root-listing + нужные манифесты через
+  // VcsProvider.{listRootFiles, getFileText}. UI в обоих случаях
+  // получает одинаковый shape; отдельных code-path'ов нет.
+  // Применяет needsDatabase к setupDb, но только если юзер ещё не
+  // успел руками тоггльнуть (we use a ref to track it).
   const userTouchedSetupDbRef = useRef(false)
   useEffect(() => {
     if (!open) {
@@ -108,7 +110,6 @@ export function SetupDialog({ project, open, onOpenChange }) {
       userTouchedSetupDbRef.current = false
       return
     }
-    if (!project.local.cloned) return
     let cancelled = false
     api.setup.detectStack(project.slug).then((r) => {
       if (cancelled || !r) return
@@ -123,7 +124,7 @@ export function SetupDialog({ project, open, onOpenChange }) {
     return () => {
       cancelled = true
     }
-  }, [open, project.slug, project.local.cloned, project.db.exists])
+  }, [open, project.slug, project.db.exists])
 
   const onSetSetupDb = (v) => {
     userTouchedSetupDbRef.current = true

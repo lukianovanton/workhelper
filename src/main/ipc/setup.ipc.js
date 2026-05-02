@@ -2,6 +2,7 @@ import { BrowserWindow, ipcMain } from 'electron'
 import * as orchestrator from '../services/setup-orchestrator.js'
 import * as fsService from '../services/fs-service.js'
 import { getConfig } from '../services/config-store.js'
+import { getProviderForSlug } from '../services/vcs/registry.js'
 
 /**
  * setup:run-full        — стартует оркестрацию clone → db-create →
@@ -62,9 +63,12 @@ export function registerSetupIpc() {
     orchestrator.isSetupActive(slug)
   )
 
-  // Авто-детект стека: smart-defaults для SetupDialog. Работает только
-  // если проект уже клонирован (есть файлы для инспекции). Для не-клона
-  // возвращает stackKind=null — UI показывает дефолты как раньше.
+  // Авто-детект стека: smart-defaults для SetupDialog.
+  //   - Локальный путь (если проект клонирован): inspect файлы на диске.
+  //   - Remote путь (проект ещё не клонирован): через VcsProvider
+  //     забираем root-listing и нужные манифесты, применяем те же
+  //     эвристики. Для .NET cwd через REST не считаем — после клона
+  //     локальный детектор уточнит.
   ipcMain.handle('setup:detectStack', async (_event, slug) => {
     if (!slug || typeof slug !== 'string') {
       return {
@@ -75,7 +79,11 @@ export function registerSetupIpc() {
       }
     }
     const root = getConfig().paths?.projectsRoot
-    if (!root || !fsService.projectExists(root, slug)) {
+    if (root && fsService.projectExists(root, slug)) {
+      return fsService.detectStack(fsService.projectPath(root, slug))
+    }
+    const provider = getProviderForSlug(slug)
+    if (!provider) {
       return {
         stackKind: null,
         runCommand: null,
@@ -83,6 +91,6 @@ export function registerSetupIpc() {
         needsDatabase: false
       }
     }
-    return fsService.detectStack(fsService.projectPath(root, slug))
+    return fsService.detectStackRemote(provider, slug)
   })
 }

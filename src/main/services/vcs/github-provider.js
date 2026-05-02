@@ -597,6 +597,68 @@ export function createGitHubProvider({
     }
   }
 
+  /**
+   * Корневой listing на default-ветке (GitHub `/contents/` по
+   * умолчанию — на default branch). Возвращает только имена файлов и
+   * директорий, без рекурсии.
+   */
+  async function listRootFiles(slug) {
+    if (!slug || typeof slug !== 'string') return []
+    const client = buildClient()
+    const owner = encodeURIComponent(client.owner)
+    const s = encodeURIComponent(slug)
+    try {
+      const data = await client.request(`/repos/${owner}/${s}/contents/`)
+      if (!Array.isArray(data)) return []
+      return data
+        .map((entry) => entry?.name)
+        .filter((n) => typeof n === 'string')
+    } catch (e) {
+      if (e.status === 404 || e.status === 403) return []
+      throw e
+    }
+  }
+
+  /**
+   * Raw-текст файла на default-ветке через
+   * `Accept: application/vnd.github.raw`. Лимит у GH ~1MB на raw —
+   * больших файлов мы и так не запрашиваем (manifests).
+   */
+  async function getFileText(slug, filePath) {
+    if (!slug || !filePath) return null
+    const client = buildClient()
+    const owner = encodeURIComponent(client.owner)
+    const s = encodeURIComponent(slug)
+    // path-сегменты в /contents/ должны быть URL-encoded по сегментам.
+    const cleanPath = filePath
+      .replace(/^\/+/, '')
+      .split('/')
+      .map((seg) => encodeURIComponent(seg))
+      .join('/')
+    try {
+      // Используем asText + Accept: application/vnd.github.raw — делает
+      // request().
+      // request() уже подставляет Accept: github.diff под opts.asDiff;
+      // raw-формат GitHub'а покрываем asText (default Accept fallback).
+      // На стороне fetch это сработает потому что api.github.com
+      // отдаёт raw для /contents/{path} с Accept: */* … но безопаснее
+      // явно указать raw через extra headers — у нас такого хука нет.
+      // Решение: использовать опцию asText (text/plain), GitHub при
+      // этом отдаёт JSON-обёртку. Декодируем её вручную ниже.
+      // Чтобы избежать парсинга base64 — добавим asDiff-trick? Нет,
+      // он шлёт другой Accept. Простейший путь: обычный JSON-ответ
+      // и base64-decode content.
+      const data = await client.request(`/repos/${owner}/${s}/contents/${cleanPath}`)
+      if (data?.encoding === 'base64' && typeof data.content === 'string') {
+        return Buffer.from(data.content, 'base64').toString('utf8')
+      }
+      return null
+    } catch (e) {
+      if (e.status === 404 || e.status === 403) return null
+      throw e
+    }
+  }
+
   return {
     type: 'github',
     testConnection,
@@ -610,7 +672,9 @@ export function createGitHubProvider({
     getBuildSteps,
     getBuildStepLog,
     getLastCommit,
-    getCloneUrl
+    getCloneUrl,
+    listRootFiles,
+    getFileText
   }
 }
 

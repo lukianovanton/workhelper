@@ -403,3 +403,153 @@ export async function detectRunCommand(repoRoot) {
   const r = await detectStack(repoRoot)
   return { runCommand: r.runCommand, cwd: r.cwd }
 }
+
+// --- Remote (pre-clone) stack detection -----------------------------
+//
+// detectStackRemote(provider, slug) тянет минимальный набор файлов
+// через VcsProvider.{listRootFiles, getFileText} и применяет ту же
+// логику что и локальный detectStack. Цель — наполнить SetupDialog
+// разумными defaults ДО клона.
+//
+// Ограничения:
+//   - .NET: остаёмся на root level. Если в корне есть `*.sln` или
+//     `*.csproj` — детектим как dotnet, но cwd не считаем (требует
+//     лазанья по subdirs; локальный resolveRunnableSubpath это делает
+//     post-clone). needsDatabase для удалённого .NET сейчас не пытаемся
+//     определить — слишком много сабфолдеров; локальный детект уточнит
+//     после клона.
+//   - Node / Cargo / Go — fetch'им один manifest и применяем те же
+//     паттерны что локально.
+
+/**
+ * @param {import('./vcs/types.js').VcsProvider} provider
+ * @param {string} slug
+ * @returns {Promise<{
+ *   stackKind: string|null,
+ *   runCommand: string|null,
+ *   cwd: string,
+ *   needsDatabase: boolean
+ * }>}
+ */
+export async function detectStackRemote(provider, slug) {
+  const empty = {
+    stackKind: null,
+    runCommand: null,
+    cwd: '',
+    needsDatabase: false
+  }
+  if (!provider || !slug) return empty
+  if (typeof provider.listRootFiles !== 'function') return empty
+
+  let names
+  try {
+    names = await provider.listRootFiles(slug)
+  } catch {
+    return empty
+  }
+  if (!Array.isArray(names) || names.length === 0) return empty
+  const set = new Set(names.map((n) => n.toLowerCase()))
+
+  // 1. .NET (по root-маркерам). cwd оставляем '' — после клона
+  // локальный detectStack это уточнит.
+  const hasSln = names.some((n) => /\.sln$/i.test(n))
+  const hasCsproj = names.some((n) => /\.csproj$/i.test(n))
+  if (hasSln || hasCsproj) {
+    return {
+      stackKind: 'dotnet',
+      runCommand: 'dotnet run',
+      cwd: '',
+      needsDatabase: false
+    }
+  }
+
+  // 2. Node
+  if (set.has('package.json')) {
+    let pkgManager = 'npm'
+    if (set.has('pnpm-lock.yaml')) pkgManager = 'pnpm'
+    else if (set.has('yarn.lock')) pkgManager = 'yarn'
+
+    let runCommand = `${pkgManager} start`
+    let needsDb = false
+    try {
+      const raw = await provider.getFileText(slug, 'package.json')
+      if (raw) {
+        const pkg = JSON.parse(raw)
+        const scripts = pkg.scripts || {}
+        const script = ['dev', 'start', 'serve'].find((s) => scripts[s])
+        if (script) {
+          runCommand =
+            pkgManager === 'npm'
+              ? `npm run ${script}`
+              : `${pkgManager} ${script}`
+        }
+        const allDeps = {
+          ...(pkg.dependencies || {}),
+          ...(pkg.devDependencies || {}),
+          ...(pkg.peerDependencies || {}),
+          ...(pkg.optionalDependencies || {})
+        }
+        for (const dep of Object.keys(allDeps)) {
+          if (NODE_DB_DEPS.has(dep)) {
+            needsDb = true
+            break
+          }
+        }
+      }
+    } catch {
+      // ignore — оставляем дефолты
+    }
+    return {
+      stackKind: 'node',
+      runCommand,
+      cwd: '',
+      needsDatabase: needsDb
+    }
+  }
+
+  // 3. Cargo
+  if (set.has('cargo.toml')) {
+    let needsDb = false
+    try {
+      const raw = await provider.getFileText(slug, 'Cargo.toml')
+      if (raw) needsDb = CARGO_DB_PATTERNS.some((re) => re.test(raw))
+    } catch {
+      // ignore
+    }
+    return {
+      stackKind: 'cargo',
+      runCommand: 'cargo run',
+      cwd: '',
+      needsDatabase: needsDb
+    }
+  }
+
+  // 4. Go
+  if (set.has('go.mod')) {
+    let needsDb = false
+    try {
+      const raw = await provider.getFileText(slug, 'go.mod')
+      if (raw) needsDb = GO_DB_PATTERNS.some((re) => re.test(raw))
+    } catch {
+      // ignore
+    }
+    return {
+      stackKind: 'go',
+      runCommand: 'go run .',
+      cwd: '',
+      needsDatabase: needsDb
+    }
+  }
+
+  // 5. Makefile
+  if (set.has('makefile') || set.has('gnumakefile')) {
+    return {
+      stackKind: 'make',
+      runCommand: 'make run',
+      cwd: '',
+      needsDatabase: false
+    }
+  }
+
+  return empty
+}

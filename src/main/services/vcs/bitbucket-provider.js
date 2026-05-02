@@ -528,6 +528,55 @@ export function createBitbucketProvider({
     return `https://${userPrefix}bitbucket.org/${workspace}/${slug.toLowerCase()}.git`
   }
 
+  /**
+   * BB src endpoint для default-ветки: вместо имени бранча допускается
+   * `HEAD`, который сам резолвится. Возвращает {values:[{path,type}]}
+   * — `path` это relative path, `type` ∈ {commit_directory, commit_file}.
+   * Pagelen=100 для root'а с запасом.
+   */
+  async function listRootFiles(slug) {
+    if (!slug || typeof slug !== 'string') return []
+    const client = buildClient()
+    const ws = encodeURIComponent(client.workspace)
+    const s = encodeURIComponent(slug)
+    try {
+      const data = await client.request(
+        `/repositories/${ws}/${s}/src/HEAD/?pagelen=100&fields=values.path,values.type,next`
+      )
+      return (data.values || [])
+        .map((v) => {
+          if (!v?.path) return null
+          // path для root-листинга = "filename" или "subdir" — без слэшей.
+          // На всякий случай отрезаем path-prefix если он там оказался.
+          const idx = v.path.lastIndexOf('/')
+          return idx >= 0 ? v.path.slice(idx + 1) : v.path
+        })
+        .filter(Boolean)
+    } catch (e) {
+      if (e.status === 404 || e.status === 403) return []
+      throw e
+    }
+  }
+
+  async function getFileText(slug, filePath) {
+    if (!slug || !filePath) return null
+    const client = buildClient()
+    const ws = encodeURIComponent(client.workspace)
+    const s = encodeURIComponent(slug)
+    // BB ожидает path-сегменты как есть (без encodeURIComponent для /).
+    const cleanPath = filePath.replace(/^\/+/, '')
+    try {
+      const text = await client.request(
+        `/repositories/${ws}/${s}/src/HEAD/${cleanPath}`,
+        { asText: true }
+      )
+      return typeof text === 'string' ? text : null
+    } catch (e) {
+      if (e.status === 404 || e.status === 403) return null
+      throw e
+    }
+  }
+
   return {
     type: 'bitbucket',
     testConnection,
@@ -541,7 +590,9 @@ export function createBitbucketProvider({
     getBuildSteps,
     getBuildStepLog,
     getLastCommit,
-    getCloneUrl
+    getCloneUrl,
+    listRootFiles,
+    getFileText
   }
 }
 

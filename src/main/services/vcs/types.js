@@ -147,6 +147,17 @@
  * @property {(slug: string, gitUsername: string) => string} getCloneUrl
  *   Синхронно строит HTTPS clone URL для git-слоя. gitUsername
  *   подставляется в URL для подсказки credential-helper'у системного git.
+ *
+ * @property {(slug: string) => Promise<string[]>} listRootFiles
+ *   Имена файлов и папок в корне репо (без рекурсии), на default-ветке.
+ *   Используется pre-clone стек-детектором (`*.sln`, `package.json`,
+ *   `Cargo.toml` и т.д.). Возвращает [] на 404/403 — UI должен
+ *   показать «не определилось».
+ *
+ * @property {(slug: string, path: string) => Promise<string|null>} getFileText
+ *   Raw-текст файла на default-ветке. Для манифестов pre-clone
+ *   детектора (package.json → проверка deps на pg/prisma/...). null
+ *   если 404 / файл бинарный / слишком большой по мнению провайдера.
  */
 
 export {}
