@@ -137,6 +137,18 @@ export function SetupDialog({ project, open, onOpenChange }) {
     }
   }, [open, project.slug, project.db.exists])
 
+  // Refetch только Node-status (после write .nvmrc / install Volta).
+  // Используется баннером NodeStatusBanner чтобы UI сразу обновился
+  // с picker'а на «Node X ready».
+  const refetchNodeStatus = async () => {
+    try {
+      const s = await api.node?.status?.(project.slug)
+      setNodeStatus(s || null)
+    } catch {
+      // ignore
+    }
+  }
+
   const onSetSetupDb = (v) => {
     userTouchedSetupDbRef.current = true
     setSetupDb(v)
@@ -258,6 +270,7 @@ export function SetupDialog({ project, open, onOpenChange }) {
               setSetupDb={onSetSetupDb}
               detectedStack={detectedStack}
               nodeStatus={nodeStatus}
+              refetchNodeStatus={refetchNodeStatus}
               skipRestore={skipRestore}
               setSkipRestore={setSkipRestore}
               openWorkspace={openWorkspace}
@@ -347,6 +360,7 @@ function PreFlight({
   setSetupDb,
   detectedStack,
   nodeStatus,
+  refetchNodeStatus,
   skipRestore,
   setSkipRestore,
   openWorkspace,
@@ -398,7 +412,11 @@ function PreFlight({
         </div>
       )}
 
-      <NodeStatusBanner status={nodeStatus} />
+      <NodeStatusBanner
+        project={project}
+        status={nodeStatus}
+        onStatusRefetch={refetchNodeStatus}
+      />
 
 
       <div className="space-y-2">
@@ -588,80 +606,108 @@ function DetectedStackLine({ stack }) {
  *   3. Volta NOT installed, версия не матчит
  *      → amber, action: «Install Volta» button (открывает Settings)
  */
-function NodeStatusBanner({ status }) {
-  const [installing, setInstalling] = useState(false)
+/**
+ * Common Node major-versions для picker'а. Покрывают типичные случаи:
+ * 14 (легаси проекты с node-sass 4-5), 16 (популярная LTS времён 2021-22),
+ * 18 (LTS 2022-2024), 20 (текущая LTS), 22 (последняя). Юзер может
+ * также набрать любую другую через free-text input.
+ */
+const COMMON_NODE_VERSIONS = ['14', '16', '18', '20', '22']
+
+function NodeStatusBanner({ project, status, onStatusRefetch }) {
+  const [installingVolta, setInstallingVolta] = useState(false)
   const [installResult, setInstallResult] = useState(null)
-  if (!status?.required) return null
+  const [picking, setPicking] = useState(false)
+  const [pickedVersion, setPickedVersion] = useState('18')
+  const [customVersion, setCustomVersion] = useState('')
+  const [savingVersion, setSavingVersion] = useState(false)
+
+  if (!status) return null
+  // Не Node-проект — banner вообще не показываем.
+  if (!status.isNodeProject) return null
 
   const required = status.required
   const sys = status.systemVersion
   const volta = status.volta
   const satisfied = status.satisfied
 
-  let tone, icon, message
-  if (satisfied) {
-    tone = 'border-emerald-500/30 bg-emerald-500/5 text-emerald-400'
-    icon = <CheckCircle2 size={14} className="mt-0.5 shrink-0" />
-    message = (
-      <span>
-        Node <code>{required.raw}</code> ready
-        {volta.installed ? ' (via Volta)' : ` (system Node ${sys})`}.
-      </span>
-    )
-  } else if (volta.installed) {
-    tone = 'border-amber-500/30 bg-amber-500/5 text-amber-400'
-    icon = <AlertTriangle size={14} className="mt-0.5 shrink-0" />
-    message = (
-      <span>
-        Project requires Node <code>{required.raw}</code> (system has{' '}
-        {sys || 'no node'}). Will install via Volta during setup.
-      </span>
-    )
-  } else {
-    tone = 'border-amber-500/30 bg-amber-500/5 text-amber-400'
-    icon = <AlertTriangle size={14} className="mt-0.5 shrink-0" />
-    message = (
-      <span>
-        Project requires Node <code>{required.raw}</code> (system has{' '}
-        {sys || 'no node'}). Install Volta to auto-manage Node versions
-        per-project — without it, npm install may fail on native deps.
-      </span>
-    )
-  }
-
   const onInstallVolta = async () => {
-    setInstalling(true)
+    setInstallingVolta(true)
     setInstallResult(null)
     try {
       const r = await api.node.installVolta()
       setInstallResult(r)
+      if (r.ok) onStatusRefetch?.()
     } catch (e) {
       setInstallResult({ ok: false, message: e?.message || String(e) })
     } finally {
-      setInstalling(false)
+      setInstallingVolta(false)
     }
   }
 
-  return (
-    <div
-      className={cn(
-        'rounded-md border px-3 py-2 text-xs flex items-start gap-2',
-        tone
-      )}
-    >
-      {icon}
-      <div className="flex-1 space-y-1.5">
-        {message}
-        {!satisfied && !volta.installed && (
+  const onSaveVersion = async () => {
+    const version = (customVersion.trim() || pickedVersion || '').trim()
+    if (!version) return
+    setSavingVersion(true)
+    setInstallResult(null)
+    try {
+      const r = await api.node.writeNvmrc(project.slug, version)
+      setInstallResult(r)
+      if (r.ok) {
+        setPicking(false)
+        onStatusRefetch?.()
+      }
+    } catch (e) {
+      setInstallResult({ ok: false, message: e?.message || String(e) })
+    } finally {
+      setSavingVersion(false)
+    }
+  }
+
+  // ── Состояние 1: всё ок (required pinned, satisfied) ──
+  if (required && satisfied) {
+    return (
+      <div className="rounded-md border border-emerald-500/30 bg-emerald-500/5 text-emerald-400 px-3 py-2 text-xs flex items-start gap-2">
+        <CheckCircle2 size={14} className="mt-0.5 shrink-0" />
+        <span>
+          Node <code>{required.raw}</code> ready
+          {volta.installed ? ' (via Volta)' : ` (system Node ${sys})`}.
+        </span>
+      </div>
+    )
+  }
+
+  // ── Состояние 2: required pinned, but mismatch ──
+  if (required && !satisfied) {
+    if (volta.installed) {
+      return (
+        <div className="rounded-md border border-amber-500/30 bg-amber-500/5 text-amber-400 px-3 py-2 text-xs flex items-start gap-2">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+          <span>
+            Project requires Node <code>{required.raw}</code> (system has{' '}
+            {sys || 'no node'}). Will install via Volta during setup.
+          </span>
+        </div>
+      )
+    }
+    return (
+      <div className="rounded-md border border-amber-500/30 bg-amber-500/5 text-amber-400 px-3 py-2 text-xs flex items-start gap-2">
+        <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+        <div className="flex-1 space-y-1.5">
+          <span>
+            Project requires Node <code>{required.raw}</code> (system has{' '}
+            {sys || 'no node'}). Install Volta to auto-manage Node versions —
+            without it, npm install may fail on native deps.
+          </span>
           <div>
             <Button
               variant="outline"
               size="sm"
               className="h-7"
               onClick={onInstallVolta}
-              disabled={installing}
+              disabled={installingVolta}
             >
-              {installing && <Loader2 size={12} className="animate-spin" />}
+              {installingVolta && <Loader2 size={12} className="animate-spin" />}
               Install Volta
             </Button>
             {installResult && (
@@ -674,6 +720,110 @@ function NodeStatusBanner({ status }) {
                 {installResult.message}
               </div>
             )}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Состояние 3: NOT pinned, Node-проект — picker ──
+  return (
+    <div className="rounded-md border border-amber-500/30 bg-amber-500/5 text-amber-400 px-3 py-2 text-xs flex items-start gap-2">
+      <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+      <div className="flex-1 space-y-2">
+        <span>
+          No Node version pinned for this project (no <code>.nvmrc</code> /{' '}
+          <code>engines.node</code>). System has Node {sys || '—'}. If
+          npm install fails on native deps, pick a compatible Node version
+          below — we'll write <code>.nvmrc</code>{' '}
+          {volta.installed ? 'and install via Volta' : '(install Volta to auto-switch)'}.
+        </span>
+        {!picking ? (
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7"
+              onClick={() => {
+                setPicking(true)
+                setInstallResult(null)
+              }}
+            >
+              Pick Node version
+            </Button>
+            {!volta.installed && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7"
+                onClick={onInstallVolta}
+                disabled={installingVolta}
+              >
+                {installingVolta && (
+                  <Loader2 size={12} className="animate-spin" />
+                )}
+                Install Volta
+              </Button>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <div className="flex flex-wrap gap-1.5">
+              {COMMON_NODE_VERSIONS.map((v) => (
+                <button
+                  key={v}
+                  onClick={() => {
+                    setPickedVersion(v)
+                    setCustomVersion('')
+                  }}
+                  className={cn(
+                    'px-2 py-1 rounded-md border text-xs',
+                    pickedVersion === v && !customVersion
+                      ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
+                      : 'border-border hover:bg-accent text-muted-foreground'
+                  )}
+                >
+                  Node {v}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={customVersion}
+                onChange={(e) => setCustomVersion(e.target.value)}
+                placeholder="or exact: 16.20.2"
+                className="flex-1 bg-background border border-input rounded-md px-2 py-1 text-xs placeholder:text-muted-foreground/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+              <Button
+                size="sm"
+                className="h-7"
+                onClick={onSaveVersion}
+                disabled={savingVersion}
+              >
+                {savingVersion && <Loader2 size={12} className="animate-spin" />}
+                Save
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7"
+                onClick={() => setPicking(false)}
+                disabled={savingVersion}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+        {installResult && (
+          <div
+            className={cn(
+              'text-[11px]',
+              installResult.ok ? 'text-emerald-500' : 'text-destructive'
+            )}
+          >
+            {installResult.message}
           </div>
         )}
       </div>

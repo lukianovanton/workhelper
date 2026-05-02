@@ -114,6 +114,7 @@ export const IPC = {
   node: {
     status: 'node:status',
     installVolta: 'node:installVolta',
-    installVersion: 'node:installVersion'
+    installVersion: 'node:installVersion',
+    writeNvmrc: 'node:writeNvmrc'
   }
 }

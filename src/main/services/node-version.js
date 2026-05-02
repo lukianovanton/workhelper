@@ -294,6 +294,49 @@ export async function installNodeViaVolta(versionSpec) {
  * если установленная начинается с required (для major-only spec'ов
  * типа '18'). Иначе exact equality.
  */
+/**
+ * Записывает `.nvmrc` в repoPath с указанной версией. После этого
+ * Volta будет авто-роутить любые `node`/`npm`/`yarn` команды в этом
+ * каталоге к нужной версии — наш существующий runPmCommand'у никаких
+ * изменений не нужно.
+ *
+ * `.nvmrc` — индустриальный стандарт; конвенция чисто текстового
+ * файла с версией внутри. Если юзер не хочет коммитить — добавит в
+ * .gitignore. Альтернативой был бы wrap команд через `volta run`,
+ * но это нужно делать в нескольких местах (orchestrator + process-
+ * manager), а .nvmrc один раз и работает везде, включая user'ское
+ * VSCode-терминал.
+ *
+ * @param {string} repoPath
+ * @param {string} version  '16', '18.17.0', etc.
+ * @returns {{ ok: boolean, message: string }}
+ */
+export function writeNvmrcForProject(repoPath, version) {
+  if (!repoPath || !version) {
+    return { ok: false, message: 'repoPath and version are required' }
+  }
+  if (!fs.existsSync(repoPath)) {
+    return { ok: false, message: `Project path not found: ${repoPath}` }
+  }
+  const target = path.join(repoPath, '.nvmrc')
+  try {
+    fs.writeFileSync(target, `${String(version).trim()}\n`, 'utf8')
+    return { ok: true, message: `Wrote ${target}` }
+  } catch (e) {
+    return { ok: false, message: `Failed to write .nvmrc: ${e?.message || e}` }
+  }
+}
+
+/**
+ * Это Node-проект? Используется UI чтобы показывать picker даже когда
+ * required=null (нет engines/.nvmrc) — иначе для не-Node репо мы бы
+ * предлагали выбрать Node-версию что бессмысленно.
+ */
+export function isNodeProject(repoPath) {
+  if (!repoPath) return false
+  return fs.existsSync(path.join(repoPath, 'package.json'))
+}
+
 export function nodeVersionSatisfies(installed, requiredSpec) {
   if (!installed || !requiredSpec) return false
   // Exact major (e.g. '18') — checks for '18.x.x' prefix.

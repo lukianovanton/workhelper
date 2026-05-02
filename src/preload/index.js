@@ -150,7 +150,9 @@ const api = {
     status: (slug) => ipcRenderer.invoke('node:status', slug),
     installVolta: () => ipcRenderer.invoke('node:installVolta'),
     installVersion: (versionSpec) =>
-      ipcRenderer.invoke('node:installVersion', versionSpec)
+      ipcRenderer.invoke('node:installVersion', versionSpec),
+    writeNvmrc: (slug, version) =>
+      ipcRenderer.invoke('node:writeNvmrc', slug, version)
   },
   presence: {
     list: () => ipcRenderer.invoke('presence:list'),
