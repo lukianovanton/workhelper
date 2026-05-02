@@ -21,7 +21,10 @@
 
 import { safeStorage } from 'electron'
 import Store from 'electron-store'
-import { DEFAULT_BB_SOURCE_ID } from './config-store.js'
+import {
+  DEFAULT_BB_SOURCE_ID,
+  DEFAULT_MYSQL_DB_ID
+} from './config-store.js'
 
 const store = new Store({
   name: 'secrets',
@@ -30,11 +33,12 @@ const store = new Store({
 
 const STATIC_KEYS = new Set([
   'bitbucketApiToken', // legacy, ещё читаем
-  'dbPassword',
+  'dbPassword',        // legacy, ещё читаем
   'jiraApiToken'
 ])
 
 const VCS_KEY_REGEX = /^vcs:[a-zA-Z0-9_-]+:token$/
+const DB_KEY_REGEX = /^db:[a-zA-Z0-9_-]+:password$/
 
 function assertKey(key) {
   if (typeof key !== 'string') {
@@ -42,6 +46,7 @@ function assertKey(key) {
   }
   if (STATIC_KEYS.has(key)) return
   if (VCS_KEY_REGEX.test(key)) return
+  if (DB_KEY_REGEX.test(key)) return
   throw new Error(`Unknown secret key: ${key}`)
 }
 
@@ -119,16 +124,26 @@ export function hasSecret(key) {
 
 /**
  * Миграция legacy `bitbucketApiToken` → `vcs:bitbucket-default:token`.
- * Вызывать один раз на старте приложения после whenReady (safeStorage
- * требует ready-app).
- *
+ * Вызывать один раз на старте приложения после whenReady.
+ */
+export function migrateLegacyBitbucketToken() {
+  migrateLegacy('bitbucketApiToken', `vcs:${DEFAULT_BB_SOURCE_ID}:token`)
+}
+
+/**
+ * Миграция legacy `dbPassword` → `db:mysql-default:password`.
+ * Вызывать один раз на старте приложения после whenReady.
+ */
+export function migrateLegacyDbPassword() {
+  migrateLegacy('dbPassword', `db:${DEFAULT_MYSQL_DB_ID}:password`)
+}
+
+/**
  * Идемпотентно: если новый ключ уже существует — не трогает legacy
  * (пользователь мог явно сбросить новый ключ; не воскрешаем его).
  * Если успешно скопировали — стираем legacy.
  */
-export function migrateLegacyBitbucketToken() {
-  const legacyKey = 'bitbucketApiToken'
-  const newKey = `vcs:${DEFAULT_BB_SOURCE_ID}:token`
+function migrateLegacy(legacyKey, newKey) {
   if (!store.has(legacyKey)) return
   if (store.has(newKey)) return
 

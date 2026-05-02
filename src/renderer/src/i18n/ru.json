@@ -301,6 +301,17 @@
   "settings.setupGuide": "Инструкция",
   "settings.openSetupGuide": "Открыть полную инструкцию по настройке",
 
+  "settings.databases.title": "Базы данных",
+  "settings.databases.description": "Локальные или удалённые DB-подключения. Используются для определения размера, restore из дампов и per-project DB-операций.",
+  "settings.databases.empty": "Подключения не настроены. Добавьте хотя бы одно, чтобы заработали DB-фичи.",
+  "settings.databases.newDatabase": "Новое подключение",
+  "settings.databases.name": "Название",
+  "settings.databases.name.hint": "Свободная подпись для пикеров и вывода в UI.",
+  "settings.databases.add": "Добавить подключение",
+  "settings.databases.add.save": "Сохранить подключение",
+  "settings.databases.remove": "Удалить подключение",
+  "settings.databases.confirmRemove": "Удалить это подключение? Сохранённый пароль будет стёрт.",
+
   "settings.sources.title": "Источники",
   "settings.sources.description": "Источники репозиториев. Один источник — один VCS-workspace или org; список проектов мерджит репо со всех.",
   "settings.sources.empty": "Источники не настроены. Добавьте хотя бы один, чтобы появился список проектов.",

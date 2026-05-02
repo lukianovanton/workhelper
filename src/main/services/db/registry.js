@@ -19,8 +19,6 @@ import { getConfig } from '../config-store.js'
 import { getSecret } from '../secrets.js'
 import { createMysqlEngine } from './mysql-engine.js'
 
-const DEFAULT_MYSQL_DB_ID = 'mysql-default'
-
 /**
  * @typedef {Object} DbConfigEntry
  * @property {string} id
@@ -38,19 +36,19 @@ const DEFAULT_MYSQL_DB_ID = 'mysql-default'
  */
 function getDatabases() {
   const config = getConfig()
-  const db = config.database || {}
-  return [
-    {
-      id: DEFAULT_MYSQL_DB_ID,
-      type: 'mysql',
-      name: db.host ? `${db.user}@${db.host}` : 'MySQL',
-      host: db.host || '',
-      port: db.port || 3306,
-      user: db.user || '',
-      executable: db.mysqlExecutable || '',
-      secretKey: 'dbPassword'
-    }
-  ]
+  const databases = Array.isArray(config.databases) ? config.databases : []
+  return databases
+    .filter((d) => d && d.type === 'mysql')
+    .map((d) => ({
+      id: d.id,
+      type: d.type,
+      name: d.name || (d.host ? `${d.user || 'mysql'}@${d.host}` : 'MySQL'),
+      host: d.host || '',
+      port: d.port || 3306,
+      user: d.user || '',
+      executable: d.executable || '',
+      secretKey: `db:${d.id}:password`
+    }))
 }
 
 /** @type {Map<string, DbEngine>} */

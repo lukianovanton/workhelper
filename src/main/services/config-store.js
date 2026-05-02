@@ -18,8 +18,9 @@ import Store from 'electron-store'
 /** @type {AppConfig} */
 const DEFAULTS = {
   sources: [],
-  // ⚠️ Legacy: оставлены для миграции с до-A.4b версии. После
-  // первого getConfig() значения переезжают в sources[0].
+  databases: [],
+  // ⚠️ Legacy: оставлены для миграции с до-A.4b/A.5b версии. После
+  // первого getConfig() значения переезжают в sources[0] / databases[0].
   bitbucket: {
     workspace: '',
     username: '',
@@ -56,60 +57,85 @@ const store = new Store({
 })
 
 const DEFAULT_BB_SOURCE_ID = 'bitbucket-default'
+const DEFAULT_MYSQL_DB_ID = 'mysql-default'
 
 /**
- * Если legacy `bitbucket.workspace` есть, а sources пуст —
- * создаём `bitbucket-default` source и очищаем legacy поле. Идемпотентно:
- * на повторных вызовах ничего не делает.
- *
- * Сохранение в store происходит только если действительно мигрировали,
- * чтобы не плодить лишние записи.
+ * Идемпотентная миграция: переносит legacy `bitbucket: {}` →
+ * `sources[0]` и legacy `database: {}` → `databases[0]`. Если новая
+ * форма уже заполнена — только зачищает дубли в legacy-полях. Если
+ * не заполнена и legacy пуста — оставляет как есть.
  *
  * @param {AppConfig} config
  * @returns {AppConfig}
  */
 function migrateConfig(config) {
-  const sources = Array.isArray(config.sources) ? config.sources : []
-  const bb = config.bitbucket || {}
-  const hasLegacy =
-    !!(bb.workspace || bb.username || bb.gitUsername)
+  let next = config
+  let mutated = false
 
-  // Уже мигрировано — sources заполнен, legacy либо пуст, либо
-  // дубль. Возвращаем без изменений.
-  if (sources.length > 0) {
-    if (hasLegacy) {
-      // Legacy поля могут остаться от предыдущей версии — стираем,
-      // чтобы UI не путался какой объект считать source-of-truth.
-      const cleared = {
-        ...config,
-        bitbucket: { workspace: '', username: '', gitUsername: '' }
-      }
-      store.store = cleared
-      return cleared
+  // --- Sources -------------------------------------------------------
+  const sources = Array.isArray(next.sources) ? next.sources : []
+  const bb = next.bitbucket || {}
+  const hasLegacyBb = !!(bb.workspace || bb.username || bb.gitUsername)
+
+  if (sources.length === 0 && hasLegacyBb) {
+    /** @type {VcsSourceConfig} */
+    const migrated = {
+      id: DEFAULT_BB_SOURCE_ID,
+      type: 'bitbucket',
+      name: bb.workspace || 'Bitbucket',
+      workspace: bb.workspace || '',
+      username: bb.username || '',
+      gitUsername: bb.gitUsername || ''
     }
-    return config
+    next = {
+      ...next,
+      sources: [migrated],
+      bitbucket: { workspace: '', username: '', gitUsername: '' }
+    }
+    mutated = true
+  } else if (sources.length > 0 && hasLegacyBb) {
+    next = {
+      ...next,
+      bitbucket: { workspace: '', username: '', gitUsername: '' }
+    }
+    mutated = true
   }
 
-  if (!hasLegacy) {
-    // Чистая первая установка: пустые sources, пустой legacy.
-    return config
+  // --- Databases -----------------------------------------------------
+  const databases = Array.isArray(next.databases) ? next.databases : []
+  const db = next.database || {}
+  const hasLegacyDb =
+    !!(db.host || db.user || db.mysqlExecutable) ||
+    typeof db.port === 'number' && db.port > 0
+
+  if (databases.length === 0 && hasLegacyDb) {
+    /** @type {DbConnectionConfig} */
+    const migrated = {
+      id: DEFAULT_MYSQL_DB_ID,
+      type: 'mysql',
+      name: db.host ? `${db.user || 'mysql'}@${db.host}` : 'MySQL',
+      host: db.host || 'localhost',
+      port: db.port || 3306,
+      user: db.user || 'root',
+      executable: db.mysqlExecutable || ''
+    }
+    next = {
+      ...next,
+      databases: [migrated],
+      database: { host: '', port: 0, user: '', mysqlExecutable: '' }
+    }
+    mutated = true
+  } else if (databases.length > 0 && hasLegacyDb) {
+    next = {
+      ...next,
+      database: { host: '', port: 0, user: '', mysqlExecutable: '' }
+    }
+    mutated = true
   }
 
-  /** @type {VcsSourceConfig} */
-  const migrated = {
-    id: DEFAULT_BB_SOURCE_ID,
-    type: 'bitbucket',
-    name: bb.workspace || 'Bitbucket',
-    workspace: bb.workspace || '',
-    username: bb.username || '',
-    gitUsername: bb.gitUsername || ''
+  if (mutated) {
+    store.store = next
   }
-  const next = {
-    ...config,
-    sources: [migrated],
-    bitbucket: { workspace: '', username: '', gitUsername: '' }
-  }
-  store.store = next
   return next
 }
 
@@ -138,6 +164,9 @@ export function setConfig(patch) {
   if (Array.isArray(patch?.sources)) {
     merged.sources = patch.sources
   }
+  if (Array.isArray(patch?.databases)) {
+    merged.databases = patch.databases
+  }
   store.store = merged
 }
 
@@ -158,4 +187,4 @@ function isPlainObject(v) {
   return v !== null && typeof v === 'object' && !Array.isArray(v)
 }
 
-export { DEFAULTS, DEFAULT_BB_SOURCE_ID }
+export { DEFAULTS, DEFAULT_BB_SOURCE_ID, DEFAULT_MYSQL_DB_ID }

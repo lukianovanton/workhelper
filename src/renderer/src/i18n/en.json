@@ -301,6 +301,17 @@
   "settings.setupGuide": "Setup guide",
   "settings.openSetupGuide": "Open the full setup walkthrough",
 
+  "settings.databases.title": "Databases",
+  "settings.databases.description": "Local or remote DB connections used for size detection, dump restore, and per-project DB ops.",
+  "settings.databases.empty": "No databases configured. Add one to enable DB-aware features.",
+  "settings.databases.newDatabase": "New database",
+  "settings.databases.name": "Display name",
+  "settings.databases.name.hint": "Free-form label shown in pickers and elsewhere.",
+  "settings.databases.add": "Add database",
+  "settings.databases.add.save": "Save database",
+  "settings.databases.remove": "Remove database",
+  "settings.databases.confirmRemove": "Remove this database? Stored password will be cleared.",
+
   "settings.sources.title": "Sources",
   "settings.sources.description": "Repository sources. Each source is one VCS workspace or org; the projects list merges repos from all of them.",
   "settings.sources.empty": "No sources configured. Add one to start listing projects.",

@@ -101,6 +101,20 @@
  */
 
 /**
+ * @typedef {Object} DbConnectionConfig
+ * @property {string} id                       стабильный идентификатор
+ *                                              ('mysql-default' для миграции,
+ *                                              UUID для добавленных через UI)
+ * @property {'mysql'} type                     type engine'а; в Phase C
+ *                                              расширится до 'postgres'
+ * @property {string} name                      user-facing label
+ * @property {string} host
+ * @property {number} port
+ * @property {string} user
+ * @property {string} executable                абсолютный путь к CLI
+ *                                              (mysql.exe / psql), либо ''
+ *                                              для PATH-резолва
+ *
  * @typedef {Object} VcsSourceConfig
  * @property {string} id                       стабильный идентификатор
  *                                              (UUID для добавленных через UI;
@@ -122,6 +136,10 @@
  *                                              API-токен каждого источника
  *                                              хранится в secrets под ключом
  *                                              `vcs:${source.id}:token`.
+ * @property {DbConnectionConfig[]} databases   сконфигурированные DB-подключения.
+ *                                              Пароль каждого хранится в
+ *                                              secrets под ключом
+ *                                              `db:${database.id}:password`.
  * @property {{ workspace: string, username: string, gitUsername: string }} [bitbucket]
  *           ⚠️ DEPRECATED. Сохранён как источник миграции для случая когда
  *           пользователь обновляется с до-A.4b версии. После первого

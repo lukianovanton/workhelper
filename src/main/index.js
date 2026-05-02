@@ -10,7 +10,10 @@ import {
   stopPresence
 } from './services/presence-service.js'
 import { getConfig } from './services/config-store.js'
-import { migrateLegacyBitbucketToken } from './services/secrets.js'
+import {
+  migrateLegacyBitbucketToken,
+  migrateLegacyDbPassword
+} from './services/secrets.js'
 
 const { autoUpdater } = electronUpdater
 const FOUR_HOURS = 4 * 60 * 60 * 1000
@@ -94,6 +97,7 @@ app.whenReady().then(() => {
   // прогнал legacy `bitbucket: {}` → `sources[0]`.
   getConfig()
   migrateLegacyBitbucketToken()
+  migrateLegacyDbPassword()
 
   registerAllIpc()
   setupAutoUpdater()

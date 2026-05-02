@@ -19,6 +19,17 @@ const api = {
       ipcRenderer.invoke('sources:setSecret', id, token),
     clearSecret: (id) => ipcRenderer.invoke('sources:clearSecret', id)
   },
+  databases: {
+    list: () => ipcRenderer.invoke('databases:list'),
+    add: (payload) => ipcRenderer.invoke('databases:add', payload),
+    update: (id, patch) =>
+      ipcRenderer.invoke('databases:update', id, patch),
+    remove: (id) => ipcRenderer.invoke('databases:remove', id),
+    test: (id) => ipcRenderer.invoke('databases:test', id),
+    setSecret: (id, password) =>
+      ipcRenderer.invoke('databases:setSecret', id, password),
+    clearSecret: (id) => ipcRenderer.invoke('databases:clearSecret', id)
+  },
   bitbucket: {
     list: () => ipcRenderer.invoke('bitbucket:list'),
     refresh: () => ipcRenderer.invoke('bitbucket:refresh'),

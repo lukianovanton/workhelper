@@ -132,14 +132,11 @@ export default function Settings() {
     dbPassword: false,
     jiraApiToken: false
   })
-  const [dbPassword, setDbPassword] = useState('')
   const [jiraApiToken, setJiraApiToken] = useState('')
   const [vscodeDetected, setVscodeDetected] = useState(null)
   const [mysqlDetected, setMysqlDetected] = useState(null)
   const [saving, setSaving] = useState(false)
   const [saveStatus, setSaveStatus] = useState(null)
-  const [testingDb, setTestingDb] = useState(false)
-  const [dbTestResult, setDbTestResult] = useState(null)
   const [testingJira, setTestingJira] = useState(false)
   const [jiraTestResult, setJiraTestResult] = useState(null)
   const [activeSection, setActiveSection] = useState(loadActiveSection)
@@ -161,7 +158,6 @@ export default function Settings() {
     ])
     setConfig(c)
     setSecretsStatus(s)
-    setDbPassword('')
     setJiraApiToken('')
   }, [])
 
@@ -193,21 +189,7 @@ export default function Settings() {
       ...prev,
       [section]: { ...prev[section], [key]: value }
     }))
-    if (section === 'database') setDbTestResult(null)
     if (section === 'jira') setJiraTestResult(null)
-  }
-
-  const onTestDb = async () => {
-    setTestingDb(true)
-    setDbTestResult(null)
-    try {
-      const result = await api.db.testConnection()
-      setDbTestResult(result)
-    } catch (e) {
-      setDbTestResult({ ok: false, message: e?.message || String(e) })
-    } finally {
-      setTestingDb(false)
-    }
   }
 
   const onTestJira = async () => {
@@ -232,9 +214,6 @@ export default function Settings() {
     setSaveStatus(null)
     try {
       await api.config.set(config)
-      if (dbPassword) {
-        await api.config.setSecret('dbPassword', dbPassword)
-      }
       if (jiraApiToken) {
         await api.config.setSecret('jiraApiToken', jiraApiToken)
       }
@@ -452,81 +431,10 @@ export default function Settings() {
             )}
 
             {activeSection === 'database' && (
-              <Card>
-                <SectionCardHeader
-                  title={t('settings.database.title')}
-                  description={t('settings.database.description')}
-                  onOpenGuide={() => setGuideOpen('database')}
-                />
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-3 gap-4">
-                    <Field label={t('settings.database.host')} className="col-span-2">
-                      <Input
-                        value={config.database.host}
-                        onChange={(e) =>
-                          updatePath('database', 'host')(e.target.value)
-                        }
-                        placeholder="localhost"
-                      />
-                    </Field>
-                    <Field label={t('settings.database.port')}>
-                      <Input
-                        type="number"
-                        value={config.database.port}
-                        onChange={(e) =>
-                          updatePath(
-                            'database',
-                            'port'
-                          )(Number(e.target.value) || 0)
-                        }
-                        placeholder="3306"
-                      />
-                    </Field>
-                  </div>
-                  <Field label={t('settings.database.user')}>
-                    <Input
-                      value={config.database.user}
-                      onChange={(e) =>
-                        updatePath('database', 'user')(e.target.value)
-                      }
-                      placeholder="root"
-                    />
-                  </Field>
-                  <SecretField
-                    label={t('settings.database.password')}
-                    status={secretsStatus.dbPassword}
-                    value={dbPassword}
-                    onChange={setDbPassword}
-                    onClear={() => onClearSecret('dbPassword')}
-                  />
-                  <BinaryPathField
-                    label={t('settings.database.mysqlExecutable')}
-                    value={config.database.mysqlExecutable}
-                    detected={mysqlDetected}
-                    placeholder="C:\\path\\to\\mysql.exe"
-                    notFoundHint={
-                      config.database.mysqlExecutable
-                        ? t('settings.database.mysqlExecutable.notFound')
-                        : t('settings.database.mysqlExecutable.optional')
-                    }
-                    onChange={(v) =>
-                      updatePath('database', 'mysqlExecutable')(v)
-                    }
-                  />
-                  <div className="pt-1 space-y-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={onTestDb}
-                      disabled={testingDb}
-                    >
-                      {testingDb && <Loader2 className="animate-spin" />}
-                      {t('common.testConnection')}
-                    </Button>
-                    <DbTestResult result={dbTestResult} />
-                  </div>
-                </CardContent>
-              </Card>
+              <DatabasesCard
+                onOpenGuide={() => setGuideOpen('database')}
+                detected={mysqlDetected}
+              />
             )}
 
             {activeSection === 'dotnet' && (
@@ -1188,6 +1096,391 @@ function SourcesCard({ onOpenGuide }) {
         <Button variant="outline" size="sm" onClick={startAdd}>
           <Plus />
           {t('settings.sources.add')}
+        </Button>
+      </CardContent>
+    </Card>
+  )
+}
+
+/**
+ * Управление DB-подключениями. Симметрично SourcesCard. Внутри
+ * `DatabaseEditor` — sub-компонент, чтобы вызывать `useState` для
+ * detected-binary без нарушения rules-of-hooks (нельзя вызывать
+ * hook внутри map'а).
+ */
+function DatabasesCard({ onOpenGuide, detected }) {
+  const t = useT()
+  const [databases, setDatabases] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [drafts, setDrafts] = useState({})
+  const [passwords, setPasswords] = useState({})
+  const [busy, setBusy] = useState({})
+  const [testResults, setTestResults] = useState({})
+  const [errors, setErrors] = useState({})
+
+  const reload = useCallback(async () => {
+    setLoading(true)
+    try {
+      const list = await api.databases.list()
+      setDatabases(list)
+      const initialDrafts = {}
+      for (const d of list) initialDrafts[d.id] = { ...d }
+      setDrafts(initialDrafts)
+      setPasswords({})
+      setErrors({})
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    reload()
+  }, [reload])
+
+  const updateDraft = (id, field, value) => {
+    setDrafts((prev) => ({
+      ...prev,
+      [id]: { ...prev[id], [field]: value }
+    }))
+    setTestResults((prev) => {
+      if (!prev[id]) return prev
+      const next = { ...prev }
+      delete next[id]
+      return next
+    })
+  }
+
+  const setPassword = (id, value) => {
+    setPasswords((prev) => ({ ...prev, [id]: value }))
+  }
+
+  const startAdd = () => {
+    const tempId = `__new_${Date.now()}`
+    setDrafts((prev) => ({
+      ...prev,
+      [tempId]: {
+        id: tempId,
+        type: 'mysql',
+        name: '',
+        host: 'localhost',
+        port: 3306,
+        user: 'root',
+        executable: '',
+        hasPassword: false,
+        unsaved: true
+      }
+    }))
+  }
+
+  const cancelDraft = (tempId) => {
+    setDrafts((prev) => {
+      const next = { ...prev }
+      delete next[tempId]
+      return next
+    })
+    setPasswords((prev) => {
+      const next = { ...prev }
+      delete next[tempId]
+      return next
+    })
+  }
+
+  const applyExisting = async (id) => {
+    const draft = drafts[id]
+    if (!draft) return
+    setBusy((prev) => ({ ...prev, [id]: true }))
+    setErrors((prev) => {
+      const next = { ...prev }
+      delete next[id]
+      return next
+    })
+    try {
+      await api.databases.update(id, {
+        name: draft.name,
+        host: draft.host,
+        port: draft.port,
+        user: draft.user,
+        executable: draft.executable
+      })
+      const newPwd = passwords[id]
+      if (newPwd && newPwd.trim()) {
+        await api.databases.setSecret(id, newPwd)
+      }
+      await reload()
+    } catch (e) {
+      setErrors((prev) => ({
+        ...prev,
+        [id]: e?.message || String(e)
+      }))
+    } finally {
+      setBusy((prev) => {
+        const next = { ...prev }
+        delete next[id]
+        return next
+      })
+    }
+  }
+
+  const saveNew = async (tempId) => {
+    const draft = drafts[tempId]
+    if (!draft) return
+    setBusy((prev) => ({ ...prev, [tempId]: true }))
+    setErrors((prev) => {
+      const next = { ...prev }
+      delete next[tempId]
+      return next
+    })
+    try {
+      await api.databases.add({
+        type: draft.type,
+        name: draft.name,
+        host: draft.host,
+        port: draft.port,
+        user: draft.user,
+        executable: draft.executable,
+        password: passwords[tempId] || undefined
+      })
+      await reload()
+    } catch (e) {
+      setErrors((prev) => ({
+        ...prev,
+        [tempId]: e?.message || String(e)
+      }))
+      setBusy((prev) => {
+        const next = { ...prev }
+        delete next[tempId]
+        return next
+      })
+    }
+  }
+
+  const remove = async (id) => {
+    if (!window.confirm(t('settings.databases.confirmRemove'))) return
+    setBusy((prev) => ({ ...prev, [id]: true }))
+    try {
+      await api.databases.remove(id)
+      await reload()
+    } catch (e) {
+      setErrors((prev) => ({
+        ...prev,
+        [id]: e?.message || String(e)
+      }))
+      setBusy((prev) => {
+        const next = { ...prev }
+        delete next[id]
+        return next
+      })
+    }
+  }
+
+  const test = async (id) => {
+    setBusy((prev) => ({ ...prev, [`test:${id}`]: true }))
+    try {
+      const result = await api.databases.test(id)
+      setTestResults((prev) => ({ ...prev, [id]: result }))
+    } catch (e) {
+      setTestResults((prev) => ({
+        ...prev,
+        [id]: { ok: false, message: e?.message || String(e) }
+      }))
+    } finally {
+      setBusy((prev) => {
+        const next = { ...prev }
+        delete next[`test:${id}`]
+        return next
+      })
+    }
+  }
+
+  const clearPwd = async (id) => {
+    setBusy((prev) => ({ ...prev, [id]: true }))
+    try {
+      await api.databases.clearSecret(id)
+      await reload()
+    } finally {
+      setBusy((prev) => {
+        const next = { ...prev }
+        delete next[id]
+        return next
+      })
+    }
+  }
+
+  const ids = Object.keys(drafts)
+
+  return (
+    <Card>
+      <SectionCardHeader
+        title={t('settings.databases.title')}
+        description={t('settings.databases.description')}
+        onOpenGuide={onOpenGuide}
+      />
+      <CardContent className="space-y-4">
+        {loading && (
+          <div className="text-xs text-muted-foreground inline-flex items-center gap-2">
+            <Loader2 size={12} className="animate-spin" />
+            {t('common.loading')}
+          </div>
+        )}
+        {!loading && ids.length === 0 && (
+          <p className="text-xs text-muted-foreground">
+            {t('settings.databases.empty')}
+          </p>
+        )}
+        {ids.map((id) => {
+          const draft = drafts[id]
+          const isNew = !!draft.unsaved
+          const isBusy = !!busy[id]
+          const isTesting = !!busy[`test:${id}`]
+          return (
+            <div
+              key={id}
+              className="rounded-md border border-border/70 p-4 space-y-3"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                  {isNew
+                    ? t('settings.databases.newDatabase')
+                    : draft.type}
+                </div>
+                {!isNew && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => remove(id)}
+                    disabled={isBusy}
+                    title={t('settings.databases.remove')}
+                  >
+                    <Trash2 size={12} />
+                  </Button>
+                )}
+              </div>
+              <Field
+                label={t('settings.databases.name')}
+                hint={t('settings.databases.name.hint')}
+              >
+                <Input
+                  value={draft.name}
+                  onChange={(e) => updateDraft(id, 'name', e.target.value)}
+                  placeholder="root@localhost"
+                />
+              </Field>
+              <div className="grid grid-cols-3 gap-4">
+                <Field label={t('settings.database.host')} className="col-span-2">
+                  <Input
+                    value={draft.host}
+                    onChange={(e) =>
+                      updateDraft(id, 'host', e.target.value)
+                    }
+                    placeholder="localhost"
+                  />
+                </Field>
+                <Field label={t('settings.database.port')}>
+                  <Input
+                    type="number"
+                    value={draft.port}
+                    onChange={(e) =>
+                      updateDraft(
+                        id,
+                        'port',
+                        Number(e.target.value) || 0
+                      )
+                    }
+                    placeholder="3306"
+                  />
+                </Field>
+              </div>
+              <Field label={t('settings.database.user')}>
+                <Input
+                  value={draft.user}
+                  onChange={(e) =>
+                    updateDraft(id, 'user', e.target.value)
+                  }
+                  placeholder="root"
+                />
+              </Field>
+              <SecretField
+                label={t('settings.database.password')}
+                status={!isNew && draft.hasPassword}
+                value={passwords[id] || ''}
+                onChange={(v) => setPassword(id, v)}
+                onClear={
+                  !isNew && draft.hasPassword
+                    ? () => clearPwd(id)
+                    : undefined
+                }
+              />
+              <BinaryPathField
+                label={t('settings.database.mysqlExecutable')}
+                value={draft.executable}
+                detected={detected}
+                placeholder="C:\\path\\to\\mysql.exe"
+                notFoundHint={
+                  draft.executable
+                    ? t('settings.database.mysqlExecutable.notFound')
+                    : t('settings.database.mysqlExecutable.optional')
+                }
+                onChange={(v) => updateDraft(id, 'executable', v)}
+              />
+
+              {errors[id] && (
+                <div className="text-xs text-destructive flex items-start gap-2">
+                  <XCircle size={12} className="mt-0.5 shrink-0" />
+                  <span>{errors[id]}</span>
+                </div>
+              )}
+
+              <div className="flex items-center gap-2 flex-wrap pt-1">
+                {isNew ? (
+                  <>
+                    <Button
+                      size="sm"
+                      onClick={() => saveNew(id)}
+                      disabled={isBusy || !draft.host || !draft.user}
+                    >
+                      {isBusy && <Loader2 className="animate-spin" />}
+                      {t('settings.databases.add.save')}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => cancelDraft(id)}
+                      disabled={isBusy}
+                    >
+                      {t('common.cancel')}
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => applyExisting(id)}
+                      disabled={isBusy}
+                    >
+                      {isBusy && <Loader2 className="animate-spin" />}
+                      {t('settings.sources.apply')}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => test(id)}
+                      disabled={isTesting}
+                    >
+                      {isTesting && <Loader2 className="animate-spin" />}
+                      {t('common.testConnection')}
+                    </Button>
+                  </>
+                )}
+              </div>
+              {!isNew && <DbTestResult result={testResults[id]} />}
+            </div>
+          )
+        })}
+
+        <Button variant="outline" size="sm" onClick={startAdd}>
+          <Plus />
+          {t('settings.databases.add')}
         </Button>
       </CardContent>
     </Card>

@@ -1,5 +1,6 @@
 import { registerConfigIpc } from './config.ipc.js'
 import { registerSourcesIpc } from './sources.ipc.js'
+import { registerDatabasesIpc } from './databases.ipc.js'
 import { registerBitbucketIpc } from './bitbucket.ipc.js'
 import { registerDbIpc } from './db.ipc.js'
 import { registerEditorIpc } from './editor.ipc.js'
@@ -18,6 +19,7 @@ import { registerJiraIpc } from './jira.ipc.js'
 export function registerAllIpc() {
   registerConfigIpc()
   registerSourcesIpc()
+  registerDatabasesIpc()
   registerBitbucketIpc()
   registerDbIpc()
   registerEditorIpc()
