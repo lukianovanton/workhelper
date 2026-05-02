@@ -1,30 +1,23 @@
 /**
  * Реализация VcsProvider для Bitbucket Cloud (Basic Auth: email + API
- * token, нативный fetch). Содержимое перенесено как есть из
- * bitbucket-client.js — никакого изменения поведения, только переход
- * к provider-форме (factory вместо top-level функций).
+ * token, нативный fetch).
  *
- * Логика читает конфиг при каждом вызове через `buildClient()` —
- * это сохраняет поведение оригинала: пользователь меняет креды в
- * Settings → следующий вызов уже видит новые.
+ * Phase A.4a: фабрика теперь принимает явные `{ workspace, username,
+ * getToken, cacheKey }` — это позволяет создавать несколько инстансов
+ * провайдера для разных source'ов (Phase A.4b даст пользователю это
+ * через Settings UI). Cache list-репо теперь per-source: каждый
+ * инстанс держит свой electron-store по `cacheKey`.
  *
  * @typedef {import('./types.js').VcsProvider} VcsProvider
  * @typedef {import('./types.js').ProviderRepo} ProviderRepo
  */
 
 import Store from 'electron-store'
-import { getConfig } from '../config-store.js'
-import { getSecret } from '../secrets.js'
 
 const API_BASE = 'https://api.bitbucket.org/2.0'
 const TTL_MS = 10 * 60 * 1000
 const LIST_FIELDS =
   'values.slug,values.name,values.description,values.links.clone,values.project.key,values.updated_on,next'
-
-const cacheStore = new Store({
-  name: 'bitbucket-cache',
-  clearInvalidConfig: true
-})
 
 class BitbucketError extends Error {
   constructor(message, status, stage) {
@@ -36,25 +29,32 @@ class BitbucketError extends Error {
 }
 
 /**
- * Фабрика BitbucketProvider. Возвращает объект, реализующий VcsProvider.
- *
- * Конструктор без аргументов: креды и workspace берутся из глобального
- * config-store при каждом запросе, как в исходной реализации. В Phase
- * A.4 (мульти-source) фабрика начнёт принимать `{ workspace, secretKey }`
- * и каждый Source будет иметь свой инстанс провайдера.
- *
+ * @param {Object} opts
+ * @param {() => string} opts.getWorkspace      lazy getter — позволяет UI
+ *                                                менять workspace без
+ *                                                пересоздания инстанса
+ * @param {() => string} opts.getUsername       lazy getter
+ * @param {() => string|null} opts.getToken     lazy getter секрета
+ * @param {string} opts.cacheKey                имя electron-store файла для
+ *                                                listRepos cache
+ *                                                (один файл на source)
  * @returns {VcsProvider}
  */
-export function createBitbucketProvider() {
-  /**
-   * Собирает аутентифицированный клиент один раз на запрос (или серию).
-   * Бросает с stage='config', если креды не настроены — UI распознаёт стадию.
-   */
+export function createBitbucketProvider({
+  getWorkspace,
+  getUsername,
+  getToken,
+  cacheKey
+}) {
+  const cacheStore = new Store({
+    name: cacheKey,
+    clearInvalidConfig: true
+  })
+
   function buildClient() {
-    const config = getConfig()
-    const token = getSecret('bitbucketApiToken')
-    const username = config.bitbucket.username
-    const workspace = config.bitbucket.workspace
+    const token = getToken()
+    const username = getUsername()
+    const workspace = getWorkspace()
 
     if (!username || !token) {
       throw new BitbucketError(
@@ -74,12 +74,6 @@ export function createBitbucketProvider() {
     const auth =
       'Basic ' + Buffer.from(`${username}:${token}`).toString('base64')
 
-    /**
-     * @param {string} pathOrUrl относительный путь от /2.0 или абсолютный URL
-     *                           (для пагинации по next)
-     * @param {{ asText?: boolean }} [opts] asText=true для diff/log
-     *                                       эндпоинтов, которые отдают text/plain
-     */
     async function request(pathOrUrl, opts = {}) {
       const url = pathOrUrl.startsWith('http')
         ? pathOrUrl
@@ -142,7 +136,6 @@ export function createBitbucketProvider() {
       return { ok: false, stage: e.stage || 'config', message: e.message }
     }
 
-    // Главный функциональный тест — то, что делает list()
     try {
       await client.request(
         `/repositories/${encodeURIComponent(client.workspace)}?pagelen=1&fields=values.slug,next`
@@ -177,8 +170,6 @@ export function createBitbucketProvider() {
       return { ok: false, stage: e.stage || 'http', message: e.message }
     }
 
-    // Best-effort identity — если scope read:account отсутствует,
-    // /user отдаст 403; это нормально, мы уже подтвердили repo-доступ.
     let identity = { displayName: client.username }
     try {
       const user = await client.request('/user')
@@ -204,9 +195,6 @@ export function createBitbucketProvider() {
     return { ok: true, user: identity, workspace }
   }
 
-  /**
-   * Полный обход репо воркспейса с пагинацией.
-   */
   async function listAllRepos() {
     const client = buildClient()
     const ws = encodeURIComponent(client.workspace)
@@ -535,8 +523,7 @@ export function createBitbucketProvider() {
   }
 
   function getCloneUrl(slug, gitUsername) {
-    const config = getConfig()
-    const workspace = config.bitbucket.workspace
+    const workspace = getWorkspace()
     const userPrefix = gitUsername ? `${gitUsername}@` : ''
     return `https://${userPrefix}bitbucket.org/${workspace}/${slug.toLowerCase()}.git`
   }
@@ -558,17 +545,6 @@ export function createBitbucketProvider() {
   }
 }
 
-/**
- * Нормализация state-объекта пайплайна/шага в одну строку:
- *   SUCCESSFUL | FAILED | STOPPED | ERROR | EXPIRED |
- *   IN_PROGRESS | PAUSED | PENDING | HALTED
- *
- * Bitbucket отдаёт вложенный state:
- *   { name: 'COMPLETED', result: { name: 'SUCCESSFUL' } }
- *   { name: 'IN_PROGRESS', stage: { name: 'PAUSED' } }
- *   { name: 'PENDING' }
- * Нам в UI достаточно одного «итогового» статуса для иконки.
- */
 function normalizePipelineState(state) {
   if (!state) return 'PENDING'
   if (state.name === 'COMPLETED' && state.result?.name) {

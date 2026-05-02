@@ -14,6 +14,11 @@ import path from 'node:path'
 import fs from 'node:fs'
 import { getConfig } from './config-store.js'
 import { projectExists, projectPath } from './fs-service.js'
+import {
+  getProviderForSlug,
+  getSourceIdForSlug,
+  getSource
+} from './vcs/registry.js'
 
 /**
  * Клонирует репо в projectsRoot/slug.toLowerCase().
@@ -45,23 +50,33 @@ export async function clone(slug) {
     )
   }
 
-  const gitUsername = config.bitbucket.gitUsername
-  const workspace = config.bitbucket.workspace
-  if (!gitUsername) {
+  // Резолвим source проекта через VCS-реестр: он знает, какому
+  // источнику принадлежит slug, и отдаёт нам URL клона + gitUsername
+  // для credential-helper'а. Раньше тут жил хардкод на legacy
+  // `config.bitbucket.workspace/gitUsername` — теперь любой источник
+  // (и в Phase B GitHub) описывает свой URL сам.
+  const provider = getProviderForSlug(slug)
+  const sourceId = getSourceIdForSlug(slug)
+  const source = sourceId ? getSource(sourceId) : null
+  if (!provider || !source) {
     throw new Error(
-      'Bitbucket username (for git) not configured. Open Settings → Bitbucket.'
+      `${slug} not found in any VCS source. Refresh the projects list and retry.`
     )
   }
-  if (!workspace) {
+  if (!source.gitUsername) {
     throw new Error(
-      'Bitbucket workspace not configured. Open Settings → Bitbucket.'
+      `Git username not configured for source "${source.name}". Open Settings.`
+    )
+  }
+  if (!source.workspace) {
+    throw new Error(
+      `Workspace not configured for source "${source.name}". Open Settings.`
     )
   }
 
-  // Гарантируем существование parent-папки (projectsRoot)
   fs.mkdirSync(root, { recursive: true })
 
-  const url = `https://${gitUsername}@bitbucket.org/${workspace}/${slug.toLowerCase()}.git`
+  const url = provider.getCloneUrl(slug, source.gitUsername)
 
   const git = simpleGit({ baseDir: root, maxConcurrentProcesses: 1 })
 

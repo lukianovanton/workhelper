@@ -1,115 +1,122 @@
 /**
- * Тонкий shim над `vcs/bitbucket-provider.js`.
+ * Тонкий shim над VCS-registry.
  *
- * Phase A.1 рефакторинг: вся реальная логика переехала в provider.
+ * Phase A.4a: реальная маршрутизация переехала в `vcs/registry.js`.
  * Этот файл существует чтобы IPC-слой и enrich.js остались без
  * изменений — они продолжают `import { listProjects, ... } from
  * './bitbucket-client.js'`.
  *
- * Здесь:
- *  - держим singleton-инстанс `BitbucketProvider` (он stateless,
- *    каждый его метод сам читает свежий config; лень-инициализация
- *    избавляет от циркулярных импортов в момент загрузки модуля)
- *  - оборачиваем generic ProviderRepo обратно в полную Project-форму
- *    (с полем `bitbucket: {}`), которую ожидает остальной код. В
- *    Phase A.3 эта форма уйдёт, и shim превратится в чистый
- *    делегат без маппинга.
- *
- * Имя экспортов и сигнатуры идентичны исходным, поэтому диф
- * импортов в IPC = ноль.
+ * Каждый метод per-slug резолвит провайдера через
+ * `registry.getProviderForSlug(slug)` — на момент A.4a это
+ * единственный default BB-source, в A.4b начнёт находить нужный
+ * source среди нескольких.
  *
  * @typedef {import('../../shared/types.js').Project} Project
  * @typedef {import('./vcs/types.js').ProviderRepo} ProviderRepo
- * @typedef {import('./vcs/types.js').VcsProvider} VcsProvider
  */
 
-import { createBitbucketProvider } from './vcs/bitbucket-provider.js'
+import {
+  getProvider,
+  getProviderForSlug,
+  listAllRepos as registryListAllRepos
+} from './vcs/registry.js'
 
-/** @type {VcsProvider | null} */
-let _provider = null
+const DEFAULT_BB_SOURCE_ID = 'bitbucket-default'
 
-function provider() {
-  if (!_provider) _provider = createBitbucketProvider()
-  return _provider
-}
-
+/**
+ * Тестируем дефолтный source. В A.4b появится новый IPC `sources:test`
+ * который тестит конкретный source по id. Этот шорткат остаётся для
+ * совместимости (`bitbucket:test` IPC).
+ */
 export function testConnection() {
-  return provider().testConnection()
+  const provider = getProvider(DEFAULT_BB_SOURCE_ID)
+  if (!provider) {
+    return Promise.resolve({
+      ok: false,
+      stage: 'config',
+      message: 'No Bitbucket source configured.'
+    })
+  }
+  return provider.testConnection()
 }
 
 /**
- * Полный список репо без кэша. Используется внутри listProjects;
- * экспортируем потому что один out-of-tree вызов остался в тестах
- * чекпоинтов — на всякий случай.
+ * Полный список репо без кэша. Используется только тестами чекпоинтов.
  *
  * @returns {Promise<Project[]>}
  */
 export async function listRepositories() {
-  const repos = await provider().listRepos(true)
-  return repos.map(toProjectShape)
+  const items = await registryListAllRepos(true)
+  return items.map(toProjectShape)
 }
 
 /**
- * Список проектов с кэшем. Кэш живёт внутри provider.listRepos.
+ * Список проектов с кэшем. Кэш живёт per-source внутри provider.listRepos.
  *
  * @param {boolean} forceRefresh
  * @returns {Promise<Project[]>}
  */
 export async function listProjects(forceRefresh = false) {
-  const repos = await provider().listRepos(forceRefresh)
-  return repos.map(toProjectShape)
+  const items = await registryListAllRepos(forceRefresh)
+  return items.map(toProjectShape)
 }
 
 export function getCommits(slug, opts) {
-  return provider().getCommits(slug, opts)
+  const provider = getProviderForSlug(slug)
+  return provider ? provider.getCommits(slug, opts) : Promise.resolve([])
 }
 
 export function getCommitDetail(slug, hash) {
-  return provider().getCommitDetail(slug, hash)
+  const provider = getProviderForSlug(slug)
+  return provider ? provider.getCommitDetail(slug, hash) : Promise.resolve(null)
 }
 
 export function getCommitFileDiff(slug, hash, path) {
-  return provider().getCommitFileDiff(slug, hash, path)
+  const provider = getProviderForSlug(slug)
+  return provider
+    ? provider.getCommitFileDiff(slug, hash, path)
+    : Promise.resolve('')
 }
 
 export function getBranches(slug) {
-  return provider().getBranches(slug)
+  const provider = getProviderForSlug(slug)
+  return provider
+    ? provider.getBranches(slug)
+    : Promise.resolve({ defaultBranch: null, branches: [] })
 }
 
 export function getPipelines(slug, opts) {
-  return provider().getBuilds(slug, opts)
+  const provider = getProviderForSlug(slug)
+  return provider ? provider.getBuilds(slug, opts) : Promise.resolve([])
 }
 
 export function getPipelineSteps(slug, pipelineUuid) {
-  return provider().getBuildSteps(slug, pipelineUuid)
+  const provider = getProviderForSlug(slug)
+  return provider
+    ? provider.getBuildSteps(slug, pipelineUuid)
+    : Promise.resolve([])
 }
 
 export function getPipelineStepLog(slug, pipelineUuid, stepUuid) {
-  return provider().getBuildStepLog(slug, pipelineUuid, stepUuid)
+  const provider = getProviderForSlug(slug)
+  return provider
+    ? provider.getBuildStepLog(slug, pipelineUuid, stepUuid)
+    : Promise.resolve('')
 }
 
 export function getLastCommit(slug) {
-  return provider().getLastCommit(slug)
+  const provider = getProviderForSlug(slug)
+  return provider ? provider.getLastCommit(slug) : Promise.resolve(null)
 }
 
 /**
- * ID единственного на сегодня BB-источника. В Phase A.4 (мульти-source
- * UI) каждый source получит свой UUID, и этот хардкод сменится на
- * id из конфига. Но сама форма ссылки `source: { providerId, repoSlug }`
- * уже стабильна — переход не повлияет на код вне settings.
- */
-const DEFAULT_BB_SOURCE_ID = 'bitbucket-default'
-
-/**
- * Маппинг generic ProviderRepo → Project (новая форма Phase A.3:
- * source-ссылка + плоские url/cloneUrl/updatedOn вместо `bitbucket: {}`).
- * Local/db/runtime заполняются нулевыми значениями — enrichProjects
- * подтягивает реальные.
+ * Маппинг {sourceId, repo} → Project. Source.providerId фиксируется
+ * на конкретном source'е, проброшенном из реестра.
  *
- * @param {ProviderRepo} repo
+ * @param {{ sourceId: string, repo: ProviderRepo }} item
  * @returns {Project}
  */
-function toProjectShape(repo) {
+function toProjectShape({ sourceId, repo }) {
   const slugLower = (repo.slug || '').toLowerCase()
   return {
     slug: repo.slug,
@@ -117,7 +124,7 @@ function toProjectShape(repo) {
     description: repo.description || '',
     kind: repo.kind,
     source: {
-      providerId: DEFAULT_BB_SOURCE_ID,
+      providerId: sourceId,
       repoSlug: repo.slug,
       providerData: repo.projectKey ? { projectKey: repo.projectKey } : {}
     },
