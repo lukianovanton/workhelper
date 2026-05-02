@@ -192,7 +192,11 @@ export async function listAllRepos(forceRefresh = false) {
     for (const repo of repos) {
       if (!slugToSourceId.has(repo.slug)) {
         slugToSourceId.set(repo.slug, source.id)
-        out.push({ sourceId: source.id, repo })
+        out.push({
+          sourceId: source.id,
+          sourceType: source.type,
+          repo
+        })
       }
       // Иначе slug уже занят первым источником — пропускаем.
     }

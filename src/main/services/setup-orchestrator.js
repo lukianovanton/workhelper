@@ -55,7 +55,7 @@ export function cancelSetup(slug) {
 
 /**
  * @param {string} slug
- * @param {{dumpPath?:string|null, skipRestore?:boolean, runAfter?:boolean}} options
+ * @param {{dumpPath?:string|null, skipRestore?:boolean, skipDb?:boolean, runAfter?:boolean, openWorkspace?:boolean}} options
  * @param {(step: import('../../shared/types.js').SetupStep) => void} emitStep
  */
 export async function runFull(slug, options, emitStep) {
@@ -115,64 +115,79 @@ export async function runFull(slug, options, emitStep) {
     }
 
     // ─── b) db-create ────────────────────────────────────────────────
+    // skipDb=true (например, фронтенд-проекту БД не нужна) пропускает
+    // и db-create, и db-restore целиком. emit'им done со статусом
+    // 'Skipped' чтобы UI отрисовал прогресс-чеклист в полном виде.
     checkCancel()
-    if (!dbEngine) {
-      errorStep(
-        'db-create',
-        'No database engine configured. Open Settings → Databases.'
-      )
-      throw new Error('No database engine configured')
-    }
-    let dbExisted = false
-    try {
-      const dbs = await dbEngine.listDatabases()
-      dbExisted = dbs.has(dbName)
-    } catch (e) {
-      errorStep(
-        'db-create',
-        `Cannot reach DB: ${e?.message || String(e)}`
-      )
-      throw e
-    }
-
-    if (dbExisted) {
+    if (options?.skipDb) {
       emitStep({
         kind: 'db-create',
         status: 'done',
-        message: 'Already exists'
+        message: 'Skipped (no DB needed)'
+      })
+      emitStep({
+        kind: 'db-restore',
+        status: 'done',
+        message: 'Skipped (no DB needed)'
       })
     } else {
-      const t = beginStep('db-create')
+      if (!dbEngine) {
+        errorStep(
+          'db-create',
+          'No database engine configured. Open Settings → Databases.'
+        )
+        throw new Error('No database engine configured')
+      }
+      let dbExisted = false
       try {
-        await dbEngine.createDatabase(dbName)
+        const dbs = await dbEngine.listDatabases()
+        dbExisted = dbs.has(dbName)
       } catch (e) {
-        errorStep('db-create', e?.message || String(e))
+        errorStep(
+          'db-create',
+          `Cannot reach DB: ${e?.message || String(e)}`
+        )
         throw e
       }
-      endStep('db-create', t)
-    }
 
-    // ─── c) db-restore ───────────────────────────────────────────────
-    checkCancel()
-    let dumpPath = options?.dumpPath || null
-    if (!dumpPath && !options?.skipRestore) {
-      const dump = await fsService.findDump(config.paths.dumpsRoot, slug)
-      if (dump) dumpPath = dump.path
-    }
+      if (dbExisted) {
+        emitStep({
+          kind: 'db-create',
+          status: 'done',
+          message: 'Already exists'
+        })
+      } else {
+        const t = beginStep('db-create')
+        try {
+          await dbEngine.createDatabase(dbName)
+        } catch (e) {
+          errorStep('db-create', e?.message || String(e))
+          throw e
+        }
+        endStep('db-create', t)
+      }
 
-    if (options?.skipRestore) {
-      emitStep({
-        kind: 'db-restore',
-        status: 'done',
-        message: 'Skipped (user choice)'
-      })
-    } else if (!dumpPath) {
-      emitStep({
-        kind: 'db-restore',
-        status: 'done',
-        message: 'No dump available, skipped'
-      })
-    } else {
+      // ─── c) db-restore ─────────────────────────────────────────────
+      checkCancel()
+      let dumpPath = options?.dumpPath || null
+      if (!dumpPath && !options?.skipRestore) {
+        const dump = await fsService.findDump(config.paths.dumpsRoot, slug)
+        if (dump) dumpPath = dump.path
+      }
+
+      if (options?.skipRestore) {
+        emitStep({
+          kind: 'db-restore',
+          status: 'done',
+          message: 'Skipped (user choice)'
+        })
+      } else if (!dumpPath) {
+        emitStep({
+          kind: 'db-restore',
+          status: 'done',
+          message: 'No dump available, skipped'
+        })
+      } else {
       const t = beginStep('db-restore')
       try {
         await dbEngine.restoreDatabase(
@@ -199,6 +214,7 @@ export async function runFull(slug, options, emitStep) {
         throw e
       }
       endStep('db-restore', t)
+      }
     }
 
     // ─── d) workspace (optional, opt-in) ─────────────────────────────

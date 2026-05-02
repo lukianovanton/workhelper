@@ -26,20 +26,14 @@
 /**
  * @typedef {Object} ProjectSource
  * @property {string} providerId             ссылка на сконфигурированный
- *                                            VCS-источник (Phase A.4 даст
- *                                            пользователю несколько). До
- *                                            миграции — фиксированный
- *                                            'bitbucket-default'.
- * @property {string} repoSlug                slug у провайдера. У BB и GH
- *                                            slug уникален в рамках
- *                                            workspace/owner — соответствие
- *                                            (providerId + repoSlug)
- *                                            идентифицирует репо однозначно.
+ *                                            VCS-источник.
+ * @property {('bitbucket'|'github')} [type]  type provider'а — продублирован
+ *                                            из VcsSourceConfig, чтобы UI
+ *                                            мог рисовать бейдж без
+ *                                            дополнительного запроса.
+ * @property {string} repoSlug                slug у провайдера.
  * @property {{ projectKey?: string }} [providerData]
- *                                            Provider-specific extras которые
- *                                            UI хочет показать как-есть
- *                                            (BB project.key для тултипа kind).
- *                                            Не используется логикой ядра.
+ *                                            Provider-specific extras.
  */
 
 /**

@@ -49,8 +49,11 @@ export function SetupDialog({ project, open, onOpenChange }) {
   const initialDumpPath = project.db.dumpPath || null
   const [dumpPath, setDumpPath] = useState(initialDumpPath)
   const [skipRestore, setSkipRestore] = useState(false)
-  // Опциональные пост-шаги — по умолчанию OFF, юзер сам включает
-  // если хочет «всё в одном клике».
+  // setupDb: создавать ли БД у проекта вообще. Дефолт — true для
+  // обратной совместимости и потому что у legacy-юзеров большинство
+  // проектов с БД. Юзер выключает для фронтенд-only / no-db проектов.
+  const [setupDb, setSetupDb] = useState(true)
+  // Опциональные пост-шаги — по умолчанию OFF.
   const [openWorkspace, setOpenWorkspace] = useState(false)
   const [runAfter, setRunAfter] = useState(false)
   const [acknowledgeReplace, setAcknowledgeReplace] = useState(false)
@@ -70,12 +73,28 @@ export function SetupDialog({ project, open, onOpenChange }) {
     if (!setupState) {
       setDumpPath(project.db.dumpPath || null)
       setSkipRestore(false)
+      // Дефолт setupDb: ON если у проекта уже есть DB-override (юзер
+      // явно привязал подключение / имя), ИЛИ если БД с таким slug
+      // уже существует (project.db.exists). Иначе считаем что DB не
+      // нужен и пред-выключаем — фронтенд-проекты без БД не должны
+      // спотыкаться об «No engine configured».
+      const hasDbBinding =
+        project.db.exists ||
+        (project.db.name && project.db.name !== '')
+      setSetupDb(!!hasDbBinding)
       setOpenWorkspace(false)
       setRunAfter(false)
       setAcknowledgeReplace(false)
       setSubmitError(null)
     }
-  }, [open, project.slug, project.db.dumpPath, setupState])
+  }, [
+    open,
+    project.slug,
+    project.db.dumpPath,
+    project.db.exists,
+    project.db.name,
+    setupState
+  ])
 
   // dump filename for display
   const dumpFilename = useMemo(() => {
@@ -84,7 +103,7 @@ export function SetupDialog({ project, open, onOpenChange }) {
   }, [dumpPath])
 
   const dbHasData = project.db.exists && (project.db.sizeBytes ?? 0) > 0
-  const willRestore = !skipRestore && !!dumpPath
+  const willRestore = setupDb && !skipRestore && !!dumpPath
   const willReplace = willRestore && dbHasData
   const canStart = !willReplace || acknowledgeReplace
 
@@ -109,8 +128,9 @@ export function SetupDialog({ project, open, onOpenChange }) {
     try {
       await api.setup.runFull({
         slug,
-        dumpPath: skipRestore ? null : dumpPath,
-        skipRestore,
+        dumpPath: setupDb && !skipRestore ? dumpPath : null,
+        skipRestore: !setupDb || skipRestore,
+        skipDb: !setupDb,
         openWorkspace,
         runAfter
       })
@@ -188,6 +208,8 @@ export function SetupDialog({ project, open, onOpenChange }) {
               project={project}
               dumpPath={dumpPath}
               dumpFilename={dumpFilename}
+              setupDb={setupDb}
+              setSetupDb={setSetupDb}
               skipRestore={skipRestore}
               setSkipRestore={setSkipRestore}
               openWorkspace={openWorkspace}
@@ -273,6 +295,8 @@ function PreFlight({
   project,
   dumpPath,
   dumpFilename,
+  setupDb,
+  setSetupDb,
   skipRestore,
   setSkipRestore,
   openWorkspace,
@@ -292,6 +316,12 @@ function PreFlight({
   const dbExists = project.db.exists
   const slug = project.slug
 
+  // Source-aware clone label: project.url приходит из VCS-провайдера и
+  // содержит реальный URL источника (https://github.com/<owner>/<slug>
+  // для GH или https://bitbucket.org/<ws>/<slug> для BB). Срезаем
+  // протокол для краткости.
+  const cloneOrigin = (project.url || '').replace(/^https?:\/\//, '')
+
   const dumpsRoot =
     project.db.dumpPath && dumpFilename
       ? project.db.dumpPath.slice(
@@ -308,63 +338,84 @@ function PreFlight({
         title={
           cloned
             ? `Skip clone — already cloned at ${project.local.path}`
-            : `Clone from bitbucket.org/${slug}`
-        }
-      />
-
-      <PreFlightItem
-        on={!dbExists}
-        skip={dbExists}
-        title={
-          dbExists
-            ? `Skip database create — ${project.db.name} already exists`
-            : `Create database ${project.db.name}`
+            : `Clone from ${cloneOrigin || slug}`
         }
       />
 
       <div className="space-y-2">
-        <PreFlightItem
-          on={!skipRestore && !!dumpPath}
-          skip={skipRestore || !dumpPath}
-          title={
-            !dumpPath
-              ? 'No dump auto-detected — choose file or skip'
-              : skipRestore
-              ? 'Skip database restore'
-              : `Restore from ${dumpFilename}`
-          }
-          right={
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onPickDump}
-              disabled={picking}
-            >
-              {picking ? (
-                <Loader2 className="animate-spin" />
-              ) : (
-                <FolderOpen />
-              )}
-              {dumpPath ? 'Change…' : 'Choose file…'}
-            </Button>
-          }
-        />
-        {dumpPath && dumpsRoot && (
+        <label className="flex items-center gap-2 text-sm select-none cursor-pointer">
+          <Checkbox
+            checked={setupDb}
+            onCheckedChange={(v) => setSetupDb(!!v)}
+          />
+          <span>Set up a database for this project</span>
+        </label>
+        {!setupDb && (
           <div className="pl-7 text-[11px] text-muted-foreground/70">
-            From <code className="text-[11px]">{dumpsRoot}</code>
+            DB create / restore steps are skipped. Pick this if the
+            project doesn't need a database (frontend-only, library,
+            etc.).
           </div>
         )}
-        {pickError && (
-          <div className="pl-7 text-xs text-destructive">{pickError}</div>
-        )}
-        <label className="pl-7 flex items-center gap-2 text-xs text-muted-foreground select-none cursor-pointer">
-          <Checkbox
-            checked={skipRestore}
-            onCheckedChange={(v) => setSkipRestore(!!v)}
-          />
-          <span>Skip database restore</span>
-        </label>
       </div>
+
+      {setupDb && (
+        <>
+          <PreFlightItem
+            on={!dbExists}
+            skip={dbExists}
+            title={
+              dbExists
+                ? `Skip database create — ${project.db.name} already exists`
+                : `Create database ${project.db.name}`
+            }
+          />
+
+          <div className="space-y-2">
+            <PreFlightItem
+              on={!skipRestore && !!dumpPath}
+              skip={skipRestore || !dumpPath}
+              title={
+                !dumpPath
+                  ? 'No dump auto-detected — choose file or skip'
+                  : skipRestore
+                  ? 'Skip database restore'
+                  : `Restore from ${dumpFilename}`
+              }
+              right={
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onPickDump}
+                  disabled={picking}
+                >
+                  {picking ? (
+                    <Loader2 className="animate-spin" />
+                  ) : (
+                    <FolderOpen />
+                  )}
+                  {dumpPath ? 'Change…' : 'Choose file…'}
+                </Button>
+              }
+            />
+            {dumpPath && dumpsRoot && (
+              <div className="pl-7 text-[11px] text-muted-foreground/70">
+                From <code className="text-[11px]">{dumpsRoot}</code>
+              </div>
+            )}
+            {pickError && (
+              <div className="pl-7 text-xs text-destructive">{pickError}</div>
+            )}
+            <label className="pl-7 flex items-center gap-2 text-xs text-muted-foreground select-none cursor-pointer">
+              <Checkbox
+                checked={skipRestore}
+                onCheckedChange={(v) => setSkipRestore(!!v)}
+              />
+              <span>Skip database restore</span>
+            </label>
+          </div>
+        </>
+      )}
 
       <div className="space-y-2 pt-2">
         <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
@@ -384,7 +435,7 @@ function PreFlight({
             onCheckedChange={(v) => setRunAfter(!!v)}
           />
           <Play size={14} className="text-muted-foreground" />
-          <span>Run dotnet after setup</span>
+          <span>Run after setup</span>
         </label>
       </div>
 

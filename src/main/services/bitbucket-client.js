@@ -110,13 +110,14 @@ export function getLastCommit(slug) {
 }
 
 /**
- * Маппинг {sourceId, repo} → Project. Source.providerId фиксируется
- * на конкретном source'е, проброшенном из реестра.
+ * Маппинг {sourceId, sourceType, repo} → Project. Source.type попадает
+ * в shape чтобы UI мог рисовать бейдж GH/BB без отдельного запроса
+ * к sources:list.
  *
- * @param {{ sourceId: string, repo: ProviderRepo }} item
+ * @param {{ sourceId: string, sourceType: string, repo: ProviderRepo }} item
  * @returns {Project}
  */
-function toProjectShape({ sourceId, repo }) {
+function toProjectShape({ sourceId, sourceType, repo }) {
   const slugLower = (repo.slug || '').toLowerCase()
   return {
     slug: repo.slug,
@@ -125,6 +126,7 @@ function toProjectShape({ sourceId, repo }) {
     kind: repo.kind,
     source: {
       providerId: sourceId,
+      type: sourceType,
       repoSlug: repo.slug,
       providerData: repo.projectKey ? { projectKey: repo.projectKey } : {}
     },

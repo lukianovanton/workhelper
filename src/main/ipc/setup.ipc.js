@@ -24,12 +24,15 @@ function broadcast(channel, payload) {
 export function registerSetupIpc() {
   ipcMain.handle(
     'setup:run-full',
-    async (_event, { slug, dumpPath, skipRestore, runAfter }) => {
+    async (
+      _event,
+      { slug, dumpPath, skipRestore, skipDb, openWorkspace, runAfter }
+    ) => {
       broadcast('setup:event', { slug, kind: 'started' })
       try {
         await orchestrator.runFull(
           slug,
-          { dumpPath, skipRestore, runAfter },
+          { dumpPath, skipRestore, skipDb, openWorkspace, runAfter },
           (step) => broadcast('setup:event', { slug, kind: 'step', step })
         )
         broadcast('setup:event', { slug, kind: 'finished' })

@@ -15,7 +15,9 @@ import {
   Package,
   FileCode2,
   GitPullRequest,
+  Github,
   CheckSquare,
+  Cloud,
   Filter,
   X as XIcon,
   Users,
@@ -923,6 +925,7 @@ function ProjectRow({
       </td>
       <td className={cn(cellPad, 'font-mono text-xs')}>
         <div className="inline-flex items-center gap-2">
+          <SourceBadge type={p.source?.type} />
           <Highlight text={p.slug} match={search} />
           {taskCount > 0 && (
             <span
@@ -1443,6 +1446,39 @@ function StatusDots({ project, runtime, lastPipeline, pipelineLoaded }) {
       )}
     </div>
   )
+}
+
+/**
+ * Маленький бейдж типа источника (GH / BB) рядом со slug в таблице.
+ * Делает однозначно понятным, откуда приехал репозиторий, при
+ * настроенных нескольких источниках разного типа.
+ *
+ * Lucide не имеет официальной иконки Bitbucket, поэтому BB рендерим
+ * через Cloud + цвет, GH через нативный Github icon.
+ */
+function SourceBadge({ type }) {
+  if (!type) return null
+  if (type === 'github') {
+    return (
+      <span
+        title="GitHub"
+        className="inline-flex items-center text-muted-foreground/60 shrink-0"
+      >
+        <Github size={12} />
+      </span>
+    )
+  }
+  if (type === 'bitbucket') {
+    return (
+      <span
+        title="Bitbucket"
+        className="inline-flex items-center text-sky-500/70 shrink-0"
+      >
+        <Cloud size={12} />
+      </span>
+    )
+  }
+  return null
 }
 
 function KindBadge({ kind, projectKey }) {
