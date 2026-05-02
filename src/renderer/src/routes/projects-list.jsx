@@ -39,7 +39,7 @@ import { usePresence } from '@/hooks/use-presence'
 import { useBuilds } from '@/hooks/use-vcs'
 import {
   useMyJiraIssues,
-  parseSlugFromProjectName
+  resolveSlugForJiraProject
 } from '@/hooks/use-jira'
 import { PipelineStateBadge } from '@/routes/project-detail'
 import { WorkspaceNav } from '@/routes/my-tasks'
@@ -159,6 +159,7 @@ export default function ProjectsList() {
   const toggleFavorite = useProjectsMetaStore((s) => s.toggleFavorite)
   const categories = useProjectsMetaStore((s) => s.categories)
   const setCategory = useProjectsMetaStore((s) => s.setCategory)
+  const jiraBindings = useProjectsMetaStore((s) => s.jiraBindings)
   const recent = useProjectsMetaStore((s) => s.recent)
   const density = usePrefsStore((s) => s.density)
   const searchHighlight = usePrefsStore((s) => s.searchHighlight)
@@ -251,11 +252,14 @@ export default function ProjectsList() {
   const taskCountBySlug = useMemo(() => {
     const map = new Map()
     for (const issue of myIssuesQuery.data?.issues || []) {
-      const slug = parseSlugFromProjectName(issue?.project?.name)
+      // resolveSlugForJiraProject: явный binding > auto-парс из имени.
+      // Так Jira-проект «AQ» (без slug в имени) попадает в счётчик
+      // нужного репо после привязки в Tasks-табе.
+      const slug = resolveSlugForJiraProject(issue?.project, jiraBindings)
       if (slug) map.set(slug, (map.get(slug) || 0) + 1)
     }
     return map
-  }, [myIssuesQuery.data])
+  }, [myIssuesQuery.data, jiraBindings])
 
   // Список уникальных источников из текущей выборки проектов —
   // используется для multi-select фильтра колонки Source. Ключ —

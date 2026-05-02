@@ -47,6 +47,7 @@ import {
 } from '@/hooks/use-vcs'
 import {
   useJiraProjectForSlug,
+  useJiraProjects,
   useProjectJiraIssues,
   useProjectClosedJiraIssues,
   useMyJiraIssues,
@@ -80,6 +81,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle
 } from '@/components/ui/alert-dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle
+} from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { api } from '@/api'
 
@@ -1389,6 +1398,13 @@ function TasksTab({ project, initialIssue }) {
   const { project: matchedJira, isLoading: projectsLoading } =
     useJiraProjectForSlug(slug)
   const { projects: allVcsProjects } = useProjects()
+  const jiraBindings = useProjectsMetaStore((s) => s.jiraBindings)
+  const setJiraBinding = useProjectsMetaStore((s) => s.setJiraBinding)
+  const [bindingDialogOpen, setBindingDialogOpen] = useState(false)
+  // matchedJira может быть найден auto-парсом ИЛИ через явный binding.
+  // Если jiraBindings[key] === slug — это explicit binding; иначе auto.
+  const isExplicitlyBound =
+    !!matchedJira && jiraBindings[matchedJira.key]?.toLowerCase() === slug.toLowerCase()
   const knownSlugs = useMemo(
     () => (allVcsProjects || []).map((p) => p.slug),
     [allVcsProjects]
@@ -1440,9 +1456,26 @@ function TasksTab({ project, initialIssue }) {
   }
   if (!matchedJira) {
     return (
-      <div className="p-6 text-sm text-muted-foreground space-y-2 max-w-md">
+      <div className="p-6 text-sm text-muted-foreground space-y-3 max-w-md">
         <p>{t('tasks.projectTab.noMatch.message', { slug })}</p>
         <p className="text-xs">{t('tasks.projectTab.noMatch.hint')}</p>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => setBindingDialogOpen(true)}
+        >
+          {t('tasks.projectTab.bindButton')}
+        </Button>
+        <JiraBindingDialog
+          open={bindingDialogOpen}
+          onOpenChange={setBindingDialogOpen}
+          slug={slug}
+          currentKey={null}
+          onPick={(jiraKey) => {
+            setJiraBinding(jiraKey, slug)
+            setBindingDialogOpen(false)
+          }}
+        />
       </div>
     )
   }
@@ -1483,13 +1516,41 @@ function TasksTab({ project, initialIssue }) {
 
   return (
     <div>
-      <div className="px-6 py-2 text-[11px] text-muted-foreground border-b border-border/40 bg-muted/10">
-        {t('tasks.projectTab.linkedProject')}{' '}
-        <code className="font-mono text-foreground/80">
-          {matchedJira.key}
-        </code>{' '}
-        — {matchedJira.name}
+      <div className="px-6 py-2 text-[11px] text-muted-foreground border-b border-border/40 bg-muted/10 flex items-center gap-2">
+        <span>
+          {t('tasks.projectTab.linkedProject')}{' '}
+          <code className="font-mono text-foreground/80">
+            {matchedJira.key}
+          </code>{' '}
+          — {matchedJira.name}
+          {isExplicitlyBound && (
+            <span className="ml-1.5 text-[10px] text-amber-400/80">
+              ({t('tasks.projectTab.manualBinding')})
+            </span>
+          )}
+        </span>
+        <button
+          onClick={() => setBindingDialogOpen(true)}
+          className="ml-auto text-[10px] text-muted-foreground hover:text-foreground underline"
+        >
+          {t('tasks.projectTab.changeBinding')}
+        </button>
       </div>
+      <JiraBindingDialog
+        open={bindingDialogOpen}
+        onOpenChange={setBindingDialogOpen}
+        slug={slug}
+        currentKey={matchedJira.key}
+        canUnbind={isExplicitlyBound}
+        onPick={(jiraKey) => {
+          setJiraBinding(jiraKey, slug)
+          setBindingDialogOpen(false)
+        }}
+        onUnbind={() => {
+          setJiraBinding(matchedJira.key, null)
+          setBindingDialogOpen(false)
+        }}
+      />
 
       {noOpen && (
         <div className="px-6 py-4 text-sm text-muted-foreground">
@@ -1556,6 +1617,109 @@ function TasksTab({ project, initialIssue }) {
  * Заголовок-разделитель группы тасков. Просто sticky-style
  * uppercase плашка с подсчётом, под ней дети (строки тасков).
  */
+/**
+ * Dialog для привязки Jira-проекта к текущему slug'у. Список всех
+ * доступных Jira-проектов (из useJiraProjects, кэширован), search-
+ * input для фильтрации по key/name, кнопка Unbind когда binding
+ * явный (auto-match unbind не имеет смысла — нечего убирать).
+ *
+ * После pick: caller вызывает setJiraBinding и закрывает dialog.
+ * Это пробрасывается через onPick / onUnbind props.
+ */
+function JiraBindingDialog({
+  open,
+  onOpenChange,
+  slug,
+  currentKey,
+  canUnbind,
+  onPick,
+  onUnbind
+}) {
+  const t = useT()
+  const projectsQuery = useJiraProjects()
+  const [filter, setFilter] = useState('')
+  const list = useMemo(() => {
+    const all = projectsQuery.data || []
+    const q = filter.trim().toLowerCase()
+    if (!q) return all
+    return all.filter(
+      (p) =>
+        (p.key && p.key.toLowerCase().includes(q)) ||
+        (p.name && p.name.toLowerCase().includes(q))
+    )
+  }, [projectsQuery.data, filter])
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        onOpenChange(o)
+        if (!o) setFilter('')
+      }}
+    >
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>
+            {t('tasks.projectTab.bindDialog.title', { slug })}
+          </DialogTitle>
+          <DialogDescription>
+            {t('tasks.projectTab.bindDialog.description')}
+          </DialogDescription>
+        </DialogHeader>
+        <input
+          autoFocus
+          type="text"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          placeholder={t('tasks.projectTab.bindDialog.searchPlaceholder')}
+          className="w-full bg-background border border-input rounded-md px-3 py-1.5 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        />
+        <div className="max-h-72 overflow-y-auto border border-border rounded-md divide-y divide-border/60">
+          {projectsQuery.isLoading && (
+            <div className="px-3 py-4 text-xs text-muted-foreground inline-flex items-center gap-2">
+              <Loader2 size={12} className="animate-spin" />
+              {t('common.loading')}
+            </div>
+          )}
+          {!projectsQuery.isLoading && list.length === 0 && (
+            <div className="px-3 py-4 text-xs text-muted-foreground italic">
+              {t('common.noOptions')}
+            </div>
+          )}
+          {list.map((p) => {
+            const active = p.key === currentKey
+            return (
+              <button
+                key={p.key}
+                type="button"
+                onClick={() => onPick(p.key)}
+                className={cn(
+                  'w-full text-left px-3 py-1.5 text-sm hover:bg-accent transition-colors flex items-center gap-2',
+                  active && 'bg-accent/50'
+                )}
+              >
+                <code className="font-mono text-xs text-foreground/80 shrink-0">
+                  {p.key}
+                </code>
+                <span className="text-muted-foreground truncate">
+                  {p.name}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+        {canUnbind && (
+          <DialogFooter>
+            <Button variant="ghost" size="sm" onClick={onUnbind}>
+              <X size={12} />
+              {t('tasks.projectTab.bindDialog.unbind')}
+            </Button>
+          </DialogFooter>
+        )}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 function TaskGroup({ label, accentCls, count, children }) {
   return (
     <div>

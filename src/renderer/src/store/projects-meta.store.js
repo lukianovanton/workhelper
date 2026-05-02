@@ -10,13 +10,18 @@ import { create } from 'zustand'
  * (если потребуется, можно через cloud-sync позже).
  *
  * Shape:
- *   favorites:  { [slug]: true } — set-style для O(1) проверки
- *   recent:     [{ slug, ts }] — LRU last 20
- *   notes:      { [slug]: string }
- *   categories: { [slug]: categoryId } — пользовательский override
- *               для бейджа в колонке Kind. Если slug отсутствует —
- *               категория автодетектится из project.kind (project /
- *               template). См. lib/project-categories.jsx.
+ *   favorites:    { [slug]: true } — set-style для O(1) проверки
+ *   recent:       [{ slug, ts }] — LRU last 20
+ *   notes:        { [slug]: string }
+ *   categories:   { [slug]: categoryId } — пользовательский override
+ *                 для бейджа в колонке Kind. Если slug отсутствует —
+ *                 категория автодетектится из project.kind (project /
+ *                 template). См. lib/project-categories.jsx.
+ *   jiraBindings: { [jiraProjectKey]: slug } — явная привязка Jira-
+ *                 проекта (например AQ) к WorkHelper-слагу. Перебивает
+ *                 auto-парсинг slug'а из имени Jira-проекта. Нужно для
+ *                 случаев, когда Jira project name не содержит slug
+ *                 (короткий kодовый key типа AQ → repo aquisition-crm).
  */
 
 const KEY = 'workhelper-projects-meta'
@@ -26,7 +31,8 @@ const DEFAULTS = {
   favorites: {},
   recent: [],
   notes: {},
-  categories: {}
+  categories: {},
+  jiraBindings: {}
 }
 
 function load() {
@@ -45,6 +51,10 @@ function load() {
       categories:
         parsed && typeof parsed.categories === 'object'
           ? parsed.categories
+          : {},
+      jiraBindings:
+        parsed && typeof parsed.jiraBindings === 'object'
+          ? parsed.jiraBindings
           : {}
     }
   } catch {
@@ -60,7 +70,8 @@ function persist(state) {
         favorites: state.favorites,
         recent: state.recent,
         notes: state.notes,
-        categories: state.categories
+        categories: state.categories,
+        jiraBindings: state.jiraBindings
       })
     )
   } catch {
@@ -116,6 +127,22 @@ export const useProjectsMetaStore = create((set, get) => ({
       if (categoryId) next[slug] = categoryId
       else delete next[slug]
       return { categories: next }
+    })
+    persist(get())
+  },
+
+  /**
+   * Привязать Jira-проект (по его key, например 'AQ') к WorkHelper-
+   * slug'у. Перебивает auto-парсинг slug'а из имени Jira-проекта.
+   * null / '' стирают binding (возврат к auto-парсу).
+   */
+  setJiraBinding: (jiraProjectKey, slug) => {
+    if (!jiraProjectKey) return
+    set((s) => {
+      const next = { ...s.jiraBindings }
+      if (slug) next[jiraProjectKey] = slug
+      else delete next[jiraProjectKey]
+      return { jiraBindings: next }
     })
     persist(get())
   }

@@ -29,8 +29,10 @@ import {
   useAddJiraComment,
   useSetJiraAssignee,
   useApplyJiraTransition,
-  parseSlugFromProjectName
+  parseSlugFromProjectName,
+  resolveSlugForJiraProject
 } from '@/hooks/use-jira'
+import { useProjectsMetaStore } from '@/store/projects-meta.store.js'
 import { useProjects } from '@/hooks/use-projects'
 import { AdfRenderer } from '@/components/adf-renderer'
 import {
@@ -546,7 +548,11 @@ function ProjectLine({ project, issueKey }) {
   const t = useT()
   const navigate = useNavigate()
   const { projects: vcsProjects } = useProjects()
-  const candidate = parseSlugFromProjectName(project?.name)
+  const jiraBindings = useProjectsMetaStore((s) => s.jiraBindings)
+  // Сначала проверяем явный binding (jira-key → slug), потом fallback
+  // на auto-парс из имени проекта. Если binding указывает на repo
+  // которого нет в текущем списке — fall through на auto-логику.
+  const candidate = resolveSlugForJiraProject(project, jiraBindings)
   const matched = useMemo(() => {
     if (!candidate || !vcsProjects) return null
     return (

@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { api } from '@/api'
+import { useProjectsMetaStore } from '@/store/projects-meta.store.js'
 
 const ONE_MIN = 60 * 1000
 const TWO_MIN = 2 * 60 * 1000
@@ -113,10 +114,11 @@ export function useJiraIssueDetail(issueKey, opts = {}) {
  */
 export function useJiraProjectForSlug(slug) {
   const projectsQuery = useJiraProjects()
+  const jiraBindings = useProjectsMetaStore((s) => s.jiraBindings)
   const matched = useMemo(() => {
     if (!slug || !projectsQuery.data) return null
-    return findProjectForSlug(projectsQuery.data, slug)
-  }, [slug, projectsQuery.data])
+    return findProjectForSlug(projectsQuery.data, slug, jiraBindings)
+  }, [slug, projectsQuery.data, jiraBindings])
   return {
     project: matched,
     isLoading: projectsQuery.isLoading,
@@ -242,19 +244,60 @@ export function parseSlugFromProjectName(name) {
 }
 
 /**
+ * Резолвит slug для Jira-проекта: сначала проверяет явный binding по
+ * key'у, потом fallback на auto-парс из имени. Возвращает lowercase
+ * slug или null.
+ *
+ * @param {{ key: string, name: string }} jiraProject
+ * @param {Record<string, string>} [jiraBindings]
+ * @returns {string|null}
+ */
+export function resolveSlugForJiraProject(jiraProject, jiraBindings) {
+  if (!jiraProject) return null
+  if (jiraBindings && jiraProject.key) {
+    const bound = jiraBindings[jiraProject.key]
+    if (typeof bound === 'string' && bound.trim()) return bound.toLowerCase()
+  }
+  return parseSlugFromProjectName(jiraProject.name)
+}
+
+/**
  * Чистая функция matching'а — экспортируется для тестов и для
- * использования в других хуках (mismatch detector). Строгий
- * префикс: имя Jira-проекта должно начинаться с slug'а
- * (case-insensitive), и сразу за ним должен идти не-alnum
- * символ либо конец строки. Так "p0066- Zeiad" матчит "p0066",
- * но "p00669-foo" — нет, и "p0066alfa" — нет.
+ * использования в других хуках (mismatch detector).
+ *
+ * Двухступенчатая логика:
+ *   1. jiraBindings: явная привязка `{ jiraProjectKey: slug }` пере-
+ *      бивает auto-парс. Если какой-то Jira-проект забинден на slug,
+ *      возвращаем его. Это для случаев, когда имя Jira-проекта не
+ *      содержит slug (короткий kодовый key типа AQ → repo aquisition).
+ *   2. auto-prefix-match: имя Jira-проекта должно начинаться с slug'а
+ *      (case-insensitive), и сразу за ним должен идти не-alnum символ
+ *      либо конец строки. Так "p0066- Zeiad" матчит "p0066", но
+ *      "p00669-foo" — нет, и "p0066alfa" — нет.
  *
  * @param {Array<{ key: string, name: string }>} projects
  * @param {string} slug
+ * @param {Record<string, string>} [jiraBindings]
  */
-export function findProjectForSlug(projects, slug) {
+export function findProjectForSlug(projects, slug, jiraBindings) {
   if (!slug || !Array.isArray(projects)) return null
   const lower = slug.toLowerCase()
+  // Шаг 1: явные bindings (jira-key → slug). Ищем jira-key, замапленный
+  // на наш slug (lowercase-aware), и берём проект с этим key'ом из
+  // списка. Если binding указывает на удалённый/несуществующий Jira-
+  // проект — fall through на auto-парс.
+  if (jiraBindings && typeof jiraBindings === 'object') {
+    for (const [jiraKey, boundSlug] of Object.entries(jiraBindings)) {
+      if (typeof boundSlug !== 'string') continue
+      if (boundSlug.toLowerCase() === lower) {
+        const found = projects.find(
+          (p) => p?.key && p.key.toUpperCase() === jiraKey.toUpperCase()
+        )
+        if (found) return found
+      }
+    }
+  }
+  // Шаг 2: auto-prefix-match по имени Jira-проекта.
   const escaped = lower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const re = new RegExp(`^${escaped}(?:[^a-z0-9].*)?$`, 'i')
   for (const p of projects) {
