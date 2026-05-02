@@ -135,13 +135,29 @@ export const useProjectsMetaStore = create((set, get) => ({
    * Привязать Jira-проект (по его key, например 'AQ') к WorkHelper-
    * slug'у. Перебивает auto-парсинг slug'а из имени Jira-проекта.
    * null / '' стирают binding (возврат к auto-парсу).
+   *
+   * Enforces 1:1 между slug'ом и Jira-проектом: при выставлении
+   * нового binding'а удаляем любые другие ключи, ссылающиеся на этот
+   * же slug. Без этого, если юзер сначала привязал AQ→aquisition, а
+   * потом меняет на BQ→aquisition, в map'е оставались бы обе записи,
+   * findProjectForSlug возвращал бы первый match (AQ, insertion
+   * order) — UI не отражал бы изменение.
    */
   setJiraBinding: (jiraProjectKey, slug) => {
     if (!jiraProjectKey) return
     set((s) => {
       const next = { ...s.jiraBindings }
-      if (slug) next[jiraProjectKey] = slug
-      else delete next[jiraProjectKey]
+      if (slug) {
+        const lower = slug.toLowerCase()
+        for (const k of Object.keys(next)) {
+          if (k !== jiraProjectKey && next[k]?.toLowerCase() === lower) {
+            delete next[k]
+          }
+        }
+        next[jiraProjectKey] = slug
+      } else {
+        delete next[jiraProjectKey]
+      }
       return { jiraBindings: next }
     })
     persist(get())
