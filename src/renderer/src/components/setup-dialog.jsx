@@ -71,6 +71,10 @@ export function SetupDialog({ project, open, onOpenChange }) {
   // системная версия, Volta info, satisfied-флаг. Если репо не Node —
   // required = null и UI ничего не рендерит.
   const [nodeStatus, setNodeStatus] = useState(null)
+  // Toolchain: VS Build Tools + Python detection + missing-list для
+  // native-deps. Если у проекта нет нативных модулей и не Node —
+  // UI ничего не рендерит.
+  const [toolchainStatus, setToolchainStatus] = useState(null)
   const phase = setupState?.phase ?? 'pre-flight'
   const isRunning = phase === 'running'
   const isTerminal =
@@ -112,6 +116,7 @@ export function SetupDialog({ project, open, onOpenChange }) {
     if (!open) {
       setDetectedStack(null)
       setNodeStatus(null)
+      setToolchainStatus(null)
       userTouchedSetupDbRef.current = false
       return
     }
@@ -132,6 +137,12 @@ export function SetupDialog({ project, open, onOpenChange }) {
       if (cancelled) return
       setNodeStatus(s || null)
     })
+    // Toolchain status — native deps + системные tool'ы. Для не-Node
+    // / no-native проектов banner не рендерится.
+    api.toolchain?.status?.(project.slug).then((s) => {
+      if (cancelled) return
+      setToolchainStatus(s || null)
+    })
     return () => {
       cancelled = true
     }
@@ -144,6 +155,15 @@ export function SetupDialog({ project, open, onOpenChange }) {
     try {
       const s = await api.node?.status?.(project.slug)
       setNodeStatus(s || null)
+    } catch {
+      // ignore
+    }
+  }
+  const refetchToolchain = async () => {
+    try {
+      await api.toolchain?.invalidateCache?.()
+      const s = await api.toolchain?.status?.(project.slug)
+      setToolchainStatus(s || null)
     } catch {
       // ignore
     }
@@ -271,6 +291,8 @@ export function SetupDialog({ project, open, onOpenChange }) {
               detectedStack={detectedStack}
               nodeStatus={nodeStatus}
               refetchNodeStatus={refetchNodeStatus}
+              toolchainStatus={toolchainStatus}
+              refetchToolchain={refetchToolchain}
               skipRestore={skipRestore}
               setSkipRestore={setSkipRestore}
               openWorkspace={openWorkspace}
@@ -361,6 +383,8 @@ function PreFlight({
   detectedStack,
   nodeStatus,
   refetchNodeStatus,
+  toolchainStatus,
+  refetchToolchain,
   skipRestore,
   setSkipRestore,
   openWorkspace,
@@ -416,6 +440,11 @@ function PreFlight({
         project={project}
         status={nodeStatus}
         onStatusRefetch={refetchNodeStatus}
+      />
+
+      <ToolchainBanner
+        status={toolchainStatus}
+        onRefetch={refetchToolchain}
       />
 
 
@@ -831,6 +860,141 @@ function NodeStatusBanner({ project, status, onStatusRefetch }) {
   )
 }
 
+/**
+ * Toolchain banner — VS Build Tools + Python для node-gyp нативных
+ * сборок. Рендерится только если у проекта есть нативные deps И на
+ * системе чего-то не хватает.
+ *
+ * Не-Node проекты: server возвращает requirements=null → банер скрыт.
+ * Node без native-deps: missing.ok=true → банер скрыт.
+ * Node с native-deps + всё уже стоит: тоже missing.ok=true → скрыт.
+ *
+ * Состояние «надо ставить»: показываем список missing tools + кнопки
+ * установки. Build Tools — UAC required (объяснение в подсказке);
+ * Python — silent per-user. После каждой install'ки refetch'аем
+ * toolchainStatus так что UI прогрессивно зеленеет.
+ */
+function ToolchainBanner({ status, onRefetch }) {
+  const [installing, setInstalling] = useState(null) // 'buildTools' | 'python' | null
+  const [lastResult, setLastResult] = useState(null)
+
+  if (!status) return null
+  const { requirements, state, missing } = status
+  if (!requirements?.isNodeProject) return null
+  if (!requirements.node.nativeDeps?.length) return null
+  if (missing.ok) {
+    // Всё хорошо для этого проекта.
+    return (
+      <div className="rounded-md border border-emerald-500/30 bg-emerald-500/5 text-emerald-400 px-3 py-2 text-xs flex items-start gap-2">
+        <CheckCircle2 size={14} className="mt-0.5 shrink-0" />
+        <span>
+          Native build toolchain ready — <code>
+            {requirements.node.nativeDeps.slice(0, 3).join(', ')}
+            {requirements.node.nativeDeps.length > 3 ? ', …' : ''}
+          </code>
+          {' '}can compile.
+        </span>
+      </div>
+    )
+  }
+
+  const onInstall = async (which) => {
+    setInstalling(which)
+    setLastResult(null)
+    try {
+      const fn =
+        which === 'buildTools'
+          ? api.toolchain.installBuildTools
+          : api.toolchain.installPython
+      const result = await fn()
+      setLastResult({ which, ...result })
+      if (result.ok && onRefetch) await onRefetch()
+    } catch (e) {
+      setLastResult({
+        which,
+        ok: false,
+        message: e?.message || String(e)
+      })
+    } finally {
+      setInstalling(null)
+    }
+  }
+
+  const buildToolsNeeded = missing.buildTools
+  const pythonNeeded = missing.python
+
+  return (
+    <div className="rounded-md border border-amber-500/30 bg-amber-500/5 text-amber-400 px-3 py-2 text-xs flex items-start gap-2">
+      <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+      <div className="flex-1 space-y-2">
+        <div>
+          Project has native dependencies (
+          <code>
+            {requirements.node.nativeDeps.slice(0, 3).join(', ')}
+            {requirements.node.nativeDeps.length > 3 ? ', …' : ''}
+          </code>
+          ) which require system build tools to compile during npm install.
+          Missing on this machine:
+          <ul className="list-disc pl-5 mt-1 space-y-0.5">
+            {missing.reasons.map((r, i) => (
+              <li key={i}>{r}</li>
+            ))}
+          </ul>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {buildToolsNeeded && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7"
+              onClick={() => onInstall('buildTools')}
+              disabled={installing != null}
+              title="Visual Studio Build Tools — Microsoft installer, ~2GB. Triggers a UAC prompt."
+            >
+              {installing === 'buildTools' && (
+                <Loader2 size={12} className="animate-spin" />
+              )}
+              Install Build Tools (UAC)
+            </Button>
+          )}
+          {pythonNeeded && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7"
+              onClick={() => onInstall('python')}
+              disabled={installing != null}
+              title="Python 3.12 per-user install (~25 MB). No UAC needed."
+            >
+              {installing === 'python' && (
+                <Loader2 size={12} className="animate-spin" />
+              )}
+              Install Python
+            </Button>
+          )}
+        </div>
+        {installing === 'buildTools' && (
+          <div className="text-[11px] text-muted-foreground">
+            Build Tools installer is running quietly (~5–15 minutes,
+            ~2 GB download). The system progress dialog may appear briefly.
+            You can leave this dialog open.
+          </div>
+        )}
+        {lastResult && (
+          <div
+            className={cn(
+              'text-[11px]',
+              lastResult.ok ? 'text-emerald-500' : 'text-destructive'
+            )}
+          >
+            {lastResult.message}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function PreFlightItem({ on, skip, title, right }) {
   const Icon = skip ? Circle : on ? CheckCircle2 : Circle
   const color = skip
@@ -851,6 +1015,7 @@ const STEPS_ORDER = [
   { kind: 'clone', label: 'Clone repository' },
   { kind: 'db-create', label: 'Create database' },
   { kind: 'db-restore', label: 'Restore dump' },
+  { kind: 'toolchain-prep', label: 'Verify build toolchain' },
   { kind: 'node-prep', label: 'Prepare Node version' },
   { kind: 'deps', label: 'Install dependencies' },
   { kind: 'workspace', label: 'Open VS Code workspace' }
