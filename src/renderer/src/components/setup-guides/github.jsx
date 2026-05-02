@@ -39,9 +39,20 @@ function GitHubSetupGuideEn() {
         <ul className="list-disc pl-5 space-y-1">
           <li>
             <strong className="text-foreground">Tokens (classic)</strong>{' '}
-            → <em>Generate new token (classic)</em>. Tick the{' '}
-            <code>repo</code> scope (whole group). That's enough to
-            list and read repos, see commits, and view Actions runs.
+            → <em>Generate new token (classic)</em>. In the «Select
+            scopes» list tick the very first checkbox —{' '}
+            <code>repo</code> («Full control of private repositories»).
+            Ticking the parent auto-selects all five sub-scopes
+            (<code>repo:status</code>, <code>repo_deployment</code>,{' '}
+            <code>public_repo</code>, <code>repo:invite</code>,{' '}
+            <code>security_events</code>) — that's everything we need
+            to list and read repos, see commits, and view Actions
+            runs. Don't tick anything else.
+            <p className="text-[12px] text-muted-foreground mt-1">
+              If you only need access to public repos, you can tick
+              just <code>public_repo</code> instead — but org-private
+              and personal-private repos won't show up.
+            </p>
           </li>
           <li>
             <strong className="text-foreground">Fine-grained tokens</strong>{' '}
@@ -165,9 +176,20 @@ function GitHubSetupGuideRu() {
         <ul className="list-disc pl-5 space-y-1">
           <li>
             <strong className="text-foreground">Tokens (classic)</strong>{' '}
-            → <em>Generate new token (classic)</em>. Поставь галочку
-            у scope <code>repo</code> (всю группу). Этого достаточно
-            чтобы листать и читать репо, видеть коммиты и Actions runs.
+            → <em>Generate new token (classic)</em>. В списке «Select
+            scopes» отметь самый первый чекбокс —{' '}
+            <code>repo</code> («Full control of private repositories»).
+            Галочка на родителе сама включит пять под-скоупов
+            (<code>repo:status</code>, <code>repo_deployment</code>,{' '}
+            <code>public_repo</code>, <code>repo:invite</code>,{' '}
+            <code>security_events</code>) — этого хватает чтобы
+            листать и читать репо, видеть коммиты и Actions runs.
+            Больше ничего отмечать не надо.
+            <p className="text-[12px] text-muted-foreground mt-1">
+              Если у тебя только публичные репо — можно поставить
+              только <code>public_repo</code>. Но приватные репо
+              (личные и в org) тогда не появятся.
+            </p>
           </li>
           <li>
             <strong className="text-foreground">Fine-grained tokens</strong>{' '}
