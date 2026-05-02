@@ -49,6 +49,16 @@ import {
   DialogTitle,
   DialogDescription
 } from '@/components/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from '@/components/ui/alert-dialog'
 import { BitbucketSetupGuide } from '@/components/setup-guides/bitbucket'
 import { GitHubSetupGuide } from '@/components/setup-guides/github'
 import { JiraSetupGuide } from '@/components/setup-guides/jira'
@@ -861,6 +871,10 @@ const SourcesSection = forwardRef(function SourcesSection(
   // Per-id timestamp последнего успешного Apply. Используется чтобы
   // ненадолго показать «Saved ✓» в самой Apply-кнопке (см. SourceCard).
   const [savedStamps, setSavedStamps] = useState({})
+  // id источника, который пользователь хочет удалить — рендерим
+  // в AlertDialog ниже. Native window.confirm выглядит чужеродно,
+  // поэтому используем нашу alert-dialog компоненту (Radix).
+  const [pendingRemoveId, setPendingRemoveId] = useState(null)
 
   const markSaved = useCallback((id) => {
     setSavedStamps((prev) => ({ ...prev, [id]: Date.now() }))
@@ -1034,8 +1048,14 @@ const SourcesSection = forwardRef(function SourcesSection(
     }
   }
 
-  const remove = async (id) => {
-    if (!window.confirm(t('settings.sources.confirmRemove'))) return
+  // Кнопка Remove на карточке только открывает confirm-диалог.
+  // Реальное удаление — в confirmRemove ниже.
+  const remove = (id) => setPendingRemoveId(id)
+
+  const confirmRemove = async () => {
+    const id = pendingRemoveId
+    if (!id) return
+    setPendingRemoveId(null)
     setBusy((prev) => ({ ...prev, [id]: true }))
     try {
       await api.sources.remove(id)
@@ -1130,6 +1150,38 @@ const SourcesSection = forwardRef(function SourcesSection(
           />
         ))}
       </div>
+
+      <AlertDialog
+        open={pendingRemoveId !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingRemoveId(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t('settings.sources.confirmRemove.title', {
+                name:
+                  drafts[pendingRemoveId]?.name ||
+                  drafts[pendingRemoveId]?.workspace ||
+                  ''
+              })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('settings.sources.confirmRemove')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmRemove}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {t('settings.sources.remove')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 })
@@ -1380,6 +1432,7 @@ const DatabasesSection = forwardRef(function DatabasesSection(
   const [testResults, setTestResults] = useState({})
   const [errors, setErrors] = useState({})
   const [savedStamps, setSavedStamps] = useState({})
+  const [pendingRemoveId, setPendingRemoveId] = useState(null)
 
   const markSaved = useCallback((id) => {
     setSavedStamps((prev) => ({ ...prev, [id]: Date.now() }))
@@ -1549,8 +1602,12 @@ const DatabasesSection = forwardRef(function DatabasesSection(
     }
   }
 
-  const remove = async (id) => {
-    if (!window.confirm(t('settings.databases.confirmRemove'))) return
+  const remove = (id) => setPendingRemoveId(id)
+
+  const confirmRemove = async () => {
+    const id = pendingRemoveId
+    if (!id) return
+    setPendingRemoveId(null)
     setBusy((prev) => ({ ...prev, [id]: true }))
     try {
       await api.databases.remove(id)
@@ -1646,6 +1703,38 @@ const DatabasesSection = forwardRef(function DatabasesSection(
           />
         ))}
       </div>
+
+      <AlertDialog
+        open={pendingRemoveId !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingRemoveId(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t('settings.databases.confirmRemove.title', {
+                name:
+                  drafts[pendingRemoveId]?.name ||
+                  drafts[pendingRemoveId]?.host ||
+                  ''
+              })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('settings.databases.confirmRemove')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmRemove}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {t('settings.databases.remove')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 })

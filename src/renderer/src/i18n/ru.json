@@ -331,6 +331,7 @@
   "settings.databases.add.save": "Сохранить подключение",
   "settings.databases.remove": "Удалить подключение",
   "settings.databases.confirmRemove": "Удалить это подключение? Сохранённый пароль будет стёрт.",
+  "settings.databases.confirmRemove.title": "Удалить подключение {name}?",
 
   "settings.sources.title": "Источники",
   "settings.sources.description": "Источники репозиториев. Один источник — один VCS-workspace или org; список проектов мерджит репо со всех.",
@@ -347,6 +348,7 @@
   "settings.sources.apply": "Применить",
   "settings.sources.remove": "Удалить источник",
   "settings.sources.confirmRemove": "Удалить этот источник? Сохранённый токен будет стёрт.",
+  "settings.sources.confirmRemove.title": "Удалить источник {name}?",
 
   "settings.github.owner": "Owner",
   "settings.github.owner.hint": "GitHub-юзер или slug организации (то, что после github.com/).",

@@ -342,6 +342,7 @@
   "settings.databases.add.save": "Save database",
   "settings.databases.remove": "Remove database",
   "settings.databases.confirmRemove": "Remove this database? Stored password will be cleared.",
+  "settings.databases.confirmRemove.title": "Remove database {name}?",
 
   "settings.sources.title": "Sources",
   "settings.sources.description": "Repository sources. Each source is one VCS workspace or org; the projects list merges repos from all of them.",
@@ -358,6 +359,7 @@
   "settings.sources.apply": "Apply",
   "settings.sources.remove": "Remove source",
   "settings.sources.confirmRemove": "Remove this source? Stored token will be cleared.",
+  "settings.sources.confirmRemove.title": "Remove source {name}?",
 
   "settings.github.owner": "Owner",
   "settings.github.owner.hint": "GitHub user or organization slug (the part after github.com/).",
