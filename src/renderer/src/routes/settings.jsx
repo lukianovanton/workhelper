@@ -18,7 +18,9 @@ import {
   Code2,
   Users,
   Palette,
-  BookOpen
+  BookOpen,
+  Plus,
+  Trash2
 } from 'lucide-react'
 import { usePrefsStore } from '@/store/prefs.store.js'
 import { cn } from '@/lib/utils'
@@ -130,15 +132,12 @@ export default function Settings() {
     dbPassword: false,
     jiraApiToken: false
   })
-  const [bitbucketApiToken, setBitbucketApiToken] = useState('')
   const [dbPassword, setDbPassword] = useState('')
   const [jiraApiToken, setJiraApiToken] = useState('')
   const [vscodeDetected, setVscodeDetected] = useState(null)
   const [mysqlDetected, setMysqlDetected] = useState(null)
   const [saving, setSaving] = useState(false)
   const [saveStatus, setSaveStatus] = useState(null)
-  const [testingBitbucket, setTestingBitbucket] = useState(false)
-  const [bitbucketTestResult, setBitbucketTestResult] = useState(null)
   const [testingDb, setTestingDb] = useState(false)
   const [dbTestResult, setDbTestResult] = useState(null)
   const [testingJira, setTestingJira] = useState(false)
@@ -162,7 +161,6 @@ export default function Settings() {
     ])
     setConfig(c)
     setSecretsStatus(s)
-    setBitbucketApiToken('')
     setDbPassword('')
     setJiraApiToken('')
   }, [])
@@ -195,26 +193,8 @@ export default function Settings() {
       ...prev,
       [section]: { ...prev[section], [key]: value }
     }))
-    if (section === 'bitbucket') setBitbucketTestResult(null)
     if (section === 'database') setDbTestResult(null)
     if (section === 'jira') setJiraTestResult(null)
-  }
-
-  const onTestBitbucket = async () => {
-    setTestingBitbucket(true)
-    setBitbucketTestResult(null)
-    try {
-      const result = await api.bitbucket.testConnection()
-      setBitbucketTestResult(result)
-    } catch (e) {
-      setBitbucketTestResult({
-        ok: false,
-        stage: 'error',
-        message: e?.message || String(e)
-      })
-    } finally {
-      setTestingBitbucket(false)
-    }
   }
 
   const onTestDb = async () => {
@@ -252,9 +232,6 @@ export default function Settings() {
     setSaveStatus(null)
     try {
       await api.config.set(config)
-      if (bitbucketApiToken) {
-        await api.config.setSecret('bitbucketApiToken', bitbucketApiToken)
-      }
       if (dbPassword) {
         await api.config.setSecret('dbPassword', dbPassword)
       }
@@ -375,86 +352,9 @@ export default function Settings() {
           >
             {activeSection === 'atlassian' && (
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
-                <Card>
-                  <SectionCardHeader
-                    title={t('settings.bitbucket.title')}
-                    description={t('settings.bitbucket.description')}
-                    onOpenGuide={() => setGuideOpen('bitbucket')}
-                  />
-                  <CardContent className="space-y-4">
-                    <Field
-                      label={t('settings.bitbucket.email')}
-                      hint={t('settings.bitbucket.email.hint')}
-                    >
-                      <Input
-                        type="email"
-                        value={config.bitbucket.username}
-                        onChange={(e) =>
-                          updatePath(
-                            'bitbucket',
-                            'username'
-                          )(e.target.value)
-                        }
-                        placeholder="you@example.com"
-                      />
-                    </Field>
-                    <Field
-                      label={t('settings.bitbucket.workspace')}
-                      hint={t('settings.bitbucket.workspace.hint')}
-                    >
-                      <Input
-                        value={config.bitbucket.workspace}
-                        onChange={(e) =>
-                          updatePath(
-                            'bitbucket',
-                            'workspace'
-                          )(e.target.value)
-                        }
-                        placeholder="techgurusit"
-                      />
-                    </Field>
-                    <Field
-                      label={t('settings.bitbucket.gitUsername')}
-                      hint={t('settings.bitbucket.gitUsername.hint')}
-                    >
-                      <Input
-                        value={config.bitbucket.gitUsername}
-                        onChange={(e) =>
-                          updatePath(
-                            'bitbucket',
-                            'gitUsername'
-                          )(e.target.value)
-                        }
-                        placeholder="antonreact1"
-                      />
-                    </Field>
-                    <SecretField
-                      label={t('settings.bitbucket.token')}
-                      hint={t('settings.bitbucket.token.hint')}
-                      status={secretsStatus.bitbucketApiToken}
-                      value={bitbucketApiToken}
-                      onChange={setBitbucketApiToken}
-                      onClear={() => {
-                        onClearSecret('bitbucketApiToken')
-                        setBitbucketTestResult(null)
-                      }}
-                    />
-                    <div className="pt-1 space-y-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={onTestBitbucket}
-                        disabled={testingBitbucket}
-                      >
-                        {testingBitbucket && (
-                          <Loader2 className="animate-spin" />
-                        )}
-                        {t('common.testConnection')}
-                      </Button>
-                      <BitbucketTestResult result={bitbucketTestResult} />
-                    </div>
-                  </CardContent>
-                </Card>
+                <SourcesCard
+                  onOpenGuide={() => setGuideOpen('bitbucket')}
+                />
 
                 <Card>
                   <SectionCardHeader
@@ -907,6 +807,390 @@ function SegmentedRadio({ options, value, onChange }) {
         )
       })}
     </div>
+  )
+}
+
+/**
+ * Управление VCS-источниками. Заменяет старую Bitbucket-карточку: одна
+ * карточка-секция с заголовком "Sources", внутри — список добавленных
+ * источников (каждый — свой блок с inline-формой), и кнопка
+ * "+ Add Source" в конце.
+ *
+ * UX:
+ *   - Source-блок имеет [Apply] для существующих (PATCH через
+ *     api.sources.update + setSecret если введён токен) и [Save] для
+ *     несохранённых (POST через api.sources.add).
+ *   - [Test] и [Remove] видны только у сохранённых.
+ *   - У несохранённых [Cancel] стирает черновик из локального state.
+ *   - Тип нового источника пока всегда 'bitbucket'. GitHub попадёт в
+ *     Phase B: пикер типа сейчас не нужен, добавим когда будет два
+ *     варианта.
+ */
+function SourcesCard({ onOpenGuide }) {
+  const t = useT()
+  const [sources, setSources] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [drafts, setDrafts] = useState({})
+  const [tokens, setTokens] = useState({})
+  const [busy, setBusy] = useState({})
+  const [testResults, setTestResults] = useState({})
+  const [errors, setErrors] = useState({})
+
+  const reload = useCallback(async () => {
+    setLoading(true)
+    try {
+      const list = await api.sources.list()
+      setSources(list)
+      const initialDrafts = {}
+      for (const s of list) initialDrafts[s.id] = { ...s }
+      setDrafts(initialDrafts)
+      setTokens({})
+      setErrors({})
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    reload()
+  }, [reload])
+
+  const updateDraft = (id, field, value) => {
+    setDrafts((prev) => ({
+      ...prev,
+      [id]: { ...prev[id], [field]: value }
+    }))
+    setTestResults((prev) => {
+      if (!prev[id]) return prev
+      const next = { ...prev }
+      delete next[id]
+      return next
+    })
+  }
+
+  const setToken = (id, value) => {
+    setTokens((prev) => ({ ...prev, [id]: value }))
+  }
+
+  const startAdd = () => {
+    const tempId = `__new_${Date.now()}`
+    setDrafts((prev) => ({
+      ...prev,
+      [tempId]: {
+        id: tempId,
+        type: 'bitbucket',
+        name: '',
+        workspace: '',
+        username: '',
+        gitUsername: '',
+        hasToken: false,
+        unsaved: true
+      }
+    }))
+  }
+
+  const cancelDraft = (tempId) => {
+    setDrafts((prev) => {
+      const next = { ...prev }
+      delete next[tempId]
+      return next
+    })
+    setTokens((prev) => {
+      const next = { ...prev }
+      delete next[tempId]
+      return next
+    })
+  }
+
+  const applyExisting = async (id) => {
+    const draft = drafts[id]
+    if (!draft) return
+    setBusy((prev) => ({ ...prev, [id]: true }))
+    setErrors((prev) => {
+      const next = { ...prev }
+      delete next[id]
+      return next
+    })
+    try {
+      await api.sources.update(id, {
+        name: draft.name,
+        workspace: draft.workspace,
+        username: draft.username,
+        gitUsername: draft.gitUsername
+      })
+      const newToken = tokens[id]
+      if (newToken && newToken.trim()) {
+        await api.sources.setSecret(id, newToken)
+      }
+      await reload()
+    } catch (e) {
+      setErrors((prev) => ({
+        ...prev,
+        [id]: e?.message || String(e)
+      }))
+    } finally {
+      setBusy((prev) => {
+        const next = { ...prev }
+        delete next[id]
+        return next
+      })
+    }
+  }
+
+  const saveNew = async (tempId) => {
+    const draft = drafts[tempId]
+    if (!draft) return
+    setBusy((prev) => ({ ...prev, [tempId]: true }))
+    setErrors((prev) => {
+      const next = { ...prev }
+      delete next[tempId]
+      return next
+    })
+    try {
+      await api.sources.add({
+        type: draft.type,
+        name: draft.name || draft.workspace,
+        workspace: draft.workspace,
+        username: draft.username,
+        gitUsername: draft.gitUsername,
+        token: tokens[tempId] || undefined
+      })
+      await reload()
+    } catch (e) {
+      setErrors((prev) => ({
+        ...prev,
+        [tempId]: e?.message || String(e)
+      }))
+      setBusy((prev) => {
+        const next = { ...prev }
+        delete next[tempId]
+        return next
+      })
+    }
+  }
+
+  const remove = async (id) => {
+    if (!window.confirm(t('settings.sources.confirmRemove'))) return
+    setBusy((prev) => ({ ...prev, [id]: true }))
+    try {
+      await api.sources.remove(id)
+      await reload()
+    } catch (e) {
+      setErrors((prev) => ({
+        ...prev,
+        [id]: e?.message || String(e)
+      }))
+      setBusy((prev) => {
+        const next = { ...prev }
+        delete next[id]
+        return next
+      })
+    }
+  }
+
+  const test = async (id) => {
+    setBusy((prev) => ({ ...prev, [`test:${id}`]: true }))
+    try {
+      const result = await api.sources.test(id)
+      setTestResults((prev) => ({ ...prev, [id]: result }))
+    } catch (e) {
+      setTestResults((prev) => ({
+        ...prev,
+        [id]: { ok: false, stage: 'error', message: e?.message || String(e) }
+      }))
+    } finally {
+      setBusy((prev) => {
+        const next = { ...prev }
+        delete next[`test:${id}`]
+        return next
+      })
+    }
+  }
+
+  const clearToken = async (id) => {
+    setBusy((prev) => ({ ...prev, [id]: true }))
+    try {
+      await api.sources.clearSecret(id)
+      await reload()
+    } finally {
+      setBusy((prev) => {
+        const next = { ...prev }
+        delete next[id]
+        return next
+      })
+    }
+  }
+
+  const draftIds = Object.keys(drafts)
+
+  return (
+    <Card>
+      <SectionCardHeader
+        title={t('settings.sources.title')}
+        description={t('settings.sources.description')}
+        onOpenGuide={onOpenGuide}
+      />
+      <CardContent className="space-y-4">
+        {loading && (
+          <div className="text-xs text-muted-foreground inline-flex items-center gap-2">
+            <Loader2 size={12} className="animate-spin" />
+            {t('common.loading')}
+          </div>
+        )}
+        {!loading && draftIds.length === 0 && (
+          <p className="text-xs text-muted-foreground">
+            {t('settings.sources.empty')}
+          </p>
+        )}
+        {draftIds.map((id) => {
+          const draft = drafts[id]
+          const isNew = !!draft.unsaved
+          const isBusy = !!busy[id]
+          const isTesting = !!busy[`test:${id}`]
+          return (
+            <div
+              key={id}
+              className="rounded-md border border-border/70 p-4 space-y-3"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                  {isNew
+                    ? t('settings.sources.newSource')
+                    : draft.type}
+                </div>
+                {!isNew && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => remove(id)}
+                    disabled={isBusy}
+                    title={t('settings.sources.remove')}
+                  >
+                    <Trash2 size={12} />
+                  </Button>
+                )}
+              </div>
+
+              <Field
+                label={t('settings.sources.name')}
+                hint={t('settings.sources.name.hint')}
+              >
+                <Input
+                  value={draft.name}
+                  onChange={(e) => updateDraft(id, 'name', e.target.value)}
+                  placeholder="techgurusit"
+                />
+              </Field>
+
+              <Field
+                label={t('settings.bitbucket.email')}
+                hint={t('settings.bitbucket.email.hint')}
+              >
+                <Input
+                  type="email"
+                  value={draft.username}
+                  onChange={(e) =>
+                    updateDraft(id, 'username', e.target.value)
+                  }
+                  placeholder="you@example.com"
+                />
+              </Field>
+              <Field
+                label={t('settings.bitbucket.workspace')}
+                hint={t('settings.bitbucket.workspace.hint')}
+              >
+                <Input
+                  value={draft.workspace}
+                  onChange={(e) =>
+                    updateDraft(id, 'workspace', e.target.value)
+                  }
+                  placeholder="techgurusit"
+                />
+              </Field>
+              <Field
+                label={t('settings.bitbucket.gitUsername')}
+                hint={t('settings.bitbucket.gitUsername.hint')}
+              >
+                <Input
+                  value={draft.gitUsername}
+                  onChange={(e) =>
+                    updateDraft(id, 'gitUsername', e.target.value)
+                  }
+                  placeholder="antonreact1"
+                />
+              </Field>
+              <SecretField
+                label={t('settings.bitbucket.token')}
+                hint={t('settings.bitbucket.token.hint')}
+                status={!isNew && draft.hasToken}
+                value={tokens[id] || ''}
+                onChange={(v) => setToken(id, v)}
+                onClear={!isNew && draft.hasToken ? () => clearToken(id) : undefined}
+              />
+
+              {errors[id] && (
+                <div className="text-xs text-destructive flex items-start gap-2">
+                  <XCircle size={12} className="mt-0.5 shrink-0" />
+                  <span>{errors[id]}</span>
+                </div>
+              )}
+
+              <div className="flex items-center gap-2 flex-wrap pt-1">
+                {isNew ? (
+                  <>
+                    <Button
+                      size="sm"
+                      onClick={() => saveNew(id)}
+                      disabled={isBusy || !draft.workspace}
+                    >
+                      {isBusy && <Loader2 className="animate-spin" />}
+                      {t('settings.sources.add.save')}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => cancelDraft(id)}
+                      disabled={isBusy}
+                    >
+                      {t('common.cancel')}
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => applyExisting(id)}
+                      disabled={isBusy}
+                    >
+                      {isBusy && <Loader2 className="animate-spin" />}
+                      {t('settings.sources.apply')}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => test(id)}
+                      disabled={isTesting}
+                    >
+                      {isTesting && <Loader2 className="animate-spin" />}
+                      {t('common.testConnection')}
+                    </Button>
+                  </>
+                )}
+              </div>
+              {!isNew && (
+                <BitbucketTestResult result={testResults[id]} />
+              )}
+            </div>
+          )
+        })}
+
+        <Button variant="outline" size="sm" onClick={startAdd}>
+          <Plus />
+          {t('settings.sources.add')}
+        </Button>
+      </CardContent>
+    </Card>
   )
 }
 

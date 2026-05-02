@@ -301,6 +301,18 @@
   "settings.setupGuide": "Инструкция",
   "settings.openSetupGuide": "Открыть полную инструкцию по настройке",
 
+  "settings.sources.title": "Источники",
+  "settings.sources.description": "Источники репозиториев. Один источник — один VCS-workspace или org; список проектов мерджит репо со всех.",
+  "settings.sources.empty": "Источники не настроены. Добавьте хотя бы один, чтобы появился список проектов.",
+  "settings.sources.newSource": "Новый источник",
+  "settings.sources.name": "Название",
+  "settings.sources.name.hint": "Свободная подпись, видимая в списке проектов и других местах.",
+  "settings.sources.add": "Добавить источник",
+  "settings.sources.add.save": "Сохранить источник",
+  "settings.sources.apply": "Применить",
+  "settings.sources.remove": "Удалить источник",
+  "settings.sources.confirmRemove": "Удалить этот источник? Сохранённый токен будет стёрт.",
+
   "settings.bitbucket.title": "Bitbucket",
   "settings.bitbucket.description": "Email, рабочее пространство, имя пользователя и API-токен для Cloud REST API.",
   "settings.bitbucket.email": "Email",
