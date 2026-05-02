@@ -350,11 +350,13 @@
   "settings.sources.newSource": "New source",
   "settings.sources.newSource.bitbucket": "New Bitbucket source",
   "settings.sources.newSource.github": "New GitHub source",
+  "settings.sources.newSource.gitlab": "New GitLab source",
   "settings.sources.name": "Display name",
   "settings.sources.name.hint": "Free-form label shown in the projects list and elsewhere.",
   "settings.sources.add": "Add source",
   "settings.sources.add.bitbucket": "Add Bitbucket",
   "settings.sources.add.github": "Add GitHub",
+  "settings.sources.add.gitlab": "Add GitLab",
   "settings.sources.add.save": "Save source",
   "settings.sources.apply": "Apply",
   "settings.sources.remove": "Remove source",
@@ -367,6 +369,15 @@
   "settings.github.gitUsername.hint": "Your GitHub login. Used in clone URLs as a hint for the system Git Credential Manager.",
   "settings.github.token": "Personal Access Token",
   "settings.github.token.hint": "Created at github.com → Settings → Developer settings → Personal access tokens. Classic or fine-grained both work; scope 'repo' is enough.",
+
+  "settings.gitlab.namespace": "Namespace",
+  "settings.gitlab.namespace.hint": "GitLab group full-path (e.g. 'my-team' or 'my-team/sub-team') or your username. One source = one namespace; subgroups are not auto-included.",
+  "settings.gitlab.gitUsername": "GitLab username",
+  "settings.gitlab.gitUsername.hint": "Your GitLab login. Used in clone URLs as a hint for the system Git Credential Manager.",
+  "settings.gitlab.token": "Personal Access Token",
+  "settings.gitlab.token.hint": "Created at gitlab.com → User settings → Access tokens. Required scopes: read_api, read_repository.",
+  "settings.gitlab.baseUrl": "Base URL",
+  "settings.gitlab.baseUrl.hint": "Self-hosted only. Full URL of your GitLab instance (e.g. https://gitlab.mycorp.com). Leave empty for gitlab.com.",
 
   "settings.bitbucket.title": "Bitbucket",
   "settings.bitbucket.description": "Email, workspace, username and API token for the Cloud REST API.",
@@ -448,6 +459,7 @@
 
   "settings.guide.bitbucket.dialogDescription": "4 steps to authenticate against Bitbucket Cloud. ~2 minutes.",
   "settings.guide.github.dialogDescription": "3 steps to authenticate against GitHub via a Personal Access Token.",
+  "settings.guide.gitlab.dialogDescription": "3 steps to authenticate against GitLab Cloud or self-hosted via a Personal Access Token.",
   "settings.guide.jira.dialogDescription": "3 steps; reuses your Atlassian email from the Bitbucket section.",
   "settings.guide.paths.dialogDescription": "Where projects clone, where dumps live, how VS Code is launched.",
   "settings.guide.database.dialogDescription": "Local MySQL connection used for size, restore, drop/create.",
@@ -457,5 +469,6 @@
   "settings.guide.appearance.dialogDescription": "Display preferences for this machine.",
 
   "settings.github.guide.title": "GitHub setup",
+  "settings.gitlab.guide.title": "GitLab setup",
   "settings.postgres.guide.title": "PostgreSQL setup"
 }

@@ -951,6 +951,7 @@ const SourcesSection = forwardRef(function SourcesSection(
         workspace: '',
         username: '',
         gitUsername: '',
+        providerOptions: {},
         hasToken: false,
         unsaved: true
       }
@@ -1002,7 +1003,8 @@ const SourcesSection = forwardRef(function SourcesSection(
           name: draft.name,
           workspace: draft.workspace,
           username: draft.username,
-          gitUsername: gitUsernameToSave
+          gitUsername: gitUsernameToSave,
+          providerOptions: draft.providerOptions || {}
         })
         const newToken = tokens[id]
         if (newToken && newToken.trim()) {
@@ -1046,6 +1048,7 @@ const SourcesSection = forwardRef(function SourcesSection(
         workspace: draft.workspace,
         username: draft.username,
         gitUsername: draft.gitUsername,
+        providerOptions: draft.providerOptions || {},
         token: tokens[tempId] || undefined
       })
       await reload()
@@ -1403,6 +1406,30 @@ function SourceCard({
             !isNew && draft.hasToken ? onClearToken : undefined
           }
         />
+
+        {/* providerOptions-поля провайдера (например GitLab baseUrl
+            для self-hosted). Generic-механизм: каждый провайдер сам
+            декларирует список своих опций в lib/vcs-providers.jsx,
+            здесь просто рендерим. Сохранение идёт через
+            applyExisting() / saveNew() которые читают draft.providerOptions. */}
+        {(provider?.providerOptionsFields || []).map((opt) => (
+          <Field
+            key={opt.key}
+            label={t(opt.labelKey)}
+            hint={t(opt.hintKey)}
+          >
+            <Input
+              value={draft.providerOptions?.[opt.key] ?? ''}
+              onChange={(e) =>
+                onUpdate('providerOptions', {
+                  ...(draft.providerOptions || {}),
+                  [opt.key]: e.target.value
+                })
+              }
+              placeholder={opt.placeholder}
+            />
+          </Field>
+        ))}
 
         {error && (
           <div className="text-xs text-destructive flex items-start gap-2">

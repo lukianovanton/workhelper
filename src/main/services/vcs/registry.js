@@ -85,13 +85,23 @@ function buildProvider(source) {
     },
     getToken: () => getSecret(source.secretKey),
     cacheKey: `vcs-cache-${source.id}`,
-    // BB-специфичный template-prefix: legacy default 'TP' если в
-    // source.providerOptions ничего не задано. Другие провайдеры этот
-    // getter получают, но игнорируют.
+    // Provider-specific lazy getters. Каждый провайдер берёт только
+    // те, что его волнуют; остальные игнорируются. Так контракт
+    // фабрики остаётся плоским, а каждое расширение source.providerOptions
+    // живёт здесь:
+    //
+    //   bitbucket: templatePrefix (default 'TP')
+    //   gitlab:    baseUrl       (default 'https://gitlab.com';
+    //                              для self-hosted указывает свой URL)
     getTemplatePrefix: () => {
       const fresh = getSources().find((s) => s.id === source.id) || source
       const opt = fresh.providerOptions?.templatePrefix
       return typeof opt === 'string' ? opt : 'TP'
+    },
+    getBaseUrl: () => {
+      const fresh = getSources().find((s) => s.id === source.id) || source
+      const opt = fresh.providerOptions?.baseUrl
+      return typeof opt === 'string' && opt.trim() ? opt.trim() : ''
     }
   })
 }

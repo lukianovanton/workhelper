@@ -16,9 +16,10 @@
  *      подхватят автоматически.
  */
 
-import { Cloud, Github } from 'lucide-react'
+import { Cloud, Github, Gitlab } from 'lucide-react'
 import { BitbucketSetupGuide } from '@/components/setup-guides/bitbucket'
 import { GitHubSetupGuide } from '@/components/setup-guides/github'
+import { GitLabSetupGuide } from '@/components/setup-guides/gitlab'
 
 /**
  * @typedef {Object} VcsProviderForm
@@ -42,6 +43,12 @@ import { GitHubSetupGuide } from '@/components/setup-guides/github'
  * @property {string} tokenLabelKey
  * @property {string} tokenHintKey
  *
+ * @typedef {Object} ProviderOptionField
+ * @property {string} key                      ключ в source.providerOptions
+ * @property {string} labelKey                 i18n-ключ
+ * @property {string} hintKey                  i18n-ключ для hint-текста
+ * @property {string} placeholder
+ *
  * @typedef {Object} VcsProviderDescriptor
  * @property {string} type                     id (= ключ в backend providers.js)
  * @property {string} label                    human-readable для UI dropdown'а
@@ -53,6 +60,14 @@ import { GitHubSetupGuide } from '@/components/setup-guides/github'
  * @property {string} guideTitleKey
  * @property {string} guideDescriptionKey
  * @property {VcsProviderForm} form
+ * @property {ProviderOptionField[]} [providerOptionsFields]
+ *                                              опциональные поля под
+ *                                              source.providerOptions —
+ *                                              рендерятся после стандартных
+ *                                              полей и сохраняются в
+ *                                              source.providerOptions[key].
+ *                                              Пример: GitLab baseUrl для
+ *                                              self-hosted; BB templatePrefix.
  */
 
 /** @type {Record<string, VcsProviderDescriptor>} */
@@ -107,6 +122,41 @@ export const VCS_PROVIDERS = {
       tokenLabelKey: 'settings.github.token',
       tokenHintKey: 'settings.github.token.hint'
     }
+  },
+  gitlab: {
+    type: 'gitlab',
+    label: 'GitLab',
+    BadgeIcon: Gitlab,
+    badgeClassName: 'text-orange-500/80',
+    addButtonLabelKey: 'settings.sources.add.gitlab',
+    newSourceTitleKey: 'settings.sources.newSource.gitlab',
+    GuideComponent: GitLabSetupGuide,
+    guideTitleKey: 'settings.gitlab.guide.title',
+    guideDescriptionKey: 'settings.guide.gitlab.dialogDescription',
+    form: {
+      workspaceLabelKey: 'settings.gitlab.namespace',
+      workspaceHintKey: 'settings.gitlab.namespace.hint',
+      workspacePlaceholder: 'my-team',
+      namePlaceholder: 'GitLab',
+      // Как у GitHub: один логин, никакого отдельного email-поля.
+      showEmailField: false,
+      gitUsernameLabelKey: 'settings.gitlab.gitUsername',
+      gitUsernameHintKey: 'settings.gitlab.gitUsername.hint',
+      gitUsernamePlaceholder: 'octocat',
+      gitUsernameMirrorsUsername: true,
+      tokenLabelKey: 'settings.gitlab.token',
+      tokenHintKey: 'settings.gitlab.token.hint'
+    },
+    // Self-hosted GitLab требует свой Base URL. Для gitlab.com поле
+    // оставляется пустым — провайдер default'ит на 'https://gitlab.com'.
+    providerOptionsFields: [
+      {
+        key: 'baseUrl',
+        labelKey: 'settings.gitlab.baseUrl',
+        hintKey: 'settings.gitlab.baseUrl.hint',
+        placeholder: 'https://gitlab.com'
+      }
+    ]
   }
 }
 
