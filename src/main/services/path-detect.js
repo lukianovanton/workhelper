@@ -109,6 +109,18 @@ async function findKnownInstallPath(name) {
     return null
   }
 
+  if (name === 'psql' || name === 'pg_restore') {
+    const roots = [
+      'C:\\Program Files\\PostgreSQL',
+      'C:\\Program Files (x86)\\PostgreSQL'
+    ]
+    for (const root of roots) {
+      const candidate = await findLatestPostgresServer(root, name)
+      if (candidate) return candidate
+    }
+    return null
+  }
+
   if (name === 'code') {
     const candidates = [
       process.env.LOCALAPPDATA &&
@@ -144,6 +156,29 @@ async function findLatestMysqlServer(root) {
     .reverse()
   for (const dir of serverDirs) {
     const candidate = path.join(root, dir, 'bin', 'mysql.exe')
+    if (await fileExists(candidate)) return candidate
+  }
+  return null
+}
+
+/**
+ * Postgres ставится в C:\Program Files\PostgreSQL\<version>\bin\.
+ * Версии — числа (16, 15, 14...), сортим по убыванию и берём первую
+ * подходящую установку.
+ */
+async function findLatestPostgresServer(root, name) {
+  let entries
+  try {
+    entries = await fsp.readdir(root, { withFileTypes: true })
+  } catch {
+    return null
+  }
+  const versionDirs = entries
+    .filter((e) => e.isDirectory() && /^\d+(\.\d+)?$/.test(e.name))
+    .map((e) => e.name)
+    .sort((a, b) => parseFloat(b) - parseFloat(a))
+  for (const dir of versionDirs) {
+    const candidate = path.join(root, dir, 'bin', `${name}.exe`)
     if (await fileExists(candidate)) return candidate
   }
   return null

@@ -160,6 +160,7 @@ export default function Settings() {
   const [jiraApiToken, setJiraApiToken] = useState('')
   const [vscodeDetected, setVscodeDetected] = useState(null)
   const [mysqlDetected, setMysqlDetected] = useState(null)
+  const [psqlDetected, setPsqlDetected] = useState(null)
   const [saving, setSaving] = useState(false)
   const [saveStatus, setSaveStatus] = useState(null)
   const [testingJira, setTestingJira] = useState(false)
@@ -205,6 +206,7 @@ export default function Settings() {
     if (!config) return
     api.config.whichBinary('code').then(setVscodeDetected)
     api.config.whichBinary('mysql').then(setMysqlDetected)
+    api.config.whichBinary('psql').then(setPsqlDetected)
   }, [config])
 
   if (!config) {
@@ -519,7 +521,7 @@ export default function Settings() {
               <DatabasesSection
                 ref={databasesSectionRef}
                 onOpenGuide={(id) => setGuideOpen(id)}
-                detected={mysqlDetected}
+                detected={{ mysql: mysqlDetected, postgres: psqlDetected }}
               />
             )}
 
@@ -1602,9 +1604,14 @@ function DatabaseCard({
   const execOptionalKey = isPostgres
     ? 'settings.database.psqlExecutable.optional'
     : 'settings.database.mysqlExecutable.optional'
-  // detected приходит из родителя только для mysql; для postgres пока
-  // null, чтобы не подсовывать «Use detected» с mysql-путём.
-  const detectedForType = isPostgres ? null : detected
+  // detected — { mysql, postgres } из родителя; берём свою ветку.
+  // Для bin-директории Postgres лежит в C:\Program Files\PostgreSQL\<v>\bin\,
+  // detect возвращает абсолютный путь к psql.exe — kept as-is. У нас
+  // engine.resolveCli умеет принимать как path/psql.exe, так и
+  // path/pg_restore.exe — он сам разрулит соседний бинарь.
+  const detectedForType = isPostgres
+    ? detected?.postgres ?? null
+    : detected?.mysql ?? null
 
   const titleText = isNew
     ? t(
