@@ -49,6 +49,8 @@
 
   "projects.column.slug": "Slug",
   "projects.column.name": "Name",
+  "projects.column.source": "Source",
+  "projects.column.tasks": "Tasks",
   "projects.column.kind": "Kind",
   "projects.column.dbSize": "DB size",
   "projects.column.lastCommit": "Last commit",
@@ -56,9 +58,14 @@
 
   "projects.filter.slug": "Filter by slug",
   "projects.filter.name": "Filter by name",
+  "projects.filter.source": "Filter by source",
+  "projects.filter.source.empty": "No sources configured",
   "projects.filter.kind": "Filter by kind",
   "projects.filter.dbSize": "Filter by DB size",
   "projects.filter.lastCommit": "Filter by last commit",
+  "projects.tasks.any": "Any",
+  "projects.tasks.with": "Has open tasks",
+  "projects.tasks.without": "No open tasks",
   "projects.filter.contains": "contains…",
   "projects.filter.apply": "Apply",
   "projects.filter.title.tooltip": "Filter",

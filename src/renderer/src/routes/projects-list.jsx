@@ -80,12 +80,22 @@ function saveSort(sort) {
   }
 }
 
-function compareProjects(a, b, column) {
+function compareProjects(a, b, column, taskCountBySlug) {
   switch (column) {
     case 'slug':
       return a.slug.localeCompare(b.slug, undefined, { numeric: true })
     case 'name':
       return a.name.localeCompare(b.name, undefined, { numeric: true })
+    case 'source': {
+      const an = a.source?.name || a.source?.type || ''
+      const bn = b.source?.name || b.source?.type || ''
+      return an.localeCompare(bn)
+    }
+    case 'tasks': {
+      const at = taskCountBySlug?.get(a.slug) || 0
+      const bt = taskCountBySlug?.get(b.slug) || 0
+      return at - bt
+    }
     case 'dbSize': {
       const av = a.db.sizeBytes ?? -1
       const bv = b.db.sizeBytes ?? -1
@@ -172,6 +182,8 @@ export default function ProjectsList() {
   const [columnFilters, setColumnFilters] = useState({
     slug: '',
     name: '',
+    source: new Set(), // set of source providerIds (мульти-выбор)
+    tasks: 'any',      // 'any' | 'with' | 'without'
     kind: new Set(),
     dbSize: 'any',
     updated: 'any'
@@ -183,6 +195,8 @@ export default function ProjectsList() {
     setColumnFilters({
       slug: '',
       name: '',
+      source: new Set(),
+      tasks: 'any',
       kind: new Set(),
       dbSize: 'any',
       updated: 'any'
@@ -191,6 +205,8 @@ export default function ProjectsList() {
   const hasColumnFilters =
     columnFilters.slug ||
     columnFilters.name ||
+    columnFilters.source.size > 0 ||
+    columnFilters.tasks !== 'any' ||
     columnFilters.kind.size > 0 ||
     columnFilters.dbSize !== 'any' ||
     columnFilters.updated !== 'any'
@@ -228,6 +244,28 @@ export default function ProjectsList() {
     return map
   }, [myIssuesQuery.data])
 
+  // Список уникальных источников из текущей выборки проектов —
+  // используется для multi-select фильтра колонки Source. Ключ —
+  // providerId (стабильный uuid из config), label — имя source'а
+  // плюс icon из VCS_PROVIDERS-реестра.
+  const availableSources = useMemo(() => {
+    const map = new Map()
+    for (const p of projects || []) {
+      const s = p.source
+      if (!s?.providerId) continue
+      if (!map.has(s.providerId)) {
+        map.set(s.providerId, {
+          id: s.providerId,
+          type: s.type,
+          name: s.name || s.type
+        })
+      }
+    }
+    return [...map.values()].sort((a, b) =>
+      a.name.localeCompare(b.name)
+    )
+  }, [projects])
+
   const sortedAndFiltered = useMemo(() => {
     if (!projects) return []
     const q = search.trim().toLowerCase()
@@ -254,6 +292,15 @@ export default function ProjectsList() {
         !p.name.toLowerCase().includes(columnFilters.name.toLowerCase())
       )
         return false
+      if (columnFilters.source.size > 0) {
+        const sid = p.source?.providerId
+        if (!sid || !columnFilters.source.has(sid)) return false
+      }
+      if (columnFilters.tasks !== 'any') {
+        const count = taskCountBySlug.get(p.slug) || 0
+        if (columnFilters.tasks === 'with' && count === 0) return false
+        if (columnFilters.tasks === 'without' && count > 0) return false
+      }
       if (columnFilters.kind.size > 0 && !columnFilters.kind.has(p.kind))
         return false
       if (columnFilters.dbSize !== 'any') {
@@ -305,7 +352,7 @@ export default function ProjectsList() {
       if (aHasTasks && bHasTasks && aTasks !== bTasks) {
         return bTasks - aTasks
       }
-      return compareProjects(a, b, sort.column) * sign
+      return compareProjects(a, b, sort.column, taskCountBySlug) * sign
     })
   }, [
     projects,
@@ -557,6 +604,7 @@ export default function ProjectsList() {
               columnFilters={columnFilters}
               setColumnFilter={setColumnFilter}
               taskCountBySlug={taskCountBySlug}
+              availableSources={availableSources}
               onOpen={(slug) => navigate(`/projects/${slug}`)}
             />
           )}
@@ -662,6 +710,7 @@ function ProjectsTable({
   columnFilters,
   setColumnFilter,
   taskCountBySlug,
+  availableSources,
   onOpen
 }) {
   const t = useT()
@@ -701,6 +750,21 @@ function ProjectsTable({
             {t('projects.column.status')}
           </th>
           <ColumnHeader
+            sortId="source"
+            sort={sort}
+            onSort={onSort}
+            className={cn('w-36', cellPad)}
+            label={t('projects.column.source')}
+            filter={
+              <SourceColumnFilter
+                sources={availableSources}
+                value={columnFilters.source}
+                onChange={(v) => setColumnFilter('source', v)}
+              />
+            }
+            active={columnFilters.source.size > 0}
+          />
+          <ColumnHeader
             sortId="slug"
             sort={sort}
             onSort={onSort}
@@ -729,6 +793,27 @@ function ProjectsTable({
               />
             }
             active={!!columnFilters.name}
+          />
+          <ColumnHeader
+            sortId="tasks"
+            sort={sort}
+            onSort={onSort}
+            className={cn('w-20', cellPad)}
+            align="right"
+            popoverAlign="right"
+            label={t('projects.column.tasks')}
+            filter={
+              <BucketColumnFilter
+                value={columnFilters.tasks}
+                onChange={(v) => setColumnFilter('tasks', v)}
+                options={[
+                  { value: 'any', label: t('projects.tasks.any') },
+                  { value: 'with', label: t('projects.tasks.with') },
+                  { value: 'without', label: t('projects.tasks.without') }
+                ]}
+              />
+            }
+            active={columnFilters.tasks !== 'any'}
           />
           <ColumnHeader
             className={cn('w-24', cellPad)}
@@ -921,23 +1006,19 @@ function ProjectRow({
           pipelineLoaded={seen}
         />
       </td>
-      <td className={cn(cellPad, 'font-mono text-xs')}>
-        <div className="inline-flex items-center gap-2">
+      <td className={cn(cellPad, 'text-xs')}>
+        <div className="inline-flex items-center gap-1.5 min-w-0">
           <SourceBadge
             type={p.source?.type}
             sourceName={p.source?.name}
           />
-          <Highlight text={p.slug} match={search} />
-          {taskCount > 0 && (
-            <span
-              title={t('projects.row.taskCount', { count: taskCount })}
-              className="inline-flex items-center gap-1 text-[11px] leading-none px-1.5 py-1 rounded-md bg-sky-500/15 border border-sky-500/40 text-sky-200 font-sans font-medium tabular-nums shrink-0"
-            >
-              <ListTodo size={12} className="shrink-0" />
-              {taskCount}
-            </span>
-          )}
+          <span className="text-muted-foreground truncate">
+            {p.source?.name || p.source?.type || '—'}
+          </span>
         </div>
+      </td>
+      <td className={cn(cellPad, 'font-mono text-xs')}>
+        <Highlight text={p.slug} match={search} />
       </td>
       <td className={cellPad}>
         <div className={nameTextCls}>
@@ -947,6 +1028,19 @@ function ProjectRow({
           <div className={descCls}>
             <Highlight text={p.description} match={search} />
           </div>
+        )}
+      </td>
+      <td className={cn(cellPad, 'text-right tabular-nums')}>
+        {taskCount > 0 ? (
+          <span
+            title={t('projects.row.taskCount', { count: taskCount })}
+            className="inline-flex items-center gap-1 text-[11px] leading-none px-1.5 py-1 rounded-md bg-sky-500/15 border border-sky-500/40 text-sky-200 font-sans font-medium"
+          >
+            <ListTodo size={12} className="shrink-0" />
+            {taskCount}
+          </span>
+        ) : (
+          <span className="text-muted-foreground/40 text-xs">—</span>
         )}
       </td>
       <td className={cellPad}>
@@ -1276,6 +1370,71 @@ function TextColumnFilter({ title, value, onChange }) {
         <button
           onClick={() => onChange('')}
           className="text-[11px] text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
+        >
+          <XIcon size={10} /> {t('common.clear')}
+        </button>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Multi-select фильтр по конкретным VCS-источникам (а не только по
+ * типу). Если у юзера два GitHub-source'а (work + personal), он
+ * сможет фильтровать каждый отдельно. Опции = все source'ы из
+ * текущего списка проектов; ключ = providerId.
+ */
+function SourceColumnFilter({ sources, value, onChange }) {
+  const t = useT()
+  const toggle = (id) => {
+    const next = new Set(value)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    onChange(next)
+  }
+  if (!sources || sources.length === 0) {
+    return (
+      <div className="text-xs text-muted-foreground italic">
+        {t('projects.filter.source.empty')}
+      </div>
+    )
+  }
+  return (
+    <div className="space-y-1.5">
+      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+        {t('projects.filter.source')}
+      </div>
+      {sources.map((s) => {
+        const provider = getVcsProvider(s.type)
+        const Icon = provider?.BadgeIcon
+        return (
+          <label
+            key={s.id}
+            className="flex items-center gap-2 text-xs cursor-pointer"
+          >
+            <input
+              type="checkbox"
+              checked={value.has(s.id)}
+              onChange={() => toggle(s.id)}
+              className="rounded border-input"
+            />
+            {Icon && (
+              <Icon
+                size={11}
+                className={cn(
+                  'shrink-0',
+                  provider?.badgeClassName || 'text-muted-foreground'
+                )}
+              />
+            )}
+            <span className="truncate">{s.name}</span>
+          </label>
+        )
+      })}
+      {value.size > 0 && (
+        <button
+          onClick={() => onChange(new Set())}
+          className="text-[11px] text-muted-foreground hover:text-foreground inline-flex items-center gap-1 mt-1"
         >
           <XIcon size={10} /> {t('common.clear')}
         </button>

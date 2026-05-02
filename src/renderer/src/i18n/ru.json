@@ -49,6 +49,8 @@
 
   "projects.column.slug": "Slug",
   "projects.column.name": "Название",
+  "projects.column.source": "Источник",
+  "projects.column.tasks": "Задачи",
   "projects.column.kind": "Тип",
   "projects.column.dbSize": "Размер БД",
   "projects.column.lastCommit": "Посл. коммит",
@@ -56,9 +58,14 @@
 
   "projects.filter.slug": "Фильтр по slug",
   "projects.filter.name": "Фильтр по названию",
+  "projects.filter.source": "Фильтр по источнику",
+  "projects.filter.source.empty": "Нет настроенных источников",
   "projects.filter.kind": "Фильтр по типу",
   "projects.filter.dbSize": "Фильтр по размеру БД",
   "projects.filter.lastCommit": "Фильтр по дате коммита",
+  "projects.tasks.any": "Любые",
+  "projects.tasks.with": "С активными задачами",
+  "projects.tasks.without": "Без задач",
   "projects.filter.contains": "содержит…",
   "projects.filter.apply": "Применить",
   "projects.filter.title.tooltip": "Фильтр",
