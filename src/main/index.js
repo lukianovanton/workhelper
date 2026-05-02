@@ -1,3 +1,7 @@
+// boot.js должен импортироваться ПЕРВЫМ — он зовёт app.setName до
+// того, как config-store / secrets / windowStateStore прочитают
+// userData-путь. См. комментарий в boot.js.
+import './boot.js'
 import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import electronUpdater from 'electron-updater'
 import { join } from 'node:path'
