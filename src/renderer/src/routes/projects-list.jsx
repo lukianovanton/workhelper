@@ -1653,25 +1653,32 @@ function KindBadge({ kind, categoryOverride, onSetCategory }) {
   const Icon = category.Icon
   const isOverridden = !!categoryOverride && categoryOverride !== (kind === 'template' ? 'template' : 'project')
 
+  // Popover-wrapper'у нужен сам click, чтобы переключить open. Если
+  // повесить на внутреннюю <button> e.stopPropagation, событие не
+  // дойдёт до wrapper'а и popover не откроется. Поэтому здесь
+  // используем `<span role="button">` без собственного onClick — клик
+  // ловит wrapper Popover'а, он же вызывает stopPropagation чтобы не
+  // прокликать на <tr> (открытие drawer'а).
   return (
     <Popover
       align="left"
       trigger={
-        <button
-          onClick={(e) => e.stopPropagation()}
+        <span
+          role="button"
+          tabIndex={0}
           title={
             isOverridden
               ? t('projects.kind.overridden', { label: t(category.labelKey) })
               : t('projects.kind.clickToChange')
           }
           className={cn(
-            'inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs border transition-opacity hover:opacity-80',
+            'inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs border transition-opacity hover:opacity-80 cursor-pointer select-none',
             category.pillClassName
           )}
         >
           <Icon size={11} />
           <span>{t(category.labelKey)}</span>
-        </button>
+        </span>
       }
     >
       <CategoryPicker
