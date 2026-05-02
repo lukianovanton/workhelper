@@ -21,8 +21,6 @@ import { getConfig } from '../config-store.js'
 import { getSecret } from '../secrets.js'
 import { createBitbucketProvider } from './bitbucket-provider.js'
 
-const DEFAULT_BB_SOURCE_ID = 'bitbucket-default'
-
 /**
  * @typedef {Object} VcsSource
  * @property {string} id
@@ -35,27 +33,26 @@ const DEFAULT_BB_SOURCE_ID = 'bitbucket-default'
  */
 
 /**
- * Текущий список источников. Phase A.4a фолбэчит на legacy bitbucket-поля.
- * Phase A.4b будет читать из config.sources[] напрямую.
+ * Список источников из config.sources[]. config-store сам мигрирует
+ * legacy `bitbucket: {}` в sources[0] на первом чтении, поэтому здесь
+ * никаких fallback'ов больше не нужно.
  *
  * @returns {VcsSource[]}
  */
 function getSources() {
   const config = getConfig()
-  const bb = config.bitbucket || {}
-  // Источник синтезируется всегда — даже если поля пустые. Provider
-  // методы сами бросят с stage='config' при отсутствии креденшелов.
-  return [
-    {
-      id: DEFAULT_BB_SOURCE_ID,
-      type: 'bitbucket',
-      name: bb.workspace ? bb.workspace : 'Bitbucket',
-      workspace: bb.workspace || '',
-      username: bb.username || '',
-      gitUsername: bb.gitUsername || '',
-      secretKey: 'bitbucketApiToken'
-    }
-  ]
+  const sources = Array.isArray(config.sources) ? config.sources : []
+  return sources
+    .filter((s) => s && s.type === 'bitbucket')
+    .map((s) => ({
+      id: s.id,
+      type: s.type,
+      name: s.name || s.workspace || 'Bitbucket',
+      workspace: s.workspace || '',
+      username: s.username || '',
+      gitUsername: s.gitUsername || '',
+      secretKey: `vcs:${s.id}:token`
+    }))
 }
 
 /** @type {Map<string, VcsProvider>} */

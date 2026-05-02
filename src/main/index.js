@@ -10,6 +10,7 @@ import {
   stopPresence
 } from './services/presence-service.js'
 import { getConfig } from './services/config-store.js'
+import { migrateLegacyBitbucketToken } from './services/secrets.js'
 
 const { autoUpdater } = electronUpdater
 const FOUR_HOURS = 4 * 60 * 60 * 1000
@@ -86,6 +87,13 @@ app.whenReady().then(() => {
   if (process.platform === 'win32') {
     app.setAppUserModelId('com.antonl.workhelper')
   }
+
+  // Один раз на старте: миграция legacy секретов под per-source ключи.
+  // safeStorage требует ready-app, поэтому делаем именно здесь.
+  // Также форсим getConfig() чтобы migrateConfig() в config-store
+  // прогнал legacy `bitbucket: {}` → `sources[0]`.
+  getConfig()
+  migrateLegacyBitbucketToken()
 
   registerAllIpc()
   setupAutoUpdater()

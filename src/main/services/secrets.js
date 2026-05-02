@@ -8,31 +8,45 @@
  * - safeStorage.isEncryptionAvailable() требует, чтобы app был ready;
  *   IPC-хендлеры вызываются после whenReady так что условие всегда выполнено
  *
- * Поддерживаемые ключи: 'bitbucketApiToken', 'dbPassword', 'jiraApiToken'.
+ * Поддерживаемые ключи:
+ *   - 'dbPassword'           — пароль MySQL
+ *   - 'jiraApiToken'         — Jira API token
+ *   - 'bitbucketApiToken'    — DEPRECATED, остаётся для миграции к
+ *                               per-source ключам (Phase A.4b).
+ *                               См. migrateLegacyBitbucketToken().
+ *   - 'vcs:<source-id>:token' — API token для VCS-источника по id;
+ *                               динамическая форма ключа, валидируется
+ *                               regex'ом.
  */
 
 import { safeStorage } from 'electron'
 import Store from 'electron-store'
+import { DEFAULT_BB_SOURCE_ID } from './config-store.js'
 
 const store = new Store({
   name: 'secrets',
   clearInvalidConfig: true
 })
 
-const VALID_KEYS = new Set([
-  'bitbucketApiToken',
+const STATIC_KEYS = new Set([
+  'bitbucketApiToken', // legacy, ещё читаем
   'dbPassword',
   'jiraApiToken'
 ])
 
+const VCS_KEY_REGEX = /^vcs:[a-zA-Z0-9_-]+:token$/
+
 function assertKey(key) {
-  if (!VALID_KEYS.has(key)) {
-    throw new Error(`Unknown secret key: ${key}`)
+  if (typeof key !== 'string') {
+    throw new Error('Secret key must be a string')
   }
+  if (STATIC_KEYS.has(key)) return
+  if (VCS_KEY_REGEX.test(key)) return
+  throw new Error(`Unknown secret key: ${key}`)
 }
 
 /**
- * @param {'bitbucketApiToken'|'dbPassword'|'jiraApiToken'} key
+ * @param {string} key
  * @param {string} value
  */
 export function setSecret(key, value) {
@@ -51,7 +65,7 @@ export function setSecret(key, value) {
 }
 
 /**
- * @param {'bitbucketApiToken'|'dbPassword'|'jiraApiToken'} key
+ * @param {string} key
  * @returns {string|null}
  */
 export function getSecret(key) {
@@ -60,16 +74,16 @@ export function getSecret(key) {
   if (!stored || typeof stored !== 'string') return null
   try {
     return safeStorage.decryptString(Buffer.from(stored, 'base64'))
-  } catch (e) {
+  } catch {
     // Если ключ DPAPI сменился (миграция OS / новый профиль) —
-    // расшифровать невозможно, удаляем мёртвый blob
+    // расшифровать невозможно, удаляем мёртвый blob.
     store.delete(key)
     return null
   }
 }
 
 /**
- * @param {'bitbucketApiToken'|'dbPassword'|'jiraApiToken'} key
+ * @param {string} key
  */
 export function clearSecret(key) {
   assertKey(key)
@@ -77,7 +91,9 @@ export function clearSecret(key) {
 }
 
 /**
- * Возвращает карту key → boolean (есть ли значение). Не раскрывает значения.
+ * Карта статических ключей → boolean (есть ли значение). Не раскрывает
+ * значения. VCS-токены отдельно: для них есть `hasSecret(key)` и UI
+ * запрашивает их per-source.
  *
  * @returns {{ bitbucketApiToken: boolean, dbPassword: boolean, jiraApiToken: boolean }}
  */
@@ -87,4 +103,40 @@ export function secretsStatus() {
     dbPassword: store.has('dbPassword'),
     jiraApiToken: store.has('jiraApiToken')
   }
+}
+
+/**
+ * Точечная проверка наличия любого валидного ключа (включая
+ * динамические vcs:*:token).
+ *
+ * @param {string} key
+ * @returns {boolean}
+ */
+export function hasSecret(key) {
+  assertKey(key)
+  return store.has(key)
+}
+
+/**
+ * Миграция legacy `bitbucketApiToken` → `vcs:bitbucket-default:token`.
+ * Вызывать один раз на старте приложения после whenReady (safeStorage
+ * требует ready-app).
+ *
+ * Идемпотентно: если новый ключ уже существует — не трогает legacy
+ * (пользователь мог явно сбросить новый ключ; не воскрешаем его).
+ * Если успешно скопировали — стираем legacy.
+ */
+export function migrateLegacyBitbucketToken() {
+  const legacyKey = 'bitbucketApiToken'
+  const newKey = `vcs:${DEFAULT_BB_SOURCE_ID}:token`
+  if (!store.has(legacyKey)) return
+  if (store.has(newKey)) return
+
+  const legacyValue = getSecret(legacyKey)
+  if (!legacyValue) {
+    // blob испорчен — getSecret уже его удалил.
+    return
+  }
+  setSecret(newKey, legacyValue)
+  clearSecret(legacyKey)
 }

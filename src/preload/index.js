@@ -9,6 +9,16 @@ import { contextBridge, ipcRenderer } from 'electron'
  */
 
 const api = {
+  sources: {
+    list: () => ipcRenderer.invoke('sources:list'),
+    add: (payload) => ipcRenderer.invoke('sources:add', payload),
+    update: (id, patch) => ipcRenderer.invoke('sources:update', id, patch),
+    remove: (id) => ipcRenderer.invoke('sources:remove', id),
+    test: (id) => ipcRenderer.invoke('sources:test', id),
+    setSecret: (id, token) =>
+      ipcRenderer.invoke('sources:setSecret', id, token),
+    clearSecret: (id) => ipcRenderer.invoke('sources:clearSecret', id)
+  },
   bitbucket: {
     list: () => ipcRenderer.invoke('bitbucket:list'),
     refresh: () => ipcRenderer.invoke('bitbucket:refresh'),

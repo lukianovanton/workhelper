@@ -101,15 +101,32 @@
  */
 
 /**
+ * @typedef {Object} VcsSourceConfig
+ * @property {string} id                       стабильный идентификатор
+ *                                              (UUID для добавленных через UI;
+ *                                              'bitbucket-default' для
+ *                                              мигрированного legacy)
+ * @property {'bitbucket'} type                 type provider'а; в Phase B
+ *                                              расширится до 'github' и т.д.
+ * @property {string} name                      user-facing label
+ * @property {string} workspace                 BB workspace slug (для GitHub
+ *                                              станет owner)
+ * @property {string} username                  Atlassian email для Basic Auth
+ * @property {string} gitUsername               BB username (для URL git clone).
+ *                                              Не email.
+ *
  * @typedef {Object} AppConfig
- * @property {{ workspace: string, username: string, gitUsername: string }} bitbucket
- *           username = Atlassian account email (для REST API Basic Auth).
- *           gitUsername = Bitbucket username (НЕ email) — для URL git clone.
- *           Аутентификация git делегируется системному Git Credential
- *           Manager; приложение НЕ передаёт API token в git-слой.
- *           apiToken хранится через safeStorage отдельно (ключ
- *           bitbucketApiToken). До сен. 2025 это был app password —
- *           Atlassian задепрекейтил, схема Basic Auth не изменилась.
+ * @property {VcsSourceConfig[]} sources         сконфигурированные VCS-источники.
+ *                                              Может быть пустым (тогда listAll
+ *                                              repos возвращает []).
+ *                                              API-токен каждого источника
+ *                                              хранится в secrets под ключом
+ *                                              `vcs:${source.id}:token`.
+ * @property {{ workspace: string, username: string, gitUsername: string }} [bitbucket]
+ *           ⚠️ DEPRECATED. Сохранён как источник миграции для случая когда
+ *           пользователь обновляется с до-A.4b версии. После первого
+ *           getConfig() значения переезжают в sources[0] и поле
+ *           перестаёт читаться. Phase A.7 удалит окончательно.
  * @property {{
  *   projectsRoot: string,
  *   dumpsRoot: string,
