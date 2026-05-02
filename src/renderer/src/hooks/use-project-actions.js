@@ -43,15 +43,17 @@ export function useProjectActions(slug) {
     }
   })
 
+  // db.create/drop теперь принимают slug — main резолвит engine + name
+  // через config.databaseOverrides[slug] (Phase: per-project DB binding).
   const dbCreate = useMutation({
-    mutationFn: () => api.db.create(slug.toLowerCase()),
+    mutationFn: () => api.db.create(slug),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['bitbucket', 'projects'] })
     }
   })
 
   const dbDrop = useMutation({
-    mutationFn: () => api.db.drop(slug.toLowerCase()),
+    mutationFn: () => api.db.drop(slug),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['bitbucket', 'projects'] })
     }

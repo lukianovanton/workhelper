@@ -15,6 +15,7 @@ import {
   Download,
   Plus,
   Trash2,
+  Database,
   DatabaseBackup,
   FolderOpen,
   Sparkles,
@@ -655,6 +656,10 @@ function Drawer({ project, dbAvailable, onClose, initialTab, initialIssue }) {
         <Separator />
 
         <RunOverrideSection slug={project.slug} />
+
+        <Separator />
+
+        <DatabaseOverrideSection slug={project.slug} />
 
         <Separator />
 
@@ -2511,6 +2516,153 @@ function RunOverrideSection({ slug }) {
           </div>
           <div className="flex items-center gap-2 pt-1">
             <Button size="sm" variant="outline" onClick={save} disabled={saving}>
+              {saving && <Loader2 size={12} className="animate-spin" />}
+              {t('common.save')}
+            </Button>
+            {status?.ok && (
+              <span className="text-[11px] text-emerald-500">
+                {t('common.saved')}
+              </span>
+            )}
+            {status && !status.ok && (
+              <span className="text-[11px] text-destructive">
+                {status.message}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Per-project override для DB-подключения и имени БД. Хранится в
+ * config.databaseOverrides[slug] = { databaseId?, name? }.
+ *
+ *   - databaseId — id из databases[]. Пусто = default engine
+ *     (первое подключение в Settings).
+ *   - name — имя БД на этом engine. Пусто = slug.toLowerCase()
+ *     (старая конвенция). Если у проекта БД называется иначе —
+ *     указываем здесь.
+ *
+ * Сохранение через api.config.set, как у RunOverrideSection.
+ */
+function DatabaseOverrideSection({ slug }) {
+  const t = useT()
+  const [databaseId, setDatabaseId] = useState('')
+  const [dbName, setDbName] = useState('')
+  const [databases, setDatabases] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [status, setStatus] = useState(null)
+
+  const reload = useCallback(async () => {
+    setLoading(true)
+    try {
+      const [cfg, list] = await Promise.all([
+        api.config.get(),
+        api.databases.list()
+      ])
+      const ov = (cfg.databaseOverrides || {})[slug] || {}
+      setDatabaseId(ov.databaseId || '')
+      setDbName(ov.name || '')
+      setDatabases(list)
+    } finally {
+      setLoading(false)
+    }
+  }, [slug])
+
+  useEffect(() => {
+    reload()
+  }, [reload])
+
+  const save = async () => {
+    setSaving(true)
+    setStatus(null)
+    try {
+      const cfg = await api.config.get()
+      const overrides = { ...(cfg.databaseOverrides || {}) }
+      const trimmedId = databaseId.trim()
+      const trimmedName = dbName.trim()
+      if (!trimmedId && !trimmedName) {
+        delete overrides[slug]
+      } else {
+        overrides[slug] = {
+          ...(trimmedId ? { databaseId: trimmedId } : {}),
+          ...(trimmedName ? { name: trimmedName } : {})
+        }
+      }
+      await api.config.set({ databaseOverrides: overrides })
+      setStatus({ ok: true })
+      setTimeout(() => setStatus(null), 2500)
+    } catch (e) {
+      setStatus({ ok: false, message: e?.message || String(e) })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const defaultDbName = (slug || '').toLowerCase()
+  const defaultLabel =
+    databases.length > 0
+      ? `${databases[0].name} (default)`
+      : t('drawer.dbOverride.noDatabases')
+
+  return (
+    <div className="space-y-2">
+      <div className="text-xs uppercase tracking-wide text-muted-foreground flex items-center gap-2">
+        <Database size={12} /> {t('drawer.dbOverride.title')}
+      </div>
+      {loading ? (
+        <div className="text-xs text-muted-foreground inline-flex items-center gap-2">
+          <Loader2 size={12} className="animate-spin" />
+          {t('common.loading')}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <div>
+            <label className="text-xs text-muted-foreground block mb-1">
+              {t('drawer.dbOverride.connection')}
+            </label>
+            <select
+              value={databaseId}
+              onChange={(e) => setDatabaseId(e.target.value)}
+              className="w-full bg-background border border-input rounded-md px-3 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <option value="">{defaultLabel}</option>
+              {databases.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name} ({d.type})
+                </option>
+              ))}
+            </select>
+            <p className="text-[10px] text-muted-foreground/70 mt-1">
+              {t('drawer.dbOverride.connection.hint')}
+            </p>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground block mb-1">
+              {t('drawer.dbOverride.name')}
+            </label>
+            <input
+              type="text"
+              value={dbName}
+              onChange={(e) => setDbName(e.target.value)}
+              placeholder={defaultDbName}
+              className="w-full bg-background border border-input rounded-md px-3 py-1.5 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            />
+            <p className="text-[10px] text-muted-foreground/70 mt-1">
+              {t('drawer.dbOverride.name.hint')}
+            </p>
+          </div>
+          <div className="flex items-center gap-2 pt-1">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={save}
+              disabled={saving}
+            >
               {saving && <Loader2 size={12} className="animate-spin" />}
               {t('common.save')}
             </Button>

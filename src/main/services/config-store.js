@@ -23,6 +23,7 @@ const DEFAULTS = {
     runCommand: 'dotnet run'
   },
   runOverrides: {},
+  databaseOverrides: {},
   paths: {
     projectsRoot: 'C:\\Projects',
     dumpsRoot: '',
@@ -195,12 +196,18 @@ export function setConfig(patch) {
   if (Array.isArray(patch?.databases)) {
     merged.databases = patch.databases
   }
-  // runOverrides — { [slug]: {...} }. deepMerge не удаляет ключи: если
-  // пользователь убрал override (delete overrides[slug]), но мы бы
-  // мерджили — старая запись осталась бы. Для этой структуры patch
-  // считается полным новым значением, как sources/databases.
+  // runOverrides / databaseOverrides — { [slug]: {...} }. deepMerge не
+  // удаляет ключи: если пользователь убрал override (delete map[slug]),
+  // мердж бы оставил старую запись. Для этих структур patch считается
+  // полным новым значением, как sources/databases.
   if (patch && Object.prototype.hasOwnProperty.call(patch, 'runOverrides')) {
     merged.runOverrides = patch.runOverrides || {}
+  }
+  if (
+    patch &&
+    Object.prototype.hasOwnProperty.call(patch, 'databaseOverrides')
+  ) {
+    merged.databaseOverrides = patch.databaseOverrides || {}
   }
   store.store = merged
 }

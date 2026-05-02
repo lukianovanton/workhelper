@@ -151,6 +151,14 @@
  *                                              runCommand и/или cwd
  *                                              (рабочей директории
  *                                              относительно project root).
+ * @property {Object<string, { databaseId?: string, name?: string }>} databaseOverrides
+ *                                              per-project оверрайды БД:
+ *                                              databaseId — id из
+ *                                              databases[] (если у
+ *                                              проекта другой engine
+ *                                              чем default), name —
+ *                                              имя БД (если оно не
+ *                                              совпадает со slug).
  * @property {{
  *   projectsRoot: string,
  *   dumpsRoot: string,

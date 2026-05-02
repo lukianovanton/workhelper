@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import Store from 'electron-store'
 import { registerAllIpc } from './ipc/index.js'
 import { killAll as killAllProcesses } from './services/process-manager.js'
-import { killAllRestores } from './services/db-service.js'
+import { killAllRestoresAcrossEngines as killAllRestores } from './services/db/registry.js'
 import {
   startPresence,
   stopPresence

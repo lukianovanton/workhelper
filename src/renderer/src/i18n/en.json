@@ -265,6 +265,13 @@
   "drawer.runOverride.cwd.placeholder": "src/api  (relative to project root)",
   "drawer.runOverride.cwd.hint": "Where the run command executes. Empty means project root, or auto-detected for .NET projects.",
 
+  "drawer.dbOverride.title": "Database override",
+  "drawer.dbOverride.connection": "DB connection",
+  "drawer.dbOverride.connection.hint": "Which DB connection from Settings → Databases this project uses. Default = first connection.",
+  "drawer.dbOverride.name": "Database name",
+  "drawer.dbOverride.name.hint": "DB name on the engine. Empty = slug in lowercase. Override if your project's DB is named differently.",
+  "drawer.dbOverride.noDatabases": "No databases configured",
+
   "drawer.notes.title": "Notes",
   "drawer.notes.placeholder": "Anything project-related — bugs, contacts, context…",
   "drawer.notes.localOnly": "Stored locally on this machine; not synced.",

@@ -20,11 +20,11 @@
  */
 
 import * as gitService from './git-service.js'
-import * as dbService from './db-service.js'
 import * as fsService from './fs-service.js'
 import * as editorService from './editor-service.js'
 import * as processManager from './process-manager.js'
 import { getConfig } from './config-store.js'
+import { resolveProjectDb } from './db/registry.js'
 
 const activeSetups = new Map()
 
@@ -44,9 +44,11 @@ export function cancelSetup(slug) {
   const handle = activeSetups.get(slug)
   if (!handle) return false
   handle.cancelled = true
-  // Ускоряем cancel в текущем шаге, который умеет сам прерываться:
-  if (dbService.isRestoring(slug)) {
-    dbService.cancelRestore(slug)
+  // Ускоряем cancel в текущем шаге, который умеет сам прерываться.
+  // Резолвим engine конкретного проекта (override → default).
+  const { engine } = resolveProjectDb(slug)
+  if (engine && engine.isRestoring(slug)) {
+    engine.cancelRestore(slug)
   }
   return true
 }
@@ -64,7 +66,9 @@ export async function runFull(slug, options, emitStep) {
   activeSetups.set(slug, handle)
 
   const config = getConfig()
-  const slugLower = slug.toLowerCase()
+  // Per-project DB routing (Phase: databaseOverrides). Engine + точное
+  // имя БД могут быть оверрайднуты, иначе — default engine + slug.toLowerCase().
+  const { engine: dbEngine, dbName } = resolveProjectDb(slug)
 
   const checkCancel = () => {
     if (handle.cancelled) throw new CancelledError()
@@ -112,14 +116,21 @@ export async function runFull(slug, options, emitStep) {
 
     // ─── b) db-create ────────────────────────────────────────────────
     checkCancel()
+    if (!dbEngine) {
+      errorStep(
+        'db-create',
+        'No database engine configured. Open Settings → Databases.'
+      )
+      throw new Error('No database engine configured')
+    }
     let dbExisted = false
     try {
-      const dbs = await dbService.listDatabases()
-      dbExisted = dbs.has(slugLower)
+      const dbs = await dbEngine.listDatabases()
+      dbExisted = dbs.has(dbName)
     } catch (e) {
       errorStep(
         'db-create',
-        `Cannot reach MySQL: ${e?.message || String(e)}`
+        `Cannot reach DB: ${e?.message || String(e)}`
       )
       throw e
     }
@@ -133,7 +144,7 @@ export async function runFull(slug, options, emitStep) {
     } else {
       const t = beginStep('db-create')
       try {
-        await dbService.createDatabase(slugLower)
+        await dbEngine.createDatabase(dbName)
       } catch (e) {
         errorStep('db-create', e?.message || String(e))
         throw e
@@ -164,8 +175,8 @@ export async function runFull(slug, options, emitStep) {
     } else {
       const t = beginStep('db-restore')
       try {
-        await dbService.restoreDatabase(
-          slugLower,
+        await dbEngine.restoreDatabase(
+          dbName,
           dumpPath,
           slug,
           ({ bytesRead, totalBytes }) => {

@@ -121,14 +121,50 @@ export function getDefaultEngine() {
 }
 
 /**
- * Возвращает engine для проекта. На момент A.5a игнорирует projectSlug
- * и всегда отдаёт default — но контракт стабильный, в A.5b/A.6 здесь
- * добавится lookup по `Project.databaseId`.
+ * Возвращает engine для проекта. Читает override из
+ * config.databaseOverrides[slug].databaseId; если не задан или указанный
+ * engine не существует — fallback на default.
  *
+ * @param {string} slug
  * @returns {DbEngine | null}
  */
-export function getEngineForProject(_projectSlug) {
+export function getEngineForProject(slug) {
+  const config = getConfig()
+  const ov = (config.databaseOverrides || {})[slug] || {}
+  if (ov.databaseId) {
+    const engine = getEngine(ov.databaseId)
+    if (engine) return engine
+  }
   return getDefaultEngine()
+}
+
+/**
+ * Полный резолв per-project DB: какой engine использовать и под каким
+ * именем. Имя БД по умолчанию = slug.toLowerCase(); override в
+ * config.databaseOverrides[slug].name перебивает.
+ *
+ * @param {string} slug
+ * @returns {{ engineId: string|null, engine: DbEngine|null, dbName: string }}
+ */
+export function resolveProjectDb(slug) {
+  const config = getConfig()
+  const ov = (config.databaseOverrides || {})[slug] || {}
+  const dbName = (ov.name && ov.name.trim()) || (slug || '').toLowerCase()
+
+  let engine = null
+  let engineId = null
+  if (ov.databaseId) {
+    engine = getEngine(ov.databaseId)
+    if (engine) engineId = ov.databaseId
+  }
+  if (!engine) {
+    const dbs = getDatabases()
+    if (dbs.length > 0) {
+      engineId = dbs[0].id
+      engine = getEngine(engineId)
+    }
+  }
+  return { engineId, engine, dbName }
 }
 
 export function listDatabaseConfigs() {
@@ -151,4 +187,20 @@ export function invalidateEngines() {
     }
   }
   engines.clear()
+}
+
+/**
+ * Гасит все живые restore-процессы во всех сконфигурированных
+ * engine'ах. Вызывается на before-quit.
+ */
+export function killAllRestoresAcrossEngines() {
+  for (const entry of getDatabases()) {
+    const eng = getEngine(entry.id)
+    if (!eng) continue
+    try {
+      eng.killAllRestores()
+    } catch {
+      // ignore
+    }
+  }
 }
