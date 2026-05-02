@@ -1042,12 +1042,24 @@ const SourcesSection = forwardRef(function SourcesSection(
       return next
     })
     try {
+      // Провайдеры с одним логином (gitUsernameMirrorsUsername=true:
+      // GitHub, GitLab) держат username и gitUsername в одном UI-поле
+      // (биндится в draft.username). Зеркалим в gitUsername здесь — на
+      // месте API-вызова. Раньше mirror висел в onClick кнопки Save через
+      // onUpdate(), но это async setState; saveNew затем синхронно
+      // читал старый draft.gitUsername=''. Из-за этого свежесозданный
+      // GitHub/GitLab source сохранялся с пустым gitUsername, и git clone
+      // потом ругался "Git username not configured".
+      const provider = getVcsProvider(draft.type)
+      const gitUsernameToSave = provider?.form.gitUsernameMirrorsUsername
+        ? draft.username || ''
+        : draft.gitUsername
       await api.sources.add({
         type: draft.type,
         name: draft.name || draft.workspace,
         workspace: draft.workspace,
         username: draft.username,
-        gitUsername: draft.gitUsername,
+        gitUsername: gitUsernameToSave,
         providerOptions: draft.providerOptions || {},
         token: tokens[tempId] || undefined
       })
@@ -1271,15 +1283,7 @@ function SourceCard({
               <>
                 <Button
                   size="sm"
-                  onClick={() => {
-                    // Провайдеры с одним логином (GitHub) сохраняют username
-                    // и в gitUsername — один источник истины. С отдельным
-                    // login + git-username (BB) поля независимы.
-                    if (form.gitUsernameMirrorsUsername) {
-                      onUpdate('gitUsername', draft.username || '')
-                    }
-                    onSave()
-                  }}
+                  onClick={onSave}
                   disabled={isBusy || !draft.workspace}
                 >
                   {isBusy && <Loader2 className="animate-spin" />}
