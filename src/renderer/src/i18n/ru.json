@@ -78,6 +78,7 @@
   "projects.kind.personal": "Личное",
   "projects.kind.work": "Работа",
   "projects.kind.important": "Важное",
+  "projects.kind.landing": "Лендинг",
   "projects.kind.onhold": "На паузе",
   "projects.kind.archived": "Архив",
   "projects.kind.external": "Не моё",

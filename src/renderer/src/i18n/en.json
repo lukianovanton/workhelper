@@ -78,6 +78,7 @@
   "projects.kind.personal": "Personal",
   "projects.kind.work": "Work",
   "projects.kind.important": "Important",
+  "projects.kind.landing": "Landing",
   "projects.kind.onhold": "On Hold",
   "projects.kind.archived": "Archived",
   "projects.kind.external": "External",

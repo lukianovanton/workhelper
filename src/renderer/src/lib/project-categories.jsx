@@ -39,7 +39,8 @@ import {
   Flame,
   Archive,
   UserX,
-  Pause
+  Pause,
+  Globe
 } from 'lucide-react'
 
 /** @type {Record<string, ProjectCategory>} */
@@ -84,9 +85,21 @@ export const PROJECT_CATEGORIES = {
     auto: true,
     order: 4
   },
+  // Landing — отдельный слой под template'ами. Marketing-страницы,
+  // promo-сайты, кампания-specific одностраничники. Часто active-work
+  // (поэтому выше On Hold), но семантически отделены от обычных
+  // Project / Template. Globe-иконка — «web presence».
+  landing: {
+    id: 'landing',
+    labelKey: 'projects.kind.landing',
+    Icon: Globe,
+    pillClassName: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+    auto: false,
+    order: 5
+  },
   // On Hold / «На паузе» — для проектов, которые иногда используются
   // но не активно: pet-tools которые трогаешь раз в квартал, временно
-  // отложенные репозитории, etc. Между Template и Archived.
+  // отложенные репозитории, etc. Между Landing и Archived.
   // Stone-цвет — нейтральный warm-gray, не attention-grabbing как
   // Template (amber) и не такой «мёртвый» как Archived.
   onhold: {
@@ -95,7 +108,7 @@ export const PROJECT_CATEGORIES = {
     Icon: Pause,
     pillClassName: 'bg-stone-500/15 text-stone-400 border-stone-500/30',
     auto: false,
-    order: 5
+    order: 6
   },
   archived: {
     id: 'archived',
@@ -104,7 +117,7 @@ export const PROJECT_CATEGORIES = {
     pillClassName:
       'bg-muted/40 text-muted-foreground border-muted-foreground/30',
     auto: false,
-    order: 6
+    order: 7
   },
   external: {
     id: 'external',
@@ -113,7 +126,7 @@ export const PROJECT_CATEGORIES = {
     pillClassName:
       'bg-slate-500/15 text-slate-400 border-slate-500/30',
     auto: false,
-    order: 7
+    order: 8
   }
 }
 
