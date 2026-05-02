@@ -211,14 +211,40 @@ export function createGitHubProvider({
     const client = buildClient()
     const owner = encodeURIComponent(client.owner)
 
-    // Owner может быть org или user. Пробуем org-эндпоинт; на 404
-    // фолбэчимся на user-эндпоинт. Не используем /user/repos
-    // (личные + collaborations + orgs), чтобы owner-фильтр был чёткий.
+    // Endpoint-стратегия по семантике owner'а:
+    //
+    //   1. /orgs/{owner}/repos     — owner это организация. Возвращает
+    //                                всё что доступно токену (включая
+    //                                приватные если scope позволяет).
+    //   2. /user/repos?affiliation=owner&visibility=all  — owner это
+    //                                сам аутентифицированный юзер.
+    //                                Единственный путь увидеть свои
+    //                                приватные репо. /users/{owner}/repos
+    //                                возвращает только public — даже
+    //                                для собственного логина.
+    //   3. /users/{owner}/repos    — owner — другой пользователь.
+    //                                Только public, приватные не видны
+    //                                сторонним по определению.
+    //
+    // Стратегия: пробуем /orgs первым. На 404 — проверяем кто
+    // аутентифицирован и сравниваем; если owner совпадает — путь 2,
+    // иначе путь 3.
     /** @type {any[]} */
     const all = []
     let url = `/orgs/${owner}/repos?per_page=100&type=all&sort=updated`
-    let isOrgEndpoint = true
+    /** @type {'org' | 'self' | 'other'} */
+    let endpointKind = 'org'
     let page = 1
+
+    function nextPageUrl(kind, p) {
+      if (kind === 'org') {
+        return `/orgs/${owner}/repos?per_page=100&type=all&sort=updated&page=${p}`
+      }
+      if (kind === 'self') {
+        return `/user/repos?per_page=100&affiliation=owner&visibility=all&sort=updated&page=${p}`
+      }
+      return `/users/${owner}/repos?per_page=100&type=owner&sort=updated&page=${p}`
+    }
 
     while (url) {
       try {
@@ -229,20 +255,33 @@ export function createGitHubProvider({
             url = null
           } else {
             page += 1
-            url = isOrgEndpoint
-              ? `/orgs/${owner}/repos?per_page=100&type=all&sort=updated&page=${page}`
-              : `/users/${owner}/repos?per_page=100&type=owner&sort=updated&page=${page}`
+            url = nextPageUrl(endpointKind, page)
           }
         } else {
           url = null
         }
       } catch (e) {
-        if (e.status === 404 && isOrgEndpoint) {
-          // Это user, не org. Перезапускаем с user-эндпоинта.
+        if (e.status === 404 && endpointKind === 'org') {
+          // Это не org. Решаем self vs other через /user.
           all.length = 0
-          isOrgEndpoint = false
           page = 1
-          url = `/users/${owner}/repos?per_page=100&type=owner&sort=updated`
+          let authedLogin = null
+          try {
+            const me = await client.request('/user')
+            authedLogin = (me?.login || '').toLowerCase()
+          } catch {
+            // ignore — пойдём в other-режим (public-only fallback)
+          }
+          if (
+            authedLogin &&
+            authedLogin === client.owner.toLowerCase()
+          ) {
+            endpointKind = 'self'
+            url = `/user/repos?per_page=100&affiliation=owner&visibility=all&sort=updated`
+          } else {
+            endpointKind = 'other'
+            url = `/users/${owner}/repos?per_page=100&type=owner&sort=updated`
+          }
           continue
         }
         throw e

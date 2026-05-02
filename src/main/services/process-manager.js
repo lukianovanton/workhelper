@@ -45,12 +45,31 @@ const STACK_HOOKS = {
   }
 }
 
-// Расширенный URL_REGEX: ловит .NET (Now listening on:), Node/Express
-// (listening on http...), Vite (Local: http...), общий «Server running at».
-// Один и тот же паттерн на все стеки — пользователь вводит свою
-// runCommand, а наш приёмник стандартных вариантов покроет 90% случаев.
+// Стратегия детекта порта/URL: пробуем три паттерна в порядке
+// убывающей специфичности. Первый совпавший побеждает; цель — покрыть
+// все распространённые форматы dev-server'ов (CRA, Vite, Next.js,
+// Gatsby, Webpack-dev-server, Express, ASP.NET, Gin, Rocket, etc.) без
+// per-stack regex'ов, которые расходились бы с детекцией стека.
+//
+//   1. URL_REGEX           — http(s)://(localhost|127.0.0.1|0.0.0.0):PORT
+//                            CRA, Vite, Webpack-dev, Gatsby, ASP.NET,
+//                            Express с .listen логированием URL'а.
+//   2. HOST_PORT_REGEX     — голое host:port без схемы.
+//                            Next.js 13+ («started server on 0.0.0.0:3000»),
+//                            Bun/Hono в дефолтной формате.
+//   3. PORT_KEYWORD_REGEX  — «listening/running/started ... port 3000».
+//                            Express минимальные примеры, кастомные
+//                            логгеры.
+//
+// Capture group #1 у каждого — номер порта (2-5 цифр). Из него собираем
+// http://localhost:PORT — браузер открывает корректно даже если сервис
+// биндится в 0.0.0.0.
 const URL_REGEX =
-  /(?:Now listening on|listening (?:on|at)|Local:|Server running at|Local server:)\s*[:\s]*(https?:\/\/\S+)/i
+  /https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0):(\d{2,5})/i
+const HOST_PORT_REGEX =
+  /\b(?:localhost|127\.0\.0\.1|0\.0\.0\.0):(\d{2,5})\b/i
+const PORT_KEYWORD_REGEX =
+  /\b(?:listening|running|started|serving|listen)\b[^\n]{0,80}?\bport\s*[:\s]+(\d{2,5})\b/i
 const LOG_BUFFER_SIZE = 1000
 
 class RingBuffer {
@@ -258,19 +277,20 @@ export async function run(slug) {
     handle.logs.push({ stream, text, ts: Date.now() })
     emit('log', { slug, chunk: text, stream })
     if (handle.url == null) {
-      const m = text.match(URL_REGEX)
+      const m =
+        text.match(URL_REGEX) ||
+        text.match(HOST_PORT_REGEX) ||
+        text.match(PORT_KEYWORD_REGEX)
       if (m) {
-        try {
-          const u = new URL(m[1])
-          handle.url = u.origin
-          handle.port = Number(u.port) || null
+        const port = Number(m[1])
+        if (port >= 1 && port <= 65535) {
+          handle.port = port
+          handle.url = `http://localhost:${port}`
           emit('port', {
             slug,
             port: handle.port,
             url: handle.url
           })
-        } catch {
-          // мусорный URL — игнорим, попробуем на след. чанке
         }
       }
     }
