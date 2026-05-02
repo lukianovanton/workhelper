@@ -2497,13 +2497,21 @@ function Combobox({
   const selectedOption = options.find((o) => o.value === value)
   const display = allowFreeText ? value : (selectedOption?.label ?? '')
 
-  // Filtering для combobox-mode по введённому значению.
-  const filtered =
-    allowFreeText && value
-      ? options.filter((o) =>
-          o.label.toLowerCase().includes(value.toLowerCase())
-        )
-      : options
+  // Filtering для combobox-mode: разделяем опции на matched (по
+  // введённой подстроке) и rest (всё остальное). Раньше показывался
+  // только matched-список — пользователю с уже выбранным значением,
+  // которое сужает фильтр до одной опции, приходилось вручную стирать
+  // input чтобы увидеть остальные. Теперь rest всегда видны под
+  // разделителем — переключаться можно одним кликом.
+  const lowerValue = (value || '').toLowerCase()
+  const hasFilter = allowFreeText && !!lowerValue
+  const matched = hasFilter
+    ? options.filter((o) => o.label.toLowerCase().includes(lowerValue))
+    : options
+  const rest = hasFilter
+    ? options.filter((o) => !o.label.toLowerCase().includes(lowerValue))
+    : []
+  const totalShown = matched.length + rest.length
 
   // Toggle на mousedown (а не на click): срабатывает на нажатие, до
   // mouseup. Без этого пользователь видит микро-задержку «нажал → ждёт
@@ -2544,27 +2552,50 @@ function Combobox({
       />
       {open && (
         <div className="absolute top-full left-0 right-0 z-30 mt-1 bg-popover border border-border rounded-md shadow-lg max-h-48 overflow-auto py-1">
-          {filtered.length === 0 ? (
+          {totalShown === 0 ? (
             <div className="px-3 py-1.5 text-sm text-muted-foreground italic">
               {t('common.noOptions')}
             </div>
           ) : (
-            filtered.map((o, i) => (
-              <button
-                key={`${o.value}-${i}`}
-                type="button"
-                onClick={() => {
-                  onChange(o.value)
-                  setOpen(false)
-                }}
-                className={cn(
-                  'w-full text-left px-3 py-1.5 text-sm hover:bg-accent transition-colors',
-                  o.value === value && 'bg-accent/50'
-                )}
-              >
-                {o.label}
-              </button>
-            ))
+            <>
+              {matched.map((o, i) => (
+                <button
+                  key={`m-${o.value}-${i}`}
+                  type="button"
+                  onClick={() => {
+                    onChange(o.value)
+                    setOpen(false)
+                  }}
+                  className={cn(
+                    'w-full text-left px-3 py-1.5 text-sm hover:bg-accent transition-colors',
+                    o.value === value && 'bg-accent/50'
+                  )}
+                >
+                  {o.label}
+                </button>
+              ))}
+              {/* Разделитель между matched и rest. Без подписи — просто
+                  тонкая линия, чтобы не плодить новые i18n-ключи. */}
+              {matched.length > 0 && rest.length > 0 && (
+                <div className="my-1 border-t border-border/60" />
+              )}
+              {rest.map((o, i) => (
+                <button
+                  key={`r-${o.value}-${i}`}
+                  type="button"
+                  onClick={() => {
+                    onChange(o.value)
+                    setOpen(false)
+                  }}
+                  className={cn(
+                    'w-full text-left px-3 py-1.5 text-sm hover:bg-accent transition-colors text-muted-foreground',
+                    o.value === value && 'bg-accent/50'
+                  )}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </>
           )}
         </div>
       )}
