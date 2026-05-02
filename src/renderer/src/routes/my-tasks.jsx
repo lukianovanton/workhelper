@@ -641,7 +641,7 @@ function StatusPicker({ issueKey, category, label }) {
         )}
       </button>
       {open && (
-        <div className="absolute top-full left-0 mt-1 z-30 min-w-[200px] bg-popover border border-border rounded-md shadow-lg p-1 animate-in fade-in zoom-in-95 duration-150 origin-top-left">
+        <div className="absolute top-full left-0 mt-1 z-30 min-w-[200px] bg-popover border border-border rounded-md shadow-lg p-1">
           {transitions.isLoading ? (
             <div className="px-3 py-2 text-xs text-muted-foreground inline-flex items-center gap-2">
               <Loader2 size={12} className="animate-spin" />{' '}
@@ -749,7 +749,7 @@ function AssigneePicker({ issueKey, person }) {
         )}
       </button>
       {open && (
-        <div className="absolute top-full left-0 mt-1 z-30 w-[20rem] bg-popover border border-border rounded-md shadow-lg p-2 space-y-1 animate-in fade-in zoom-in-95 duration-150 origin-top-left">
+        <div className="absolute top-full left-0 mt-1 z-30 w-[20rem] bg-popover border border-border rounded-md shadow-lg p-2 space-y-1">
           <Input
             autoFocus
             value={query}

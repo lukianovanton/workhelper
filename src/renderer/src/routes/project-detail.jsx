@@ -123,7 +123,7 @@ export default function ProjectDetail() {
 function DrawerShell({ children, onClose, loading }) {
   const t = useT()
   return (
-    <aside className="w-1/2 border-l border-border bg-background flex flex-col">
+    <div className="w-1/2 border-l border-border bg-background flex flex-col">
       <header className="px-6 py-4 border-b border-border flex items-center justify-between">
         <div className="text-sm text-muted-foreground">
           {loading ? t('drawer.loadingShort') : t('drawer.project')}
@@ -139,7 +139,7 @@ function DrawerShell({ children, onClose, loading }) {
       ) : (
         children
       )}
-    </aside>
+    </div>
   )
 }
 
@@ -365,7 +365,7 @@ function Drawer({ project, dbAvailable, onClose, initialTab, initialIssue }) {
   }
 
   return (
-    <aside className="w-1/2 border-l border-border bg-background flex flex-col overflow-hidden">
+    <div className="w-1/2 border-l border-border bg-background flex flex-col overflow-hidden">
       <header className="px-6 py-4 border-b border-border space-y-3">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
@@ -741,7 +741,7 @@ function Drawer({ project, dbAvailable, onClose, initialTab, initialIssue }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </aside>
+    </div>
   )
 }
 
@@ -2235,7 +2235,7 @@ function BranchSwitcher({ slug, gitStatus, gitLoading, checkout, isRunning, onRe
       </button>
       {open && (
         <div
-          className="absolute right-0 top-full mt-1 z-20 min-w-[180px] max-h-64 overflow-auto bg-popover border border-border rounded-md shadow-lg py-1 animate-in fade-in zoom-in-95 duration-150 origin-top-right"
+          className="absolute right-0 top-full mt-1 z-20 min-w-[180px] max-h-64 overflow-auto bg-popover border border-border rounded-md shadow-lg py-1"
           onMouseLeave={() => setOpen(false)}
         >
           {loadingBranches && (
